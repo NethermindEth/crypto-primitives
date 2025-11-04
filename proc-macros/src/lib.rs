@@ -1,6 +1,6 @@
-//! This crate provides a procedural macro to derive implementations of
-//! infallible checked operations for types that implement the corresponding
-//! non-checked operations.
+//! This internal helper crate provides a procedural macro to derive
+//! implementations of infallible checked operations for types that implement
+//! the corresponding non-checked operations.
 mod infallible_checked_op;
 
 use proc_macro::TokenStream;
