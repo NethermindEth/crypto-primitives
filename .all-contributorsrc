@@ -11,6 +11,16 @@
   "commitConvention": "none",
   "contributors": [
     {
+      "login": "maksimryndin",
+      "name": "maksimryndin",
+      "avatar_url": "https://avatars.githubusercontent.com/u/16288656?v=4",
+      "profile": "https://maksimryndin.github.io/",
+      "contributions": [
+        "projectManagement",
+        "review"
+      ]
+    },
+    {
       "login": "frozenspider",
       "name": "Alex Abdugafarov",
       "avatar_url": "https://avatars.githubusercontent.com/u/2077017?v=4",
@@ -35,16 +45,6 @@
       "profile": "https://github.com/NiDimi",
       "contributions": [
         "review"
-      ]
-    },
-    {
-      "login": "maksimryndin",
-      "name": "maksimryndin",
-      "avatar_url": "https://avatars.githubusercontent.com/u/16288656?v=4",
-      "profile": "https://maksimryndin.github.io/",
-      "contributions": [
-        "review",
-        "projectManagement"
       ]
     }
   ],

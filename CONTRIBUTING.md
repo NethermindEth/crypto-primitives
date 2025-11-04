@@ -33,7 +33,7 @@ cargo doc
 Docs for `crypto-primitives`:
 
 ```sh
-RUSTDOCFLAGS="--html-in-header katex-header.html" cargo doc --no-deps -p crypto_primitives --open
+RUSTDOCFLAGS="--html-in-header katex-header.html" cargo doc --no-deps -p crypto-primitives --open
 ```
 
 ## Performance
