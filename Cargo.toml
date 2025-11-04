@@ -1,28 +1,74 @@
+[package]
+name = "crypto-primitives"
+publish = false
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
 
-# TODO(template) update for the crate name
+[lints]
+workspace = true
+
+[dependencies]
+# Internal
+crypto-primitives-proc-macros = { workspace = true }
+
+# Core
+num-traits = { version = "0", default-features = false }
+pastey = "0"
+thiserror = "2"
+
+# Wrapped crates
+crypto-bigint = { version = "0.7.0-rc.6", default-features = false, optional = true }
+ark-std = { version = "0.5", default-features = false, optional = true }
+ark-ff = { version = "0.5", default-features = false, optional = true }
+ark-serialize = { version = "0.5", default-features = false, optional = true }
+num-bigint = { version = "0.4", default-features = false, optional = true }
+
+# Optional utility for which implementations are provided
+rand = { version = "0", default-features = false, optional = true }
+serde = { version = "1", default-features = false, optional = true }
+zeroize = { version = "1", default-features = false, optional = true }
+
+[dev-dependencies]
+proptest = { version = "1.8.0", default-features = false, features = ["alloc"] }
+rand = { version = "0.9" }
+
+[features]
+default = ["std"]
+
+rand = ["dep:rand", "crypto-bigint/rand_core"]
+serde = ["dep:serde", "crypto-bigint/serde"]
+zeroize = ["dep:zeroize"]
+
+std = ["num-traits/std", "ark-std/std", "ark-ff/std", "serde/std", "rand/std", "zeroize/std"]
+ark_std = ["dep:ark-std"]
+ark_ff = ["ark_std", "num_bigint", "zeroize", "dep:ark-ff", "dep:ark-serialize"]
+crypto_bigint = ["dep:crypto-bigint", "crypto-bigint/alloc"]
+num_bigint = ["dep:num-bigint"]
+
+
+#
+# Workspace configuration
+#
+
 [workspace]
-members = ["examples", "template_crate"]
+members = ["proc-macros"]
 resolver = "3"
-default-members = ["template_crate"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-# TODO(template) update for your repository
-repository = "https://github.com/NethermindEth/rust-template"
-license = "Apache-2.0" # TODO(template) update license if needed
+repository = "https://github.com/NethermindEth/crypto-primitives"
+license = "Apache-2.0"
 publish = false
 
 [workspace.dependencies]
-proptest = "1"
+crypto-primitives-proc-macros = { path = "proc-macros" }
 
 [workspace.lints.rust]
-missing_docs = "deny"
-# TODO(template) if you use any unsafe code, then running miri in CI is a must
-# if for a crate in the workspace you need an unsafe code
-# prefer to preserve forbid for the workspace
-# and allowing only at a specific crate level 
-unsafe_code = "forbid"
+missing_docs = "allow" # FIXME
+unsafe_code = "allow" # We do use unsafe code for performance reasons
 
 [workspace.lints.clippy]
 arithmetic_side_effects = "deny"
