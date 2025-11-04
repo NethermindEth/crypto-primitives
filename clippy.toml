@@ -1,0 +1,2 @@
+allow-unwrap-in-tests = true
+allow-indexing-slicing-in-tests = true
