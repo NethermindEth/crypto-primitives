@@ -1,0 +1,56 @@
+[package]
+name = "crypto-primitives-algebra"
+publish = false
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = ["std"]
+
+rand = ["dep:rand", "crypto-bigint/rand_core"]
+serde = ["dep:serde", "crypto-bigint/serde"]
+zeroize = ["dep:zeroize"]
+
+std = [
+    "num-traits/std",
+    "ark-std/std",
+    "ark-ff/std",
+    "serde/std",
+    "rand/std",
+    "zeroize/std",
+]
+ark_std = ["dep:ark-std"]
+ark_ff = ["ark_std", "num_bigint", "zeroize", "dep:ark-ff", "dep:ark-serialize"]
+crypto_bigint = ["dep:crypto-bigint", "crypto-bigint/alloc"]
+num_bigint = ["dep:num-bigint"]
+
+[dependencies]
+ark-ff = { workspace = true, optional = true }
+ark-serialize = { workspace = true, optional = true }
+ark-std = { workspace = true, optional = true }
+
+# Wrapped crates
+crypto-bigint = { workspace = true, optional = true }
+# Internal
+crypto-primitives-proc-macros = { workspace = true }
+num-bigint = { version = "0.4", default-features = false, optional = true }
+
+# Core
+num-traits = { workspace = true }
+
+pastey = { workspace = true }
+
+# Optional utility for which implementations are provided
+rand = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+thiserror = { workspace = true }
+zeroize = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = { workspace = true, features = ["std_rng"] }
+
+[lints]
+workspace = true

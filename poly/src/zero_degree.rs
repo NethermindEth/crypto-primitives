@@ -1,0 +1,43 @@
+use super::{ConstCoeffBitWidth, EvaluatablePolynomial, EvaluationError};
+use crypto_primitives_algebra::crypto_bigint_int::Int;
+
+macro_rules! impl_zero_degree {
+    ($($t:ty),+) => {
+        $(
+            impl<T> EvaluatablePolynomial<T, Self> for $t {
+                fn evaluate_at_point(&self, point: &[T]) -> Result<Self, EvaluationError> {
+                    if !point.is_empty() {
+                        return Err(EvaluationError::WrongPointWidth {
+                            expected: 0,
+                            actual: point.len(),
+                        });
+                    }
+                    Ok(self.clone())
+                }
+            }
+
+            impl ConstCoeffBitWidth for $t {
+                const COEFF_BIT_WIDTH: usize = <$t>::BITS as usize;
+            }
+        )*
+    };
+}
+
+impl_zero_degree!(i8, i16, i32, i64, i128);
+impl_zero_degree!(u8, u16, u32, u64, u128);
+
+impl<T, const LIMBS: usize> EvaluatablePolynomial<T, Self> for Int<LIMBS> {
+    fn evaluate_at_point(&self, point: &[T]) -> Result<Self, EvaluationError> {
+        if !point.is_empty() {
+            return Err(EvaluationError::WrongPointWidth {
+                expected: 0,
+                actual: point.len(),
+            });
+        }
+        Ok(*self)
+    }
+}
+
+impl<const LIMBS: usize> ConstCoeffBitWidth for Int<LIMBS> {
+    const COEFF_BIT_WIDTH: usize = Self::BITS as usize;
+}

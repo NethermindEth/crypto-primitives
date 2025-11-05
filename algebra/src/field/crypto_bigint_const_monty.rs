@@ -1,5 +1,8 @@
 use super::*;
-use crate::{Semiring, boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint};
+use crate::{
+    FromRef, MulByScalar, Semiring, boolean::Boolean, crypto_bigint_int::Int,
+    crypto_bigint_uint::Uint, projectable_to_field::ProjectableToField,
+};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, Result as FmtResult},
@@ -636,6 +639,49 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Retrieve for ConstMontyField<Mod, L
 impl<Mod: Params<LIMBS>, const LIMBS: usize> zeroize::DefaultIsZeroes
     for ConstMontyField<Mod, LIMBS>
 {
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> MulByScalar<&Self> for ConstMontyField<Mod, LIMBS> {
+    fn mul_by_scalar(&self, rhs: &Self) -> Option<Self> {
+        self.checked_mul(rhs)
+    }
+}
+
+macro_rules! impl_from_primitive_ref {
+    ($($t:ty),* $(,)?) => {
+        $(
+            impl<Mod: Params<LIMBS>, const LIMBS: usize> FromRef<$t> for ConstMontyField<Mod, LIMBS> {
+                #![allow(clippy::arithmetic_side_effects)]
+                fn from_ref(value: &$t) -> Self {
+                    Self::from(*value)
+                }
+            }
+        )*
+    };
+}
+impl_from_primitive_ref!(u8, u16, u32, u64, u128);
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> FromRef<Uint<LIMBS>> for ConstMontyForm<Mod, LIMBS> {
+    fn from_ref(value: &Uint<LIMBS>) -> Self {
+        ConstMontyForm::new(value.inner())
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> FromRef<Self> for ConstMontyField<Mod, LIMBS> {
+    fn from_ref(value: &Self) -> Self {
+        *value
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize, const LIMBS2: usize>
+    ProjectableToField<ConstMontyField<Mod, LIMBS>> for Int<LIMBS2>
+{
+    fn prepare_projection(
+        _sampled_value: &ConstMontyField<Mod, LIMBS>,
+    ) -> impl Fn(&Self) -> ConstMontyField<Mod, LIMBS> + 'static {
+        // No need to read anything
+        |value: &Int<LIMBS2>| value.into()
+    }
 }
 
 //

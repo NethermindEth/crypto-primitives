@@ -9,6 +9,8 @@ pub mod crypto_bigint_const_monty;
 #[cfg(feature = "crypto_bigint")]
 pub mod crypto_bigint_monty;
 
+pub mod projectable_to_field;
+
 use crate::{ConstSemiring, ring::Ring};
 use core::{
     fmt::Debug,

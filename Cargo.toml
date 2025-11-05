@@ -1,60 +1,7 @@
-[package]
-name = "crypto-primitives"
-publish = false
-version.workspace = true
-edition.workspace = true
-repository.workspace = true
-license.workspace = true
-
-[lints]
-workspace = true
-
-[dependencies]
-# Internal
-crypto-primitives-proc-macros = { workspace = true }
-
-# Core
-num-traits = { workspace = true }
-pastey = "0"
-thiserror = "2"
-
-# Wrapped crates
-crypto-bigint = { version = "0.7.0-rc.10", default-features = false, optional = true }
-ark-std = { version = "0.5", default-features = false, optional = true }
-ark-ff = { version = "0.5", default-features = false, optional = true }
-ark-serialize = { version = "0.5", default-features = false, optional = true }
-num-bigint = { version = "0.4", default-features = false, optional = true }
-
-# Optional utility for which implementations are provided
-rand = { workspace = true, optional = true }
-serde = { version = "1", default-features = false, optional = true }
-zeroize = { version = "1", default-features = false, optional = true }
-
-[dev-dependencies]
-proptest = { workspace = true }
-rand = { workspace = true, features = ["std_rng"] }
-
-[features]
-default = ["std"]
-
-rand = ["dep:rand", "crypto-bigint/rand_core"]
-serde = ["dep:serde", "crypto-bigint/serde"]
-zeroize = ["dep:zeroize"]
-
-std = ["num-traits/std", "ark-std/std", "ark-ff/std", "serde/std", "rand/std", "zeroize/std"]
-ark_std = ["dep:ark-std"]
-ark_ff = ["ark_std", "num_bigint", "zeroize", "dep:ark-ff", "dep:ark-serialize"]
-crypto_bigint = ["dep:crypto-bigint", "crypto-bigint/alloc"]
-num_bigint = ["dep:num-bigint"]
-
-
-#
-# Workspace configuration
-#
-
 [workspace]
-members = ["proc-macros"]
+members = ["algebra", "poly", "proc-macros"]
 resolver = "3"
+default-members = ["algebra", "poly", "proc-macros"]
 
 [workspace.package]
 version = "0.1.0"
@@ -64,10 +11,24 @@ license = "Apache-2.0"
 publish = false
 
 [workspace.dependencies]
+ark-ff = { version = "0.5", default-features = false}
+ark-serialize = { version = "0.5", defaul6t-features = false}
+ark-std = { version = "0.5", default-features = false }
+
+# Wrapped crates
+crypto-bigint = { version = "0.7.0-rc.10", default-features = false}
+
+crypto-primitives-algebra = { path = "algebra" }
 crypto-primitives-proc-macros = { path = "proc-macros" }
 num-traits = { version = "0.2", default-features = false }
+pastey = "0"
 proptest = { version = "1", default-features = false, features = ["alloc"] }
 rand = { version = "0.10.0-rc.1", default-features = false }
+rand_core = { version = "0.9", default-features = false }
+rayon = { version = "1.10" }
+serde = { version = "1", default-features = false }
+thiserror = { version = "2.0.17" }
+zeroize = { version = "1", default-features = false }
 
 [workspace.lints.rust]
 missing_docs = "allow" # FIXME
@@ -83,3 +44,5 @@ cast_sign_loss = "deny"
 needless_return = "deny"
 panicking_overflow_checks = "deny"
 unwrap_used = "deny"
+
+
