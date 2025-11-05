@@ -30,10 +30,10 @@ After cloning the repository, follow the instructions below to run the documenta
 cargo doc
 ```
 
-Docs for `TODO(template) template_crate`:
+Docs for `crypto-primitives`:
 
 ```sh
-RUSTDOCFLAGS="--html-in-header katex-header.html" cargo doc --no-deps -p template_crate --open
+RUSTDOCFLAGS="--html-in-header katex-header.html" cargo doc --no-deps -p crypto-primitives --open
 ```
 
 ## Performance
@@ -88,7 +88,7 @@ This command will open a browser page that contains a graphic representation of 
 
 ### Dhat
 We can add Dhat as a dependency:
-```rust
+```toml
 [dependencies]
 dhat = "latest"
 
