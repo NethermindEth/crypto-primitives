@@ -17,6 +17,11 @@ use core::{
 use num_traits::{Inv, Pow, Zero};
 use thiserror::Error;
 
+#[cfg(target_pointer_width = "64")]
+pub const WORD_FACTOR: usize = 1;
+#[cfg(target_pointer_width = "32")]
+pub const WORD_FACTOR: usize = 2;
+
 /// Element of a field (F) - a group where addition and multiplication are
 /// defined with their respective inverse operations.
 pub trait Field:

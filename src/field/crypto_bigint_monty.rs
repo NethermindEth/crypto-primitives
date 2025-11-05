@@ -383,8 +383,6 @@ impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<&Int<LIMBS2>> for M
 
             let result = Self(MontyForm::<LIMBS>::new(&abs, *cfg));
 
-            // TODO: ok, this might lead to undesired
-            //       results if `value` is greater than the modulus.
             if value.is_negative() { -result } else { result }
         } else {
             let abs = value
@@ -394,23 +392,33 @@ impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<&Int<LIMBS2>> for M
                 .resize::<LIMBS>();
             let result = Self(MontyForm::<LIMBS>::new(&abs, *cfg));
 
-            // TODO: same issue as above potnetially?
             if value.is_negative() { -result } else { result }
         }
     }
 }
 
-impl<const LIMBS: usize> FromWithConfig<crypto_bigint::Uint<LIMBS>> for MontyField<LIMBS> {
-    fn from_with_cfg(value: crypto_bigint::Uint<LIMBS>, cfg: &Self::Config) -> Self {
+impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<Uint<LIMBS2>> for MontyField<LIMBS> {
+    fn from_with_cfg(value: Uint<LIMBS2>, cfg: &Self::Config) -> Self {
         Self::from_with_cfg(&value, cfg)
     }
 }
 
-impl<const LIMBS: usize> FromWithConfig<&crypto_bigint::Uint<LIMBS>> for MontyField<LIMBS> {
+impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<&Uint<LIMBS2>> for MontyField<LIMBS> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn from_with_cfg(value: &crypto_bigint::Uint<LIMBS>, cfg: &Self::Config) -> Self {
-        let value = value.into();
-        Self(MontyForm::new(&value, *cfg))
+    fn from_with_cfg(value: &Uint<LIMBS2>, cfg: &Self::Config) -> Self {
+        if LIMBS >= LIMBS2 {
+            Self::new(MontyForm::new(&value.inner().resize(), *cfg))
+        } else {
+            let abs = value
+                .inner()
+                .rem(
+                    &crypto_bigint::NonZero::<crypto_bigint::Uint<LIMBS>>::new_unwrap(
+                        cfg.modulus().get(),
+                    ),
+                )
+                .resize::<LIMBS>();
+            Self(MontyForm::<LIMBS>::new(&abs, *cfg))
+        }
     }
 }
 
@@ -438,12 +446,12 @@ impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
         self.0.params()
     }
 
-    fn modulus(&self) -> Uint<LIMBS> {
+    fn modulus(&self) -> Self::Inner {
         Uint::new(self.0.params().modulus().get())
     }
 
     #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn modulus_minus_one_div_two(&self) -> Uint<LIMBS> {
+    fn modulus_minus_one_div_two(&self) -> Self::Inner {
         let value = self.0.params().modulus().get();
         Uint::new(
             (value - crypto_bigint::Uint::one())
@@ -475,6 +483,37 @@ impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
     }
 }
 
+//
+// Predefined fields of various sizes for convenience
+//
+
+pub type F64 = MontyField<{ crypto_bigint::U64::LIMBS }>;
+pub type F128 = MontyField<{ 2 * WORD_FACTOR }>;
+pub type F192 = MontyField<{ 3 * WORD_FACTOR }>;
+pub type F256 = MontyField<{ 4 * WORD_FACTOR }>;
+pub type F320 = MontyField<{ 5 * WORD_FACTOR }>;
+pub type F384 = MontyField<{ 6 * WORD_FACTOR }>;
+pub type F448 = MontyField<{ 7 * WORD_FACTOR }>;
+pub type F512 = MontyField<{ 8 * WORD_FACTOR }>;
+pub type F576 = MontyField<{ 9 * WORD_FACTOR }>;
+pub type F640 = MontyField<{ 10 * WORD_FACTOR }>;
+pub type F704 = MontyField<{ 11 * WORD_FACTOR }>;
+pub type F768 = MontyField<{ 12 * WORD_FACTOR }>;
+pub type F832 = MontyField<{ 13 * WORD_FACTOR }>;
+pub type F896 = MontyField<{ 14 * WORD_FACTOR }>;
+pub type F960 = MontyField<{ 15 * WORD_FACTOR }>;
+pub type F1024 = MontyField<{ 16 * WORD_FACTOR }>;
+pub type F1280 = MontyField<{ 20 * WORD_FACTOR }>;
+pub type F1536 = MontyField<{ 24 * WORD_FACTOR }>;
+pub type F1792 = MontyField<{ 28 * WORD_FACTOR }>;
+pub type F2048 = MontyField<{ 32 * WORD_FACTOR }>;
+pub type F3072 = MontyField<{ 48 * WORD_FACTOR }>;
+pub type F4096 = MontyField<{ 64 * WORD_FACTOR }>;
+pub type F6144 = MontyField<{ 96 * WORD_FACTOR }>;
+pub type F8192 = MontyField<{ 128 * WORD_FACTOR }>;
+pub type F16384 = MontyField<{ 256 * WORD_FACTOR }>;
+pub type F32768 = MontyField<{ 512 * WORD_FACTOR }>;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,8 +523,7 @@ mod tests {
     use num_traits::Pow;
 
     const LIMBS: usize = 3;
-
-    type F = MontyField<LIMBS>;
+    type F = F192;
 
     //
     // Test helpers
@@ -832,6 +870,25 @@ mod tests {
         let l = from_u64(5);
         k *= &l;
         assert_eq!(k, from_u64(50));
+    }
+
+    #[test]
+    fn from_uint_int() {
+        type F = F64;
+
+        let cfg = F::make_cfg(&Uint::from(17u64)).unwrap();
+
+        let x = F::from_with_cfg(Int::<1>::from(18), &cfg);
+        assert_eq!(x, F::from_with_cfg(1u64, &cfg));
+
+        let y = F::from_with_cfg(Int::<1>::from(-18), &cfg);
+        assert_eq!(y, F::from_with_cfg(16u64, &cfg));
+
+        let z = F::from_with_cfg(Uint::<2>::from(0xFFFFFFFFFFFFFFFFFFFFFFFFFFFAu128), &cfg);
+        assert_eq!(z, F::from_with_cfg(12u64, &cfg));
+
+        let u = F::from_with_cfg(Int::<2>::from(-0xFFFFFFFFFFFFFFFFFFFFFFFFFFFAi128), &cfg);
+        assert_eq!(u, F::from_with_cfg(5u64, &cfg));
     }
 
     #[test]
