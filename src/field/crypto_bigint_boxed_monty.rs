@@ -1,18 +1,18 @@
 use super::*;
-use crate::{IntRing, IntSemiring, Semiring, boolean::Boolean, crypto_bigint_int::Int};
+use crate::{IntRing, Semiring, boolean::Boolean, crypto_bigint_int::Int};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     hash::{Hash, Hasher},
     iter::{Product, Sum},
-    ops::{Add, AddAssign, DivAssign, Mul, MulAssign, Rem, RemAssign, Sub, SubAssign},
+    ops::{Add, AddAssign, DivAssign, Mul, MulAssign, Sub, SubAssign},
 };
 use crypto_bigint::{
-    BoxedUint, Integer, NonZero, Odd, Resize,
+    BoxedUint, NonZero, Odd, Resize,
     modular::{BoxedMontyForm, BoxedMontyParams},
 };
 use crypto_primitives_proc_macros::InfallibleCheckedOp;
-use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedRem, CheckedSub, Pow};
+use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, Pow};
 
 #[derive(Clone, PartialEq, Eq, InfallibleCheckedOp)]
 #[infallible_checked_unary_op((CheckedNeg, neg))]
@@ -151,38 +151,6 @@ impl Div<BoxedMontyField> for &BoxedMontyField {
     }
 }
 
-impl Rem for BoxedMontyField {
-    type Output = Self;
-
-    fn rem(self, rhs: Self) -> Self::Output {
-        self.rem(&rhs)
-    }
-}
-
-impl Rem<&Self> for BoxedMontyField {
-    type Output = Self;
-
-    fn rem(self, rhs: &Self) -> Self::Output {
-        self.checked_rem(rhs).expect("Division by zero")
-    }
-}
-
-impl Rem for &BoxedMontyField {
-    type Output = BoxedMontyField;
-
-    fn rem(self, rhs: Self) -> Self::Output {
-        self.checked_rem(rhs).expect("Division by zero")
-    }
-}
-
-impl Rem<BoxedMontyField> for &BoxedMontyField {
-    type Output = BoxedMontyField;
-
-    fn rem(self, rhs: BoxedMontyField) -> Self::Output {
-        self.rem(&rhs)
-    }
-}
-
 impl Pow<u32> for BoxedMontyField {
     type Output = Self;
 
@@ -222,16 +190,6 @@ impl CheckedDiv for BoxedMontyField {
     }
 }
 
-impl CheckedRem for BoxedMontyField {
-    fn checked_rem(&self, v: &Self) -> Option<Self> {
-        let rhs = NonZero::new(v.0.retrieve()).into_option()?;
-        Some(Self(BoxedMontyForm::new(
-            self.0.retrieve().rem(&rhs),
-            self.0.params().clone(),
-        )))
-    }
-}
-
 //
 // Arithmetic assign operations
 //
@@ -264,18 +222,6 @@ impl DivAssign for BoxedMontyField {
 impl DivAssign<&Self> for BoxedMontyField {
     fn div_assign(&mut self, rhs: &Self) {
         self.0.mul_assign(rhs.0.invert().expect("Division by zero"))
-    }
-}
-
-impl RemAssign for BoxedMontyField {
-    fn rem_assign(&mut self, rhs: Self) {
-        self.rem_assign(&rhs);
-    }
-}
-
-impl RemAssign<&Self> for BoxedMontyField {
-    fn rem_assign(&mut self, rhs: &Self) {
-        *self = self.checked_rem(rhs).expect("Division by zero");
     }
 }
 
@@ -478,32 +424,6 @@ impl Semiring for BoxedMontyField {}
 
 impl Ring for BoxedMontyField {}
 
-impl IntSemiring for BoxedMontyField {
-    fn is_odd(&self) -> bool {
-        // Sadly there's no efficient way to implement this for Montgomery form
-        self.0.retrieve().is_odd().into()
-    }
-
-    fn is_even(&self) -> bool {
-        // Sadly there's no efficient way to implement this for Montgomery form
-        self.0.retrieve().is_even().into()
-    }
-}
-
-impl IntRing for BoxedMontyField {
-    fn checked_abs(&self) -> Option<Self> {
-        Some(self.clone())
-    }
-
-    fn is_positive(&self) -> bool {
-        self.0.is_nonzero().into()
-    }
-
-    fn is_negative(&self) -> bool {
-        false
-    }
-}
-
 impl Field for BoxedMontyField {
     type Inner = BoxedUint;
 
@@ -520,12 +440,12 @@ impl PrimeField for BoxedMontyField {
         self.0.params()
     }
 
-    fn modulus(&self) -> BoxedUint {
+    fn modulus(&self) -> Self::Inner {
         self.0.params().modulus().clone().get()
     }
 
     #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn modulus_minus_one_div_two(&self) -> BoxedUint {
+    fn modulus_minus_one_div_two(&self) -> Self::Inner {
         let value = self.0.params().modulus().clone().get();
         (value - BoxedUint::one()) / NonZero::new(BoxedUint::from(2_u8)).unwrap()
     }
@@ -557,7 +477,7 @@ impl PrimeField for BoxedMontyField {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{IntRingWithRem, ensure_type_implements_trait};
+
     use alloc::vec;
     use crypto_bigint::BoxedUint;
     use num_traits::Pow;
@@ -592,11 +512,6 @@ mod tests {
 
     fn one() -> F {
         F::one_with_cfg(&test_config())
-    }
-
-    #[test]
-    fn ensure_blanket_traits() {
-        ensure_type_implements_trait!(F, IntRingWithRem);
     }
 
     #[test]
@@ -825,20 +740,6 @@ mod tests {
 
         // Division by zero
         assert!(a.checked_div(&zero).is_none());
-    }
-
-    #[test]
-    fn checked_rem() {
-        let a = from_u64(17);
-        let b = from_u64(5);
-        let zero = zero();
-
-        // Normal remainder
-        let c = a.checked_rem(&b).unwrap();
-        assert_eq!(c, from_u64(2));
-
-        // Remainder by zero
-        assert!(a.checked_rem(&zero).is_none());
     }
 
     #[allow(clippy::op_ref)]
@@ -1104,25 +1005,5 @@ mod tests {
         let even_modulus = BoxedUint::from(42_u64);
         let result = F::make_cfg(&even_modulus);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn int_ring_methods() {
-        let even = from_u64(20);
-        let odd = from_u64(21);
-
-        assert!(even.is_even());
-        assert!(!even.is_odd());
-        assert!(odd.is_odd());
-        assert!(!odd.is_even());
-
-        let a = from_u64(10);
-        assert_eq!(a.checked_abs(), Some(a.clone()));
-        assert!(a.is_positive());
-        assert!(!a.is_negative());
-
-        let zero = zero();
-        assert!(!zero.is_positive());
-        assert!(!zero.is_negative());
     }
 }
