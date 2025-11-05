@@ -1,25 +1,21 @@
 use super::*;
-use crate::{
-    IntRing, IntSemiring, Semiring, boolean::Boolean, crypto_bigint_int::Int,
-    crypto_bigint_uint::Uint,
-};
+use crate::{Semiring, boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     hash::{Hash, Hasher},
     iter::{Product, Sum},
-    ops::{Add, AddAssign, DivAssign, Mul, MulAssign, Rem, RemAssign, Sub, SubAssign},
+    ops::{Add, AddAssign, DivAssign, Mul, MulAssign, Sub, SubAssign},
     str::FromStr,
 };
 use crypto_bigint::{
-    Integer, Limb,
+    Limb,
     modular::{ConstMontyForm, ConstMontyParams as Params, Retrieve},
     subtle::{Choice, ConditionallySelectable, ConstantTimeEq},
 };
 use crypto_primitives_proc_macros::InfallibleCheckedOp;
 use num_traits::{
-    CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedRem, CheckedSub, ConstOne, ConstZero,
-    One, Pow, Zero,
+    CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Pow, Zero,
 };
 
 #[cfg(feature = "rand")]
@@ -259,29 +255,6 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Div<&Self> for ConstMontyField<Mod,
     }
 }
 
-impl<Mod: Params<LIMBS>, const LIMBS: usize> Rem for ConstMontyField<Mod, LIMBS> {
-    type Output = Self;
-
-    fn rem(self, rhs: Self) -> Self::Output {
-        Self(ConstMontyForm::new(
-            &self
-                .0
-                .retrieve()
-                .checked_rem(&rhs.0.retrieve())
-                .expect("Division by zero"),
-        ))
-    }
-}
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> Rem<&Self> for ConstMontyField<Mod, LIMBS> {
-    type Output = Self;
-
-    #[inline(always)]
-    fn rem(self, rhs: &Self) -> Self::Output {
-        self.rem(*rhs)
-    }
-}
-
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Pow<u32> for ConstMontyField<Mod, LIMBS> {
     type Output = Self;
 
@@ -321,13 +294,6 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> CheckedDiv for ConstMontyField<Mod,
     }
 }
 
-impl<Mod: Params<LIMBS>, const LIMBS: usize> CheckedRem for ConstMontyField<Mod, LIMBS> {
-    #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn checked_rem(&self, v: &Self) -> Option<Self> {
-        if v.is_zero() { None } else { Some(*self % v) }
-    }
-}
-
 //
 // Arithmetic assign operations
 //
@@ -352,7 +318,6 @@ impl_field_op_assign!(AddAssign, add_assign, add);
 impl_field_op_assign!(SubAssign, sub_assign, sub);
 impl_field_op_assign!(MulAssign, mul_assign, mul);
 impl_field_op_assign!(DivAssign, div_assign, div);
-impl_field_op_assign!(RemAssign, rem_assign, rem);
 
 //
 // Aggregate operations
@@ -543,32 +508,6 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Semiring for ConstMontyField<Mod, L
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Ring for ConstMontyField<Mod, LIMBS> {}
 
-impl<Mod: Params<LIMBS>, const LIMBS: usize> IntSemiring for ConstMontyField<Mod, LIMBS> {
-    fn is_odd(&self) -> bool {
-        // Sadly there's no efficient way to implement this for Montgomery form
-        self.0.retrieve().is_odd().into()
-    }
-
-    fn is_even(&self) -> bool {
-        // Sadly there's no efficient way to implement this for Montgomery form
-        self.0.retrieve().is_even().into()
-    }
-}
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> IntRing for ConstMontyField<Mod, LIMBS> {
-    fn checked_abs(&self) -> Option<Self> {
-        Some(*self)
-    }
-
-    fn is_positive(&self) -> bool {
-        !self.is_zero()
-    }
-
-    fn is_negative(&self) -> bool {
-        false
-    }
-}
-
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Field for ConstMontyField<Mod, LIMBS> {
     type Inner = ConstMontyForm<Mod, LIMBS>;
 
@@ -737,7 +676,7 @@ pub type F32768<Mod> = ConstMontyField<Mod, { 512 * WORD_FACTOR }>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ConstIntRing, IntRingWithRem, ensure_type_implements_trait};
+    use crate::ensure_type_implements_trait;
     use crypto_bigint::{Square, U256, const_monty_params};
     use num_traits::{One, Zero};
 
@@ -750,8 +689,7 @@ mod tests {
 
     #[test]
     fn ensure_blanket_traits() {
-        ensure_type_implements_trait!(F, ConstIntRing);
-        ensure_type_implements_trait!(F, IntRingWithRem);
+        ensure_type_implements_trait!(F, PrimeField);
     }
 
     #[test]
@@ -1096,37 +1034,6 @@ mod tests {
         assert!(a.partial_cmp(&b).is_some());
     }
 
-    #[allow(clippy::op_ref)]
-    #[test]
-    fn rem_operations() {
-        let a: F = 17_u64.into();
-        let b: F = 5_u64.into();
-
-        // Test Rem
-        let r = a % b;
-        assert_eq!(r, F::from(2_u64));
-
-        // Test Rem with reference
-        let r2 = a % &b;
-        assert_eq!(r2, F::from(2_u64));
-
-        // Test RemAssign
-        let mut c = a;
-        c %= b;
-        assert_eq!(c, F::from(2_u64));
-
-        let mut d = a;
-        d %= &b;
-        assert_eq!(d, F::from(2_u64));
-    }
-
-    #[test]
-    #[should_panic(expected = "Division by zero")]
-    fn rem_by_zero_panics() {
-        let a: F = 10_u64.into();
-        let _ = a % F::zero();
-    }
-
     #[test]
     fn pow_operation() {
         let base: F = 2_u64.into();
@@ -1162,10 +1069,6 @@ mod tests {
         // Test checked_div
         assert_eq!(a.checked_div(&b).unwrap(), a / b);
         assert!(a.checked_div(&F::zero()).is_none());
-
-        // Test checked_rem
-        assert_eq!(a.checked_rem(&b).unwrap(), a % b);
-        assert!(a.checked_rem(&F::zero()).is_none());
     }
 
     #[test]

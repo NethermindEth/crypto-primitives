@@ -7,7 +7,7 @@ pub mod crypto_bigint_boxed_monty;
 #[cfg(feature = "crypto_bigint")]
 pub mod crypto_bigint_const_monty;
 
-use crate::{ConstIntRing, ring::Ring};
+use crate::{ConstSemiring, ring::Ring};
 use core::{
     fmt::Debug,
     ops::{Div, DivAssign, Neg},
@@ -71,7 +71,7 @@ pub trait PrimeField: Field {
 
 /// Prime field whose modulus is a constant value known at compile time.
 pub trait ConstPrimeField:
-    Field + ConstIntRing + Inv<Output = Option<Self>> + From<u64> + From<u128> + From<Self::Inner>
+    Field + ConstSemiring + Inv<Output = Option<Self>> + From<u64> + From<u128> + From<Self::Inner>
 {
     const MODULUS: Self::Inner;
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner;
