@@ -6,6 +6,8 @@ pub mod ark_ff_fp;
 pub mod crypto_bigint_boxed_monty;
 #[cfg(feature = "crypto_bigint")]
 pub mod crypto_bigint_const_monty;
+#[cfg(feature = "crypto_bigint")]
+pub mod crypto_bigint_monty;
 
 use crate::{ConstSemiring, ring::Ring};
 use core::{
