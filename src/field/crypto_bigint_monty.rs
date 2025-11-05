@@ -317,14 +317,9 @@ macro_rules! impl_from_signed {
             #[allow(clippy::arithmetic_side_effects)] // False alert
             impl<const LIMBS: usize>FromWithConfig<$t> for MontyField<LIMBS> {
                 fn from_with_cfg(value: $t, cfg: &Self::Config) -> Self {
-                    let abs: u128 = if value == <$t>::MIN {
-                        <u128 as TryFrom<$t>>::try_from(<$t>::MAX).expect("unreachable") + 1
-                    } else {
-                        value.abs().try_into().expect("unreachable")
-                    };
-                    let abs: crypto_bigint::Uint<LIMBS> = abs.into();
-                    let result = Self(MontyForm::<LIMBS>::new(&abs, *cfg));
-                    if value.is_negative() { -result } else { result }
+                    let magnitude = Uint::from(value.abs_diff(0));
+                    let form = MontyForm::new(magnitude.inner(), cfg.clone());
+                    Self(if value.is_negative() { -form } else { form })
                 }
             }
 
@@ -507,24 +502,25 @@ pub type F8192 = MontyField<{ 128 * WORD_FACTOR }>;
 pub type F16384 = MontyField<{ 256 * WORD_FACTOR }>;
 pub type F32768 = MontyField<{ 512 * WORD_FACTOR }>;
 
+#[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ensure_type_implements_trait;
     use alloc::vec;
-
+    use crypto_bigint::U64;
     use num_traits::Pow;
 
-    const LIMBS: usize = 3;
-    type F = F192;
+    const LIMBS: usize = 4;
+    type F = F256;
 
     //
     // Test helpers
     //
     fn test_config() -> MontyParams<LIMBS> {
-        // Using a 256-bit prime
+        // Using a 256-bit prime 2^256 - 2^32 - 977 (secp256k1 field prime)
         let modulus = crypto_bigint::Uint::<LIMBS>::from_be_hex(
-            "0000000000000da3de725647f9c7c10fd5c6174de36d08e3",
+            "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
         );
         let modulus = Odd::new(modulus).expect("modulus should be odd");
         MontyParams::new(modulus)
@@ -624,15 +620,6 @@ mod tests {
     }
 
     #[test]
-    fn from_unsigned_and_signed() {
-        let cfg = test_config();
-        assert_eq!(F::from_with_cfg(0_u64, &cfg), zero());
-        assert_eq!(F::from_with_cfg(1_u32, &cfg), one());
-        assert_eq!(from_i64(-1) + one(), zero());
-        assert_eq!(from_i64(-5) + from_u64(5), zero());
-    }
-
-    #[test]
     fn from_bool() {
         let cfg = test_config();
         assert_eq!(F::from_with_cfg(true, &cfg), one());
@@ -642,6 +629,51 @@ mod tests {
         let f = F::from_with_cfg(false, &cfg);
         assert_eq!(t, one());
         assert_eq!(f, zero());
+    }
+
+    #[test]
+    fn from_unsigned_and_signed() {
+        type F = F64;
+        const LIMBS: usize = U64::LIMBS;
+        let cfg = {
+            // Using a 64-bit prime 10064419296686275259
+            let modulus = crypto_bigint::Uint::<LIMBS>::from_be_hex("8bac0006d9927abb");
+            let modulus = Odd::new(modulus).expect("modulus should be odd");
+            MontyParams::new(modulus)
+        };
+        macro_rules! to_field {
+            ($x:expr) => {
+                F::from_with_cfg($x, &cfg)
+            };
+        }
+        let zero = F::zero_with_cfg(&cfg);
+        let one = F::one_with_cfg(&cfg);
+        assert_eq!(to_field!(0), zero);
+        assert_eq!(to_field!(1), one);
+        assert_eq!(to_field!(-1) + one, zero);
+        assert_eq!(to_field!(-5) + F::from_with_cfg(5, &cfg), zero);
+
+        // u64 maximum value (hand-calculated)
+        assert_eq!(
+            to_field!(u64::MAX),
+            to_field!(Uint::<LIMBS>::from_be_hex("7453fff9266d8544"))
+        );
+
+        // i64 maximum value (hand-calculated)
+        assert_eq!(
+            to_field!(i64::MAX),
+            to_field!(Uint::<LIMBS>::from_be_hex("7fffffffffffffff"))
+        );
+
+        // i64 minimum value (hand-calculated)
+        assert_eq!(
+            to_field!(i64::MIN),
+            to_field!(Uint::<LIMBS>::from_be_hex("0bac0006d9927abb"))
+        );
+
+        // Verify property: i64::MIN + |i64::MIN| = 0
+        let i64_min_abs = to_field!(i64::MIN.unsigned_abs());
+        assert_eq!(to_field!(i64::MIN) + i64_min_abs, zero);
     }
 
     #[test]
@@ -1031,7 +1063,7 @@ mod tests {
         assert_eq!(
             modulus,
             Uint::new(crypto_bigint::Uint::<LIMBS>::from_be_hex(
-                "0000000000000da3de725647f9c7c10fd5c6174de36d08e3"
+                "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"
             ))
         );
 
@@ -1041,7 +1073,7 @@ mod tests {
             m_minus_1_div_2,
             Uint::new(
                 (crypto_bigint::Uint::<LIMBS>::from_be_hex(
-                    "0000000000000da3de725647f9c7c10fd5c6174de36d08e3"
+                    "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"
                 ) - crypto_bigint::Uint::one())
                     / crypto_bigint::Uint::<LIMBS>::from(2u64)
             )
@@ -1057,7 +1089,7 @@ mod tests {
     #[test]
     fn make_cfg_works() {
         let modulus = Uint::new(crypto_bigint::Uint::<LIMBS>::from_be_hex(
-            "0000000000000da3de725647f9c7c10fd5c6174de36d08e3",
+            "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
         ));
         let cfg = F::make_cfg(&modulus).expect("Should create config");
 
