@@ -116,6 +116,16 @@ impl<const LIMBS: usize> Uint<LIMBS> {
     pub const fn as_int(&self) -> &Int<LIMBS> {
         Int::new_ref(self.0.as_int())
     }
+
+    /// See [crypto_bigint::Uint::from_be_hex]
+    pub const fn from_be_hex(hex: &str) -> Self {
+        Self(crypto_bigint::Uint::<LIMBS>::from_be_hex(hex))
+    }
+
+    /// See [crypto_bigint::Uint::from_le_hex]
+    pub const fn from_le_hex(hex: &str) -> Self {
+        Self(crypto_bigint::Uint::<LIMBS>::from_le_hex(hex))
+    }
 }
 
 const fn checked_resize<const SRC: usize, const DST: usize>(

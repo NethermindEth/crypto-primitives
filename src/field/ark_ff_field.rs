@@ -580,11 +580,11 @@ mod tests {
     use super::*;
     use crate::{ConstRing, ensure_type_implements_trait};
     use alloc::vec::Vec;
-    use ark_ff::{Fp256, MontBackend, MontConfig};
+    use ark_ff::{Fp64, Fp256, MontBackend, MontConfig};
+    use core::str::FromStr;
     use num_traits::{One, Zero};
 
-    // Define a test prime field for testing
-    // Using a 256-bit prime for testing: 2^256 - 2^32 - 977 (secp256k1 field prime)
+    // Using a 256-bit prime 2^256 - 2^32 - 977 (secp256k1 field prime)
     #[derive(MontConfig)]
     #[modulus = "115792089237316195423570985008687907853269984665640564039457584007908834671663"]
     #[generator = "3"]
@@ -670,14 +670,6 @@ mod tests {
     }
 
     #[test]
-    fn from_unsigned_and_signed() {
-        assert_eq!(F::from(0_u64), F::zero());
-        assert_eq!(F::from(1_u32), F::one());
-        assert_eq!(F::from(-1_i32) + F::one(), F::zero());
-        assert_eq!(F::from(-5_i64) + F::from(5_u64), F::zero());
-    }
-
-    #[test]
     fn from_bool() {
         assert_eq!(F::from(true), F::one());
         assert_eq!(F::from(false), F::zero());
@@ -686,6 +678,44 @@ mod tests {
         let f: F = false.into();
         assert_eq!(t, F::one());
         assert_eq!(f, F::zero());
+    }
+
+    #[test]
+    fn from_unsigned_and_signed() {
+        // Using 64-bit prime 0x8bac0006d9927abb
+        #[derive(MontConfig)]
+        #[modulus = "10064419296686275259"]
+        #[generator = "3"]
+        pub struct TestFieldConfig;
+        type ArkFp = Fp64<MontBackend<TestFieldConfig, 1>>;
+        type F = ArkField<ArkFp>;
+
+        assert_eq!(F::from(0_u64), F::zero());
+        assert_eq!(F::from(1_u32), F::one());
+        assert_eq!(F::from(-1_i32) + F::one(), F::zero());
+        assert_eq!(F::from(-5_i64) + F::from(5_u64), F::zero());
+
+        // u64 maximum value (hand-calculated)
+        assert_eq!(
+            F::from(u64::MAX),
+            F::new(ArkFp::from_str("8382324777023276356").unwrap())
+        );
+
+        // i64 maximum value (hand-calculated)
+        assert_eq!(
+            F::from(i64::MAX),
+            F::new(ArkFp::from_str("9223372036854775807").unwrap())
+        );
+
+        // i64 minimum value (hand-calculated)
+        assert_eq!(
+            F::from(i64::MIN),
+            F::new(ArkFp::from_str("841047259831499451").unwrap())
+        );
+
+        // Verify property: i64::MIN + |i64::MIN| = 0
+        let i64_min_abs = F::from(i64::MIN.unsigned_abs());
+        assert_eq!(F::from(i64::MIN) + i64_min_abs, F::zero());
     }
 
     #[test]

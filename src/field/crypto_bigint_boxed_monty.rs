@@ -316,15 +316,9 @@ macro_rules! impl_from_signed {
             #[allow(clippy::arithmetic_side_effects)] // False alert
             impl FromWithConfig<$t> for BoxedMontyField {
                 fn from_with_cfg(value: $t, cfg: &Self::Config) -> Self {
-                    let abs: u128 = if value == <$t>::MIN {
-                        <u128 as TryFrom<$t>>::try_from(<$t>::MAX).expect("unreachable") + 1
-                    } else {
-                        value.abs().try_into().expect("unreachable")
-                    };
-                    let abs: BoxedUint = abs.into();
-                    let abs = abs.resize(cfg.modulus().bits_precision());
-                    let result = Self(BoxedMontyForm::new(abs, cfg.clone()));
-                    if value.is_negative() { -result } else { result }
+                    let magnitude = BoxedUint::from(value.abs_diff(0)).resize(cfg.modulus().bits_precision());
+                    let form = BoxedMontyForm::new(magnitude, cfg.clone());
+                    Self(if value.is_negative() { -form } else { form })
                 }
             }
 
@@ -342,13 +336,13 @@ impl_from_signed!(i8, i16, i32, i64, i128);
 
 impl FromWithConfig<bool> for BoxedMontyField {
     fn from_with_cfg(value: bool, cfg: &Self::Config) -> Self {
-        let abs: BoxedUint = if value {
+        let magnitude: BoxedUint = if value {
             BoxedUint::one()
         } else {
             BoxedUint::zero()
         };
-        let abs = abs.resize(cfg.modulus().bits_precision());
-        Self(BoxedMontyForm::new(abs, cfg.clone()))
+        let magnitude = magnitude.resize(cfg.modulus().bits_precision());
+        Self(BoxedMontyForm::new(magnitude, cfg.clone()))
     }
 }
 
@@ -474,10 +468,10 @@ impl PrimeField for BoxedMontyField {
     }
 }
 
+#[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use alloc::vec;
     use crypto_bigint::BoxedUint;
     use num_traits::Pow;
@@ -488,9 +482,9 @@ mod tests {
     // Test helpers
     //
     fn test_config() -> BoxedMontyParams {
-        // Using a 256-bit prime
+        // Using a 256-bit prime 2^256 - 2^32 - 977 (secp256k1 field prime)
         let modulus = BoxedUint::from_be_hex(
-            "00dca94d8a1ecce3b6e8755d8999787d0524d8ca1ea755e7af84fb646fa31f27",
+            "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
             256,
         )
         .unwrap();
@@ -587,15 +581,6 @@ mod tests {
     }
 
     #[test]
-    fn from_unsigned_and_signed() {
-        let cfg = test_config();
-        assert_eq!(F::from_with_cfg(0_u64, &cfg), zero());
-        assert_eq!(F::from_with_cfg(1_u32, &cfg), one());
-        assert_eq!(from_i64(-1) + one(), zero());
-        assert_eq!(from_i64(-5) + from_u64(5), zero());
-    }
-
-    #[test]
     fn from_bool() {
         let cfg = test_config();
         assert_eq!(F::from_with_cfg(true, &cfg), one());
@@ -605,6 +590,49 @@ mod tests {
         let f = F::from_with_cfg(false, &cfg);
         assert_eq!(t, one());
         assert_eq!(f, zero());
+    }
+
+    #[test]
+    fn from_unsigned_and_signed() {
+        let cfg = {
+            // Using a 64-bit prime 10064419296686275259
+            let modulus = BoxedUint::from_be_hex("8bac0006d9927abb", 64).unwrap();
+            let modulus = Odd::new(modulus).expect("modulus should be odd");
+            BoxedMontyParams::new(modulus)
+        };
+        macro_rules! to_field {
+            ($x:expr) => {
+                F::from_with_cfg($x, &cfg)
+            };
+        }
+        let zero = F::zero_with_cfg(&cfg);
+        let one = F::one_with_cfg(&cfg);
+        assert_eq!(to_field!(0), zero);
+        assert_eq!(to_field!(1), one);
+        assert_eq!(to_field!(-1) + one, zero);
+        assert_eq!(to_field!(-5) + F::from_with_cfg(5, &cfg), zero);
+
+        // u64 maximum value (hand-calculated)
+        assert_eq!(
+            to_field!(u64::MAX),
+            to_field!(BoxedUint::from_be_hex("7453fff9266d8544", 64).unwrap())
+        );
+
+        // i64 maximum value (hand-calculated)
+        assert_eq!(
+            to_field!(i64::MAX),
+            to_field!(BoxedUint::from_be_hex("7fffffffffffffff", 64).unwrap())
+        );
+
+        // i64 minimum value (hand-calculated)
+        assert_eq!(
+            to_field!(i64::MIN),
+            to_field!(BoxedUint::from_be_hex("0bac0006d9927abb", 64).unwrap())
+        );
+
+        // Verify property: i64::MIN + |i64::MIN| = 0
+        let i64_min_abs = to_field!(i64::MIN.unsigned_abs());
+        assert_eq!(to_field!(i64::MIN) + i64_min_abs, zero);
     }
 
     #[test]
@@ -989,7 +1017,7 @@ mod tests {
     #[test]
     fn make_cfg_works() {
         let modulus = BoxedUint::from_be_hex(
-            "00dca94d8a1ecce3b6e8755d8999787d0524d8ca1ea755e7af84fb646fa31f27",
+            "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
             256,
         )
         .unwrap();

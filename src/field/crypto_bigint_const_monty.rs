@@ -485,6 +485,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize, const LIMBS2: usize> From<&crypto_b
             "Cannot convert Int with more limbs than ConstMontyField"
         );
         let value = value.resize();
+        // Note: abs() returns Uint so it's guaranteed to fit
         let result = Self(ConstMontyForm::new(&value.abs()));
 
         if value.is_negative().into() {
@@ -668,17 +669,19 @@ pub type F8192<Mod> = ConstMontyField<Mod, { 128 * WORD_FACTOR }>;
 pub type F16384<Mod> = ConstMontyField<Mod, { 256 * WORD_FACTOR }>;
 pub type F32768<Mod> = ConstMontyField<Mod, { 512 * WORD_FACTOR }>;
 
+#[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ensure_type_implements_trait;
-    use crypto_bigint::{Square, U256, const_monty_params};
+    use crypto_bigint::{Square, U64, U256, const_monty_params};
     use num_traits::{One, Zero};
 
+    // Using a 256-bit prime 2^256 - 2^32 - 977 (secp256k1 field prime)
     const_monty_params!(
         ModP,
         U256,
-        "00dca94d8a1ecce3b6e8755d8999787d0524d8ca1ea755e7af84fb646fa31f27"
+        "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"
     );
     type F = ConstMontyField<ModP, { U256::LIMBS }>;
 
@@ -697,14 +700,6 @@ mod tests {
     }
 
     #[test]
-    fn from_unsigned_and_signed() {
-        assert_eq!(F::from(0_u64), F::zero());
-        assert_eq!(F::from(1_u32), F::one());
-        assert_eq!(F::from(-1_i32) + F::one(), F::zero());
-        assert_eq!(F::from(-5_i64) + F::from(5_u64), F::zero());
-    }
-
-    #[test]
     fn from_bool() {
         assert_eq!(F::from(true), F::one());
         assert_eq!(F::from(false), F::zero());
@@ -716,10 +711,78 @@ mod tests {
     }
 
     #[test]
-    fn from_uint() {
-        let u: Uint<{ U256::LIMBS }> = Uint::from(123_u64);
+    fn from_unsigned_and_signed() {
+        const LIMBS: usize = U64::LIMBS;
+        const_monty_params!(ModP64, U64, "8bac0006d9927abb");
+        type F = ConstMontyField<ModP64, LIMBS>;
+
+        assert_eq!(F::from(0_u64), F::zero());
+        assert_eq!(F::from(1_u32), F::one());
+        assert_eq!(F::from(-1_i32) + F::one(), F::zero());
+        assert_eq!(F::from(-5_i64) + F::from(5_u64), F::zero());
+
+        // u64 maximum value (hand-calculated)
+        assert_eq!(
+            F::from(u64::MAX),
+            F::from_str("8382324777023276356").unwrap()
+        );
+
+        // i64 maximum value (hand-calculated)
+        assert_eq!(
+            F::from(i64::MAX),
+            F::from_str("9223372036854775807").unwrap()
+        );
+
+        // i64 minimum value (hand-calculated)
+        assert_eq!(
+            F::from(i64::MIN),
+            F::from_str("841047259831499451").unwrap()
+        );
+
+        // Verify property: i64::MIN + |i64::MIN| = 0
+        let i64_min_abs = F::from(i64::MIN.unsigned_abs());
+        assert_eq!(F::from(i64::MIN) + i64_min_abs, F::zero());
+    }
+
+    #[test]
+    fn from_uint_and_int() {
+        const LIMBS: usize = U64::LIMBS;
+        const_monty_params!(ModP64, U64, "8BAC0006D9927ABB");
+        type F = ConstMontyField<ModP64, LIMBS>;
+
+        assert_eq!(
+            Int::<LIMBS>::MIN.into_inner().abs(),
+            Uint::<LIMBS>::MAX.into_inner() / Uint::<LIMBS>::from_u64(2).into_inner()
+                + Uint::ONE.into_inner()
+        );
+
+        let u: Uint<LIMBS> = Uint::from(123_u64);
         let f: F = u.into();
         assert_eq!(f, F::from(123_u64));
+
+        let i: Int<LIMBS> = Int::from(123_i64);
+        let f_i: F = i.into();
+        assert_eq!(f_i, F::from(123_i64));
+
+        assert_eq!(F::from(Uint::ZERO), F::zero());
+
+        // Uint maximum value (hand-calculated)
+        assert_eq!(
+            F::from(Uint::MAX),
+            F::from_str("8382324777023276356").unwrap()
+        );
+
+        // Int maximum value (hand-calculated)
+        assert_eq!(
+            F::from(Int::<LIMBS>::MAX),
+            F::from_str("9223372036854775807").unwrap()
+        );
+
+        // Int minimum value (hand-calculated)
+        assert_eq!(
+            F::from(Int::<LIMBS>::MIN),
+            F::from_str("841047259831499451").unwrap()
+        );
     }
 
     #[test]
