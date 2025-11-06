@@ -378,22 +378,15 @@ impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<Int<LIMBS2>> for Mo
 impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<&Int<LIMBS2>> for MontyField<LIMBS> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
     fn from_with_cfg(value: &Int<LIMBS2>, cfg: &Self::Config) -> Self {
-        if LIMBS >= LIMBS2 {
-            let abs = value.inner().abs().resize();
+        let mut abs = value.inner().abs();
+        if LIMBS < LIMBS2 {
+            abs = abs.rem(cfg.modulus().get().resize::<LIMBS2>())
+        };
+        let abs = abs.resize();
 
-            let result = Self(MontyForm::<LIMBS>::new(&abs, *cfg));
+        let result = Self(MontyForm::<LIMBS>::new(&abs, *cfg));
 
-            if value.is_negative() { -result } else { result }
-        } else {
-            let abs = value
-                .inner()
-                .abs()
-                .rem(cfg.modulus().get().resize::<LIMBS2>())
-                .resize::<LIMBS>();
-            let result = Self(MontyForm::<LIMBS>::new(&abs, *cfg));
-
-            if value.is_negative() { -result } else { result }
-        }
+        if value.is_negative() { -result } else { result }
     }
 }
 
