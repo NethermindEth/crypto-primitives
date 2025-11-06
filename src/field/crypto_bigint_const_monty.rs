@@ -669,6 +669,7 @@ pub type F8192<Mod> = ConstMontyField<Mod, { 128 * WORD_FACTOR }>;
 pub type F16384<Mod> = ConstMontyField<Mod, { 256 * WORD_FACTOR }>;
 pub type F32768<Mod> = ConstMontyField<Mod, { 512 * WORD_FACTOR }>;
 
+#[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -676,10 +677,11 @@ mod tests {
     use crypto_bigint::{Square, U64, U256, const_monty_params};
     use num_traits::{One, Zero};
 
+    // Using a 256-bit prime 2^256 - 2^32 - 977 (secp256k1 field prime)
     const_monty_params!(
         ModP,
         U256,
-        "00dca94d8a1ecce3b6e8755d8999787d0524d8ca1ea755e7af84fb646fa31f27"
+        "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"
     );
     type F = ConstMontyField<ModP, { U256::LIMBS }>;
 
@@ -764,19 +766,19 @@ mod tests {
 
         assert_eq!(F::from(Uint::ZERO), F::zero());
 
-        // Test Uint maximum value (hand-calculated)
+        // Uint maximum value (hand-calculated)
         assert_eq!(
             F::from(Uint::MAX),
             F::from_str("8382324777023276356").unwrap()
         );
 
-        // Test Int maximum value (hand-calculated)
+        // Int maximum value (hand-calculated)
         assert_eq!(
             F::from(Int::<LIMBS>::MAX),
             F::from_str("9223372036854775807").unwrap()
         );
 
-        // Test Int minimum value (hand-calculated)
+        // Int minimum value (hand-calculated)
         assert_eq!(
             F::from(Int::<LIMBS>::MIN),
             F::from_str("841047259831499451").unwrap()

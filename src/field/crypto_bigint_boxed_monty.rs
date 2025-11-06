@@ -468,10 +468,10 @@ impl PrimeField for BoxedMontyField {
     }
 }
 
+#[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use alloc::vec;
     use crypto_bigint::BoxedUint;
     use num_traits::Pow;
@@ -1017,7 +1017,7 @@ mod tests {
     #[test]
     fn make_cfg_works() {
         let modulus = BoxedUint::from_be_hex(
-            "00dca94d8a1ecce3b6e8755d8999787d0524d8ca1ea755e7af84fb646fa31f27",
+            "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
             256,
         )
         .unwrap();

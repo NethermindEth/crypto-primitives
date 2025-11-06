@@ -509,7 +509,7 @@ mod tests {
     use crate::ensure_type_implements_trait;
     use alloc::vec;
     use crypto_bigint::U64;
-    use num_traits::Pow;
+    use num_traits::{ConstOne, ConstZero, Pow};
 
     const LIMBS: usize = 4;
     type F = F256;
@@ -633,14 +633,9 @@ mod tests {
 
     #[test]
     fn from_unsigned_and_signed() {
-        type F = F64;
         const LIMBS: usize = U64::LIMBS;
-        let cfg = {
-            // Using a 64-bit prime 10064419296686275259
-            let modulus = crypto_bigint::Uint::<LIMBS>::from_be_hex("8bac0006d9927abb");
-            let modulus = Odd::new(modulus).expect("modulus should be odd");
-            MontyParams::new(modulus)
-        };
+        type F = F64;
+        let cfg = F::make_cfg(&Uint::from(10064419296686275259_u64)).unwrap();
         macro_rules! to_field {
             ($x:expr) => {
                 F::from_with_cfg($x, &cfg)
@@ -674,6 +669,50 @@ mod tests {
         // Verify property: i64::MIN + |i64::MIN| = 0
         let i64_min_abs = to_field!(i64::MIN.unsigned_abs());
         assert_eq!(to_field!(i64::MIN) + i64_min_abs, zero);
+    }
+
+    #[test]
+    fn from_uint_and_int() {
+        const LIMBS: usize = U64::LIMBS;
+        type F = F64;
+        let cfg = F::make_cfg(&Uint::from(10064419296686275259_u64)).unwrap();
+        macro_rules! to_field {
+            ($x:expr) => {
+                F::from_with_cfg($x, &cfg)
+            };
+        }
+
+        assert_eq!(
+            Int::<LIMBS>::MIN.into_inner().abs(),
+            Uint::<LIMBS>::MAX.into_inner() / Uint::<LIMBS>::from_u64(2).into_inner()
+                + Uint::ONE.into_inner()
+        );
+
+        let u: Uint<LIMBS> = Uint::from(123_u64);
+        assert_eq!(to_field!(u), to_field!(123_u64));
+
+        let i: Int<LIMBS> = Int::from(123_i64);
+        assert_eq!(to_field!(i), to_field!(123_u64));
+
+        assert_eq!(to_field!(Uint::<LIMBS>::ZERO), F::zero_with_cfg(&cfg));
+
+        // Uint maximum value (hand-calculated)
+        assert_eq!(
+            to_field!(u64::MAX),
+            to_field!(Uint::<LIMBS>::from_be_hex("7453fff9266d8544"))
+        );
+
+        // Int maximum value (hand-calculated)
+        assert_eq!(
+            to_field!(i64::MAX),
+            to_field!(Uint::<LIMBS>::from_be_hex("7fffffffffffffff"))
+        );
+
+        // Int minimum value (hand-calculated)
+        assert_eq!(
+            to_field!(i64::MIN),
+            to_field!(Uint::<LIMBS>::from_be_hex("0bac0006d9927abb"))
+        );
     }
 
     #[test]
@@ -895,25 +934,6 @@ mod tests {
         let l = from_u64(5);
         k *= &l;
         assert_eq!(k, from_u64(50));
-    }
-
-    #[test]
-    fn from_uint_int() {
-        type F = F64;
-
-        let cfg = F::make_cfg(&Uint::from(17u64)).unwrap();
-
-        let x = F::from_with_cfg(Int::<1>::from(18), &cfg);
-        assert_eq!(x, F::from_with_cfg(1u64, &cfg));
-
-        let y = F::from_with_cfg(Int::<1>::from(-18), &cfg);
-        assert_eq!(y, F::from_with_cfg(16u64, &cfg));
-
-        let z = F::from_with_cfg(Uint::<2>::from(0xFFFFFFFFFFFFFFFFFFFFFFFFFFFAu128), &cfg);
-        assert_eq!(z, F::from_with_cfg(12u64, &cfg));
-
-        let u = F::from_with_cfg(Int::<2>::from(-0xFFFFFFFFFFFFFFFFFFFFFFFFFFFAi128), &cfg);
-        assert_eq!(u, F::from_with_cfg(5u64, &cfg));
     }
 
     #[test]

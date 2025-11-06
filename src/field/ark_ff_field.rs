@@ -584,8 +584,7 @@ mod tests {
     use core::str::FromStr;
     use num_traits::{One, Zero};
 
-    // Define a test prime field for testing
-    // Using a 256-bit prime for testing: 2^256 - 2^32 - 977 (secp256k1 field prime)
+    // Using a 256-bit prime 2^256 - 2^32 - 977 (secp256k1 field prime)
     #[derive(MontConfig)]
     #[modulus = "115792089237316195423570985008687907853269984665640564039457584007908834671663"]
     #[generator = "3"]
