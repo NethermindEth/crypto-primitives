@@ -9,7 +9,7 @@
 ![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-[![All Contributors](https://img.shields.io/badge/all_contributors-4-orange.svg?style=flat-square)](#contributors-)
+[![All Contributors](https://img.shields.io/badge/all_contributors-5-orange.svg?style=flat-square)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 
 Nethermind Crypto Primitives, a WIP endeavor to provide a set of primitives useful for cryptographic applications that can be mixed and matched together.
@@ -38,6 +38,7 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/frozenspider"><img src="https://avatars.githubusercontent.com/u/2077017?v=4?s=100" width="100px;" alt="Alex Abdugafarov"/><br /><sub><b>Alex Abdugafarov</b></sub></a><br /><a href="https://github.com/NethermindEth/crypto-primitives/commits?author=frozenspider" title="Code">💻</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/cupicmarko"><img src="https://avatars.githubusercontent.com/u/71461781?v=4?s=100" width="100px;" alt="Marko Cupic"/><br /><sub><b>Marko Cupic</b></sub></a><br /><a href="https://github.com/NethermindEth/crypto-primitives/pulls?q=is%3Apr+reviewed-by%3Acupicmarko" title="Reviewed Pull Requests">👀</a></td>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/NiDimi"><img src="https://avatars.githubusercontent.com/u/81875532?v=4?s=100" width="100px;" alt="Nick Dimitriou"/><br /><sub><b>Nick Dimitriou</b></sub></a><br /><a href="https://github.com/NethermindEth/crypto-primitives/pulls?q=is%3Apr+reviewed-by%3ANiDimi" title="Reviewed Pull Requests">👀</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ElijahVlasov"><img src="https://avatars.githubusercontent.com/u/5365540?v=4?s=100" width="100px;" alt="Ilia Vlasov"/><br /><sub><b>Ilia Vlasov</b></sub></a><br /><a href="https://github.com/NethermindEth/crypto-primitives/commits?author=ElijahVlasov" title="Code">💻</a></td>
     </tr>
   </tbody>
   <tfoot>
