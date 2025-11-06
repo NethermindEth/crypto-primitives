@@ -21,11 +21,6 @@ use num_traits::{
 #[cfg(feature = "rand")]
 use rand::{distr::StandardUniform, prelude::*, rand_core::TryRngCore};
 
-#[cfg(target_pointer_width = "64")]
-const WORD_FACTOR: usize = 1;
-#[cfg(target_pointer_width = "32")]
-const WORD_FACTOR: usize = 2;
-
 #[derive(Clone, Copy, PartialEq, Eq, InfallibleCheckedOp)]
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]

@@ -6,6 +6,8 @@ pub mod ark_ff_fp;
 pub mod crypto_bigint_boxed_monty;
 #[cfg(feature = "crypto_bigint")]
 pub mod crypto_bigint_const_monty;
+#[cfg(feature = "crypto_bigint")]
+pub mod crypto_bigint_monty;
 
 use crate::{ConstSemiring, ring::Ring};
 use core::{
@@ -14,6 +16,11 @@ use core::{
 };
 use num_traits::{Inv, Pow, Zero};
 use thiserror::Error;
+
+#[cfg(target_pointer_width = "64")]
+pub const WORD_FACTOR: usize = 1;
+#[cfg(target_pointer_width = "32")]
+pub const WORD_FACTOR: usize = 2;
 
 /// Element of a field (F) - a group where addition and multiplication are
 /// defined with their respective inverse operations.

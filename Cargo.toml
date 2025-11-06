@@ -67,7 +67,7 @@ publish = false
 crypto-primitives-proc-macros = { path = "proc-macros" }
 num-traits = { version = "0", default-features = false }
 proptest = { version = "1", default-features = false, features = ["alloc"] }
-rand = { version = "0", default-features = false }
+rand = { version = "0.10.0-rc.1", default-features = false }
 
 [workspace.lints.rust]
 missing_docs = "allow" # FIXME
