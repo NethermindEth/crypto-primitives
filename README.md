@@ -12,6 +12,10 @@
 [![All Contributors](https://img.shields.io/badge/all_contributors-5-orange.svg?style=flat-square)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 
+
+> [!CAUTION]
+> This library is a work in progress. It's under active development, and the API may change frequently. Use at your own risk.
+
 Nethermind Crypto Primitives, a WIP endeavor to provide a set of primitives useful for cryptographic applications that can be mixed and matched together.
 Contains traits and their adapters for existing libraries as optional modules.
 Toolkit is fully modular, so you can use only the parts you need.
