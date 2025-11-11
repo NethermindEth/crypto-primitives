@@ -48,7 +48,7 @@ pub trait Field:
 /// the same, otherwise operations should panic.
 ///
 /// Constant prime fields are considered a special case of dynamic prime fields.
-pub trait PrimeField: Field {
+pub trait PrimeField: Field + Inv<Output = Option<Self>> {
     /// Runtime configuration for the prime field, empty for constant prime
     /// fields. For dynamic prime fields, it could be just modulus or more
     /// complex structure.
@@ -78,7 +78,7 @@ pub trait PrimeField: Field {
 
 /// Prime field whose modulus is a constant value known at compile time.
 pub trait ConstPrimeField:
-    Field + ConstSemiring + Inv<Output = Option<Self>> + From<u64> + From<u128> + From<Self::Inner>
+    Field + ConstSemiring + From<u64> + From<u128> + From<Self::Inner>
 {
     const MODULUS: Self::Inner;
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner;
@@ -91,7 +91,7 @@ pub trait ConstPrimeField:
     fn new_unchecked(inner: Self::Inner) -> Self;
 }
 
-impl<T: ConstPrimeField> PrimeField for T {
+impl<T: ConstPrimeField + Inv<Output = Option<Self>>> PrimeField for T {
     /// For constant prime fields, the configuration is empty.
     type Config = ();
 
