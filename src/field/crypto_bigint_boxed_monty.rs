@@ -472,11 +472,18 @@ impl PrimeField for BoxedMontyField {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ensure_type_implements_trait;
     use alloc::vec;
     use crypto_bigint::BoxedUint;
     use num_traits::Pow;
 
     type F = BoxedMontyField;
+
+    #[test]
+    fn ensure_blanket_traits() {
+        // NB: this ensures `PrimeField` implementation too!
+        ensure_type_implements_trait!(F, FromPrimitiveWithConfig);
+    }
 
     //
     // Test helpers

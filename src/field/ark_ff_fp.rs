@@ -724,6 +724,7 @@ mod tests {
     #[test]
     fn ensure_blanket_traits() {
         ensure_type_implements_trait!(F, ConstIntRing);
+        ensure_type_implements_trait!(F, FromPrimitiveWithConfig);
     }
 
     #[test]
