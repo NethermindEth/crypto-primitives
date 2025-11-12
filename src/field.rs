@@ -163,8 +163,41 @@ where
     }
 }
 
+/// The trait combines all `FromWithConfig<u*>` and `FromWithConfig<i*>` into
+/// one umbrella trait. Handy when one needs conversion functions for different
+/// primitive int types.
+pub trait FromPrimitiveWithConfig:
+    FromWithConfig<u8>
+    + FromWithConfig<u16>
+    + FromWithConfig<u32>
+    + FromWithConfig<u64>
+    + FromWithConfig<u128>
+    + FromWithConfig<i8>
+    + FromWithConfig<i16>
+    + FromWithConfig<i32>
+    + FromWithConfig<i64>
+    + FromWithConfig<i128>
+{
+}
+
+/// Blanket implementation.
+impl<
+    T: FromWithConfig<u8>
+        + FromWithConfig<u16>
+        + FromWithConfig<u32>
+        + FromWithConfig<u64>
+        + FromWithConfig<u128>
+        + FromWithConfig<i8>
+        + FromWithConfig<i16>
+        + FromWithConfig<i32>
+        + FromWithConfig<i64>
+        + FromWithConfig<i128>,
+> FromPrimitiveWithConfig for T
+{
+}
+
 /// Analogous to `Into` trait, but with a prime field configuration parameter.
-/// Preferribly should not be implemented directly.
+/// Preferably should not be implemented directly.
 pub trait IntoWithConfig<F: PrimeField> {
     fn into_with_cfg(self, cfg: &F::Config) -> F;
 }

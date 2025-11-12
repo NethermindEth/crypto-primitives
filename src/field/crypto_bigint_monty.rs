@@ -544,7 +544,8 @@ mod tests {
 
     #[test]
     fn ensure_blanket_traits() {
-        ensure_type_implements_trait!(F, PrimeField);
+        // NB: this ensures `PrimeField` implementation too!
+        ensure_type_implements_trait!(F, FromPrimitiveWithConfig);
     }
 
     #[test]
