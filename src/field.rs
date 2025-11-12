@@ -52,7 +52,7 @@ pub trait PrimeField: Field {
     /// Runtime configuration for the prime field, empty for constant prime
     /// fields. For dynamic prime fields, it could be just modulus or more
     /// complex structure.
-    type Config: Debug + Clone + 'static;
+    type Config: Debug + Clone + Send + Sync + 'static;
 
     fn cfg(&self) -> &Self::Config;
 
