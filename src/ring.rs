@@ -1,7 +1,9 @@
 #[cfg(feature = "crypto_bigint")]
 pub mod crypto_bigint_int;
 
-use crate::{ConstIntSemiring, FixedSemiring, IntSemiring, IntSemiringWithShifts, Semiring};
+use crate::{
+    ConstIntSemiring, ConstSemiring, FixedSemiring, IntSemiring, IntSemiringWithShifts, Semiring,
+};
 use core::ops::{Neg, Rem, RemAssign};
 use num_traits::{CheckedNeg, CheckedRem};
 
@@ -13,8 +15,8 @@ pub trait Ring: Semiring + Neg<Output = Self> + CheckedNeg {}
 pub trait FixedRing: Ring + FixedSemiring {}
 impl<T> FixedRing for T where T: Ring + FixedSemiring {}
 
-pub trait ConstRing: FixedRing + FixedSemiring {}
-impl<T> ConstRing for T where T: FixedRing + FixedSemiring {}
+pub trait ConstRing: FixedRing + ConstSemiring {}
+impl<T> ConstRing for T where T: FixedRing + ConstSemiring {}
 
 /// Ring of integers, usually denoted as `Z`.
 pub trait IntRing: Ring + IntSemiring {
