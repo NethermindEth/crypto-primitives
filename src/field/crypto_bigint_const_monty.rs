@@ -9,7 +9,7 @@ use core::{
     str::FromStr,
 };
 use crypto_bigint::{
-    Limb,
+    Limb, NonZeroUint, Uint as CBUint,
     modular::{ConstMontyForm, ConstMontyParams as Params, Retrieve},
     subtle::{Choice, ConditionallySelectable, ConstantTimeEq},
 };
@@ -505,25 +505,28 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Semiring for ConstMontyField<Mod, L
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Ring for ConstMontyField<Mod, LIMBS> {}
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Field for ConstMontyField<Mod, LIMBS> {
-    type Inner = ConstMontyForm<Mod, LIMBS>;
+    type Inner = Uint<LIMBS>;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
-        &self.0
+        Uint::new_ref(self.0.as_montgomery())
     }
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstPrimeField for ConstMontyField<Mod, LIMBS> {
-    const MODULUS: Self::Inner = ConstMontyForm::<Mod, LIMBS>::new(Mod::PARAMS.modulus().as_ref());
+    const MODULUS: Self::Inner = *Uint::new_ref(Mod::PARAMS.modulus().as_ref());
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner = {
-        let m_minus_one = ConstMontyForm::sub(&Self::MODULUS, &ConstMontyForm::ONE);
-        m_minus_one.div_by_2()
+        let m_minus_one = CBUint::wrapping_sub(Self::MODULUS.inner(), &CBUint::ONE);
+        let two = CBUint::<LIMBS>::wrapping_add(&CBUint::ONE, &CBUint::ONE);
+        Uint::new(CBUint::wrapping_div(
+            &m_minus_one,
+            &NonZeroUint::new_unwrap(two),
+        ))
     };
 
     #[inline(always)]
     fn new_unchecked(inner: Self::Inner) -> Self {
-        // Inner value is a ConstMontyForm so it's guaranteed to be valid
-        Self(inner)
+        Self(ConstMontyForm::from_montgomery(inner.into_inner()))
     }
 }
 
@@ -1294,6 +1297,14 @@ mod prop_tests {
         "00dca94d8a1ecce3b6e8755d8999787d0524d8ca1ea755e7af84fb646fa31f27"
     );
     type F = ConstMontyField<ModP, { U256::LIMBS }>;
+
+    #[test]
+    fn modulus_minus_one_div_two_correct() {
+        assert_eq!(
+            F::MODULUS_MINUS_ONE_DIV_TWO,
+            Uint::from_be_hex("006E54A6C50F6671DB743AAEC4CCBC3E82926C650F53AAF3D7C27DB237D18F93")
+        )
+    }
 
     fn any_f() -> impl Strategy<Value = F> {
         any::<u64>().prop_map(F::from)
