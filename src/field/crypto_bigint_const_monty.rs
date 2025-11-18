@@ -1298,6 +1298,14 @@ mod prop_tests {
     );
     type F = ConstMontyField<ModP, { U256::LIMBS }>;
 
+    #[test]
+    fn modulus_minus_one_div_two_correct() {
+        assert_eq!(
+            F::MODULUS_MINUS_ONE_DIV_TWO,
+            Uint::from_be_hex("006E54A6C50F6671DB743AAEC4CCBC3E82926C650F53AAF3D7C27DB237D18F93")
+        )
+    }
+
     fn any_f() -> impl Strategy<Value = F> {
         any::<u64>().prop_map(F::from)
     }
