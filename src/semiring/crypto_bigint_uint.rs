@@ -6,7 +6,7 @@ use core::{
     hash::{Hash, Hasher},
     iter::{Product, Sum},
     ops::{
-        Add, AddAssign, Mul, MulAssign, Rem, RemAssign, Shl, ShlAssign, Shr, ShrAssign, Sub,
+        Add, AddAssign, Div, Mul, MulAssign, Rem, RemAssign, Shl, ShlAssign, Shr, ShrAssign, Sub,
         SubAssign,
     },
     str::FromStr,
@@ -268,6 +268,24 @@ macro_rules! impl_basic_op {
 impl_basic_op!(Add, add);
 impl_basic_op!(Sub, sub);
 impl_basic_op!(Mul, mul);
+
+impl<const LIMBS: usize> Div for Uint<LIMBS> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn div(self, rhs: Self) -> Self::Output {
+        self.div(&rhs)
+    }
+}
+
+impl<'a, const LIMBS: usize> Div<&'a Self> for Uint<LIMBS> {
+    type Output = Self;
+
+    fn div(self, rhs: &'a Self) -> Self::Output {
+        let non_zero = crypto_bigint::NonZero::new(rhs.0).expect("division by zero");
+        Self(self.0.div(&non_zero))
+    }
+}
 
 impl<const LIMBS: usize> Rem for Uint<LIMBS> {
     type Output = Self;

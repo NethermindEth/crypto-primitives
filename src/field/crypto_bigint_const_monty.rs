@@ -9,7 +9,7 @@ use core::{
     str::FromStr,
 };
 use crypto_bigint::{
-    Limb,
+    Limb, NonZeroUint, Uint as CBUint,
     modular::{ConstMontyForm, ConstMontyParams as Params, Retrieve},
     subtle::{Choice, ConditionallySelectable, ConstantTimeEq},
 };
@@ -505,25 +505,28 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Semiring for ConstMontyField<Mod, L
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Ring for ConstMontyField<Mod, LIMBS> {}
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Field for ConstMontyField<Mod, LIMBS> {
-    type Inner = ConstMontyForm<Mod, LIMBS>;
+    type Inner = Uint<LIMBS>;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
-        &self.0
+        Uint::new_ref(self.0.as_montgomery())
     }
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstPrimeField for ConstMontyField<Mod, LIMBS> {
-    const MODULUS: Self::Inner = ConstMontyForm::<Mod, LIMBS>::new(Mod::PARAMS.modulus().as_ref());
+    const MODULUS: Self::Inner = *Uint::new_ref(Mod::PARAMS.modulus().as_ref());
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner = {
-        let m_minus_one = ConstMontyForm::sub(&Self::MODULUS, &ConstMontyForm::ONE);
-        m_minus_one.div_by_2()
+        let m_minus_one = CBUint::wrapping_sub(Self::MODULUS.inner(), &CBUint::ONE);
+        let two = CBUint::<LIMBS>::wrapping_add(&CBUint::ONE, &CBUint::ONE);
+        Uint::new(CBUint::wrapping_div(
+            &m_minus_one,
+            &NonZeroUint::new_unwrap(two),
+        ))
     };
 
     #[inline(always)]
     fn new_unchecked(inner: Self::Inner) -> Self {
-        // Inner value is a ConstMontyForm so it's guaranteed to be valid
-        Self(inner)
+        Self(ConstMontyForm::from_montgomery(inner.into_inner()))
     }
 }
 
