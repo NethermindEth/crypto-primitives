@@ -33,18 +33,23 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstMontyField<Mod, LIMBS> {
     pub const LIMBS: usize = Mod::LIMBS;
 
     #[inline(always)]
-    pub const fn new(value: ConstMontyForm<Mod, LIMBS>) -> Self {
-        Self(value)
+    pub const fn new(value: Uint<LIMBS>) -> Self {
+        Self(ConstMontyForm::new(value.inner()))
     }
 
     #[inline(always)]
-    pub const fn inner(&self) -> &ConstMontyForm<Mod, LIMBS> {
-        &self.0
+    pub const fn new_unchecked(inner: Uint<LIMBS>) -> Self {
+        Self(ConstMontyForm::from_montgomery(inner.into_inner()))
     }
 
     #[inline(always)]
-    pub const fn into_inner(self) -> ConstMontyForm<Mod, LIMBS> {
-        self.0
+    pub const fn inner(&self) -> &Uint<LIMBS> {
+        Uint::new_ref(self.0.as_montgomery())
+    }
+
+    #[inline(always)]
+    pub const fn into_inner(self) -> Uint<LIMBS> {
+        Uint::new(self.0.to_montgomery())
     }
 
     /// Retrieves the integer currently encoded in this [`ConstMontyForm`],
@@ -525,6 +530,11 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstPrimeField for ConstMontyField
     };
 
     #[inline(always)]
+    fn new(inner: Self::Inner) -> Self {
+        Self(ConstMontyForm::new(inner.inner()))
+    }
+
+    #[inline(always)]
     fn new_unchecked(inner: Self::Inner) -> Self {
         Self(ConstMontyForm::from_montgomery(inner.into_inner()))
     }
@@ -599,11 +609,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> ConditionallySelectable
 {
     #[inline(always)]
     fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
-        Self(ConstMontyForm::conditional_select(
-            a.inner(),
-            b.inner(),
-            choice,
-        ))
+        Self(ConstMontyForm::conditional_select(&a.0, &b.0, choice))
     }
 }
 
@@ -692,6 +698,17 @@ mod tests {
     fn ensure_blanket_traits() {
         // NB: this ensures `PrimeField` implementation too!
         ensure_type_implements_trait!(F, FromPrimitiveWithConfig);
+    }
+
+    #[test]
+    fn new_with_cfg_correct() {
+        let x = Uint::new(U256::from_be_hex(
+            "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30",
+        ));
+
+        let y = F::new(x);
+
+        assert_eq!(y, F::one());
     }
 
     #[test]
@@ -1020,8 +1037,9 @@ mod tests {
 
     #[test]
     fn wrapper_methods() {
-        let value = ConstMontyForm::new(Uint::from(42_u64).inner());
-        let field = F::new(value);
+        let value =
+            Uint::new(ConstMontyForm::<ModP, 4>::new(&CBUint::from_u64(42)).to_montgomery());
+        let field = F::new_unchecked(value);
 
         // Test inner and into_inner
         assert_eq!(field.inner(), &value);
@@ -1184,7 +1202,7 @@ mod tests {
         // Conversions from and to ConstMontyForm
         let mont_form = ConstMontyForm::new(Uint::<{ U256::LIMBS }>::from(999_u64).inner());
         let f: F = mont_form.into();
-        let f2 = F::new(mont_form);
+        let f2 = F::new(Uint::new(mont_form.retrieve()));
         assert_eq!(f, f2);
         assert_eq!(mont_form, f.into());
     }

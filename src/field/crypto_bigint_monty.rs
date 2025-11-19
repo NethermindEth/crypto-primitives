@@ -24,8 +24,69 @@ pub struct MontyField<const LIMBS: usize>(MontyForm<LIMBS>);
 
 impl<const LIMBS: usize> MontyField<LIMBS> {
     /// Creates a new `MontyField` from a `MontyForm`.
+    #[inline(always)]
     pub const fn new(form: MontyForm<LIMBS>) -> Self {
         Self(form)
+    }
+
+    #[inline(always)]
+    pub const fn new_unchecked(inner: Uint<LIMBS>, config: &MontyParams<LIMBS>) -> Self {
+        Self(MontyForm::from_montgomery(inner.into_inner(), *config))
+    }
+
+    #[inline(always)]
+    pub const fn inner(&self) -> &Uint<LIMBS> {
+        Uint::new_ref(self.0.as_montgomery())
+    }
+
+    #[inline(always)]
+    pub const fn into_inner(self) -> Uint<LIMBS> {
+        Uint::new(self.0.to_montgomery())
+    }
+
+    /// Retrieves the integer currently encoded in this [`ConstMontyForm`],
+    /// guaranteed to be reduced.
+    pub const fn retrieve(&self) -> Uint<LIMBS> {
+        Uint::new(self.0.retrieve())
+    }
+
+    /// Access the `ConstMontyForm` value in Montgomery form.
+    pub const fn as_montgomery(&self) -> &Uint<LIMBS> {
+        Uint::new_ref(self.0.as_montgomery())
+    }
+
+    /// Mutably access the `ConstMontyForm` value in Montgomery form.
+    pub fn as_montgomery_mut(&mut self) -> &mut Uint<LIMBS> {
+        Uint::new_ref_mut(self.0.as_montgomery_mut())
+    }
+
+    /// Create a `ConstMontyForm` from a value in Montgomery form.
+    pub const fn from_montgomery(integer: Uint<LIMBS>, config: &MontyParams<LIMBS>) -> Self {
+        Self(MontyForm::from_montgomery(integer.into_inner(), *config))
+    }
+
+    /// Extract the value from the `ConstMontyForm` in Montgomery form.
+    pub const fn to_montgomery(&self) -> Uint<LIMBS> {
+        Uint::new(self.0.to_montgomery())
+    }
+
+    /// Performs division by 2, that is returns `x` such that `x + x = self`.
+    pub const fn div_by_2(&self) -> Self {
+        Self(self.0.div_by_2())
+    }
+
+    /// Double `self`.
+    pub const fn double(&self) -> Self {
+        Self(self.0.double())
+    }
+
+    /// See [ConstMontyForm::pow_bounded_exp].
+    pub const fn pow_bounded_exp<const RHS_LIMBS: usize>(
+        &self,
+        exponent: &Uint<RHS_LIMBS>,
+        exponent_bits: u32,
+    ) -> Self {
+        Self(self.0.pow_bounded_exp(exponent.inner(), exponent_bits))
     }
 }
 
@@ -454,6 +515,10 @@ impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
         Ok(MontyParams::new(modulus))
     }
 
+    fn new_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self {
+        Self(MontyForm::new(inner.inner(), *cfg))
+    }
+
     fn new_unchecked_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self {
         Self(MontyForm::from_montgomery(inner.into_inner(), *cfg))
     }
@@ -524,6 +589,16 @@ mod tests {
         );
         let modulus = Odd::new(modulus).expect("modulus should be odd");
         MontyParams::new(modulus)
+    }
+
+    #[test]
+    fn new_with_cfg_correct() {
+        let x =
+            Uint::from_be_hex("fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30");
+
+        let y = F::new_with_cfg(x, &test_config());
+
+        assert_eq!(y, F::one_with_cfg(&test_config()));
     }
 
     fn from_u64(value: u64) -> F {
