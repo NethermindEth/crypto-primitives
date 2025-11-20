@@ -62,6 +62,13 @@ pub trait PrimeField: Field {
 
     fn make_cfg(modulus: &Self::Inner) -> Result<Self::Config, FieldError>;
 
+    /// Creates a new instance of a prime field element from
+    /// an arbitrary element of `Self::Inner`. The method
+    /// should not assume the `Self::Inner` is coming in a
+    /// form internally used by the field type. So it
+    /// always should perform a reduction first.
+    fn new_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self;
+
     /// Creates a new instance of the prime field element from a representation
     /// known to be valid - should consume exactly the value returned by
     /// `inner()`. Ideally, this should not check the validity of the
@@ -82,6 +89,13 @@ pub trait ConstPrimeField:
 {
     const MODULUS: Self::Inner;
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner;
+
+    /// Creates a new instance of a prime field element from
+    /// an arbitrary element of `Self::Inner`. The method
+    /// should not assume the `Self::Inner` is coming in a
+    /// form internally used by the field type. So it
+    /// always should perform a reduction first.
+    fn new(inner: Self::Inner) -> Self;
 
     /// Creates a new instance of the prime field element from a representation
     /// known to be valid - should consume exactly the value returned by
@@ -115,6 +129,11 @@ impl<T: ConstPrimeField> PrimeField for T {
         } else {
             Err(FieldError::InvalidModulus)
         }
+    }
+
+    #[inline(always)]
+    fn new_with_cfg(inner: Self::Inner, _cfg: &Self::Config) -> Self {
+        ConstPrimeField::new(inner)
     }
 
     #[inline(always)]

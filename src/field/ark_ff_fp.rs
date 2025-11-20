@@ -483,6 +483,10 @@ impl<M: MontConfig<N>, const N: usize> ConstPrimeField for Fp<MontBackend<M, N>,
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner =
         <ArkWrappedFp<MontBackend<M, N>, N> as ArkPrimeField>::MODULUS_MINUS_ONE_DIV_TWO;
 
+    fn new(inner: Self::Inner) -> Self {
+        Self(ArkWrappedFp::new(inner))
+    }
+
     fn new_unchecked(inner: Self::Inner) -> Self {
         Self(ArkWrappedFp::new_unchecked(inner))
     }
