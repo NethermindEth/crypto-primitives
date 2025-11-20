@@ -58,12 +58,12 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstMontyField<Mod, LIMBS> {
         Uint::new(self.0.retrieve())
     }
 
-    /// Access the `ConstMontyForm` value in Montgomery form.
+    /// Access the value in Montgomery form.
     pub const fn as_montgomery(&self) -> &Uint<LIMBS> {
         Uint::new_ref(self.0.as_montgomery())
     }
 
-    /// Mutably access the `ConstMontyForm` value in Montgomery form.
+    /// Mutably access the value in Montgomery form.
     pub fn as_montgomery_mut(&mut self) -> &mut Uint<LIMBS> {
         Uint::new_ref_mut(self.0.as_montgomery_mut())
     }

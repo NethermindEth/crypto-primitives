@@ -44,28 +44,28 @@ impl<const LIMBS: usize> MontyField<LIMBS> {
         Uint::new(self.0.to_montgomery())
     }
 
-    /// Retrieves the integer currently encoded in this [`ConstMontyForm`],
+    /// Retrieves the integer currently encoded in this [`MontyForm`],
     /// guaranteed to be reduced.
     pub const fn retrieve(&self) -> Uint<LIMBS> {
         Uint::new(self.0.retrieve())
     }
 
-    /// Access the `ConstMontyForm` value in Montgomery form.
+    /// Access the value in Montgomery form.
     pub const fn as_montgomery(&self) -> &Uint<LIMBS> {
         Uint::new_ref(self.0.as_montgomery())
     }
 
-    /// Mutably access the `ConstMontyForm` value in Montgomery form.
+    /// Mutably access the value in Montgomery form.
     pub fn as_montgomery_mut(&mut self) -> &mut Uint<LIMBS> {
         Uint::new_ref_mut(self.0.as_montgomery_mut())
     }
 
-    /// Create a `ConstMontyForm` from a value in Montgomery form.
+    /// Create a `MontyField` from a value in Montgomery form.
     pub const fn from_montgomery(integer: Uint<LIMBS>, config: &MontyParams<LIMBS>) -> Self {
         Self(MontyForm::from_montgomery(integer.into_inner(), *config))
     }
 
-    /// Extract the value from the `ConstMontyForm` in Montgomery form.
+    /// Extract the value from the `MontyForm` in Montgomery form.
     pub const fn to_montgomery(&self) -> Uint<LIMBS> {
         Uint::new(self.0.to_montgomery())
     }
@@ -80,7 +80,7 @@ impl<const LIMBS: usize> MontyField<LIMBS> {
         Self(self.0.double())
     }
 
-    /// See [ConstMontyForm::pow_bounded_exp].
+    /// See [MontyForm::pow_bounded_exp].
     pub const fn pow_bounded_exp<const RHS_LIMBS: usize>(
         &self,
         exponent: &Uint<RHS_LIMBS>,
