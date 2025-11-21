@@ -255,6 +255,15 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Div<&Self> for ConstMontyField<Mod,
     }
 }
 
+impl<Mod: Params<LIMBS>, const LIMBS: usize> Div for &ConstMontyField<Mod, LIMBS> {
+    type Output = ConstMontyField<Mod, LIMBS>;
+
+    #[inline(always)]
+    fn div(self, rhs: Self) -> Self::Output {
+        self.checked_div(rhs).expect("Division by zero")
+    }
+}
+
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Pow<u32> for ConstMontyField<Mod, LIMBS> {
     type Output = Self;
 
@@ -267,12 +276,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Inv for ConstMontyField<Mod, LIMBS>
     type Output = Option<Self>;
 
     fn inv(self) -> Self::Output {
-        let result = self.0.invert_vartime();
-        if result.is_some().into() {
-            Some(Self(result.unwrap()))
-        } else {
-            None
-        }
+        Some(Self(Option::from(self.0.invert_vartime())?))
     }
 }
 
@@ -284,13 +288,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Inv for ConstMontyField<Mod, LIMBS>
 impl<Mod: Params<LIMBS>, const LIMBS: usize> CheckedDiv for ConstMontyField<Mod, LIMBS> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
     fn checked_div(&self, rhs: &Self) -> Option<Self> {
-        let inv = rhs.0.invert();
-        if inv.is_none().into() {
-            return None; // Division by zero
-        }
-        // Safe to unwrap since we checked for None above
-        let inv = inv.unwrap();
-        Some(Self(self.0 * inv))
+        Some(self * rhs.inv()?)
     }
 }
 
