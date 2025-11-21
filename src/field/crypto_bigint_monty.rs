@@ -226,12 +226,15 @@ impl<const LIMBS: usize> Inv for MontyField<LIMBS> {
     type Output = Option<Self>;
 
     fn inv(self) -> Self::Output {
-        let result = self.0.invert_vartime();
-        if result.is_some().into() {
-            Some(Self(result.unwrap()))
-        } else {
-            None
-        }
+        Some(Self(Option::from(self.0.invert_vartime())?))
+    }
+}
+
+impl<const LIMBS: usize> Inv for &MontyField<LIMBS> {
+    type Output = Option<MontyField<LIMBS>>;
+
+    fn inv(self) -> Self::Output {
+        Some(MontyField(Option::from(self.0.invert_vartime())?))
     }
 }
 
@@ -243,13 +246,7 @@ impl<const LIMBS: usize> Inv for MontyField<LIMBS> {
 impl<const LIMBS: usize> CheckedDiv for MontyField<LIMBS> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
     fn checked_div(&self, rhs: &Self) -> Option<Self> {
-        let inv = rhs.0.invert();
-        if inv.is_none().into() {
-            return None; // Division by zero
-        }
-        // Safe to unwrap since we checked for None above
-        let inv = inv.unwrap();
-        Some(Self(MontyForm::mul(&self.0, &inv)))
+        Some(self * rhs.inv()?)
     }
 }
 
