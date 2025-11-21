@@ -255,6 +255,15 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Div<&Self> for ConstMontyField<Mod,
     }
 }
 
+impl<Mod: Params<LIMBS>, const LIMBS: usize> Div for &ConstMontyField<Mod, LIMBS> {
+    type Output = ConstMontyField<Mod, LIMBS>;
+
+    #[inline(always)]
+    fn div(self, rhs: Self) -> Self::Output {
+        self.checked_div(rhs).expect("Division by zero")
+    }
+}
+
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Pow<u32> for ConstMontyField<Mod, LIMBS> {
     type Output = Self;
 
