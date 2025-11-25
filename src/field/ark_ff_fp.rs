@@ -472,8 +472,14 @@ impl<P: FpConfig<N>, const N: usize> IntRing for Fp<P, N> {
 impl<P: FpConfig<N>, const N: usize> Field for Fp<P, N> {
     type Inner = BigInt<N>;
 
+    #[inline(always)]
     fn inner(&self) -> &Self::Inner {
         &self.0.0
+    }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        &mut self.0.0
     }
 }
 

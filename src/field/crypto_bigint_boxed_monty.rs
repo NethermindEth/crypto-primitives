@@ -425,6 +425,17 @@ impl Field for BoxedMontyField {
     fn inner(&self) -> &Self::Inner {
         self.0.as_montgomery()
     }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        // TODO: address this once possible.
+        unimplemented!(
+            "For now we keep this unimplemented. \
+            The method was introduced in crypto-bigint in this PR:\
+            https://github.com/RustCrypto/crypto-bigint/pull/1014\
+            but not yet available in the latest RC from the craits.io."
+        )
+    }
 }
 
 impl PrimeField for BoxedMontyField {

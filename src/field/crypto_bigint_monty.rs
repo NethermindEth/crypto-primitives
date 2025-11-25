@@ -486,6 +486,11 @@ impl<const LIMBS: usize> Field for MontyField<LIMBS> {
     fn inner(&self) -> &Self::Inner {
         Uint::new_ref(self.0.as_montgomery())
     }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        Uint::new_ref_mut(self.0.as_montgomery_mut())
+    }
 }
 
 impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {

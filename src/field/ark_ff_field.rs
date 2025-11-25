@@ -401,8 +401,14 @@ impl<F: ArkWrappedField> Ring for ArkField<F> {}
 impl<F: ArkWrappedField> Field for ArkField<F> {
     type Inner = F;
 
+    #[inline(always)]
     fn inner(&self) -> &Self::Inner {
         &self.0
+    }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        &mut self.0
     }
 }
 
