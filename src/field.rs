@@ -39,6 +39,7 @@ pub trait Field:
     type Inner: Debug + Eq + Clone;
 
     fn inner(&self) -> &Self::Inner;
+    fn inner_mut(&mut self) -> &mut Self::Inner;
 }
 
 /// Element of an integer field modulo prime number (F_p).
