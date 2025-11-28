@@ -31,6 +31,8 @@ serde = { version = "1", default-features = false, optional = true }
 zeroize = { version = "1", default-features = false, optional = true }
 
 [dev-dependencies]
+crypto-primitives = { workspace = true, features = ["crypto_bigint"] }
+criterion = { workspace = true }
 proptest = { workspace = true }
 rand = { workspace = true, features = ["std_rng"] }
 
@@ -47,6 +49,17 @@ ark_ff = ["ark_std", "num_bigint", "zeroize", "dep:ark-ff", "dep:ark-serialize"]
 crypto_bigint = ["dep:crypto-bigint", "crypto-bigint/alloc"]
 num_bigint = ["dep:num-bigint"]
 
+[[bench]]
+name = "boxed_monty_field_benches"
+harness = false
+
+[[bench]]
+name = "const_monty_field_benches"
+harness = false
+
+[[bench]]
+name = "monty_field_benches"
+harness = false
 
 #
 # Workspace configuration
@@ -64,10 +77,12 @@ license = "Apache-2.0"
 publish = false
 
 [workspace.dependencies]
+crypto-primitives = { path = "." }
 crypto-primitives-proc-macros = { path = "proc-macros" }
 num-traits = { version = "0.2", default-features = false }
 proptest = { version = "1", default-features = false, features = ["alloc"] }
 rand = { version = "0.10.0-rc.1", default-features = false }
+criterion = "0.7.0"
 
 [workspace.lints.rust]
 missing_docs = "allow" # FIXME
