@@ -19,9 +19,9 @@ fn bench_config() -> BoxedMontyParams {
     BoxedMontyParams::new(modulus)
 }
 
-pub fn boxed_monty_benches(c: &mut Criterion) {
+pub fn boxed_monty_field_benches(c: &mut Criterion) {
     field_benchmarks::<BoxedMontyField>(c, "Boxed Monty Field Arithmetic", &bench_config());
 }
 
-criterion_group!(benches, boxed_monty_benches);
+criterion_group!(benches, boxed_monty_field_benches);
 criterion_main!(benches);

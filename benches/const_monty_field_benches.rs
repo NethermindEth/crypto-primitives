@@ -15,9 +15,9 @@ const_monty_params!(
     "0000000000000000000000000000000000860995AE68FC80E1B1BD1E39D54B33"
 );
 
-pub fn const_monty_benches(c: &mut Criterion) {
+pub fn const_monty_field_benches(c: &mut Criterion) {
     field_benchmarks::<ConstMontyField<Params, _>>(c, "Const Monty Field Arithmetic", &());
 }
 
-criterion_group!(benches, const_monty_benches);
+criterion_group!(benches, const_monty_field_benches);
 criterion_main!(benches);
