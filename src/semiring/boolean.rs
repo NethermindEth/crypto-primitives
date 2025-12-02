@@ -147,12 +147,20 @@ impl From<bool> for Boolean {
     }
 }
 
-impl From<Boolean> for bool {
-    #[inline(always)]
-    fn from(value: Boolean) -> Self {
-        value.0
-    }
+macro_rules! impl_from_boolean_for {
+    ($($to:ty),*) => {$(
+        impl From<Boolean> for $to {
+            #[inline(always)]
+            fn from(value: Boolean) -> Self {
+                value.0 as $to
+            }
+        }
+    )*};
 }
+
+impl_from_boolean_for!(bool);
+impl_from_boolean_for!(i8, i16, i32, i64, i128, isize);
+impl_from_boolean_for!(u8, u16, u32, u64, u128, usize);
 
 //
 // Basic arithmetic operations
@@ -533,6 +541,15 @@ mod tests {
         assert_eq!(Boolean::from_u8(0), Boolean::FALSE);
         assert_eq!(Boolean::from_u8(1), Boolean::TRUE);
         assert_eq!(Boolean::from_u8(2), Boolean::TRUE);
+    }
+
+    #[test]
+    fn reverse_conversions() {
+        assert_eq!(bool::from(Boolean::TRUE), true);
+        assert_eq!(i8::from(Boolean::TRUE), 1);
+        assert_eq!(i128::from(Boolean::TRUE), 1);
+        assert_eq!(u8::from(Boolean::TRUE), 1);
+        assert_eq!(u128::from(Boolean::TRUE), 1);
     }
 
     #[test]

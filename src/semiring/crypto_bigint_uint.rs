@@ -1,5 +1,5 @@
 use super::*;
-use crate::{crypto_bigint_int::Int, impl_pow_via_repeated_squaring};
+use crate::{boolean::Boolean, crypto_bigint_int::Int, impl_pow_via_repeated_squaring};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, LowerHex, Result as FmtResult, UpperHex},
@@ -486,6 +486,13 @@ impl<const LIMBS: usize> From<bool> for Uint<LIMBS> {
     }
 }
 
+impl<const LIMBS: usize> From<Boolean> for Uint<LIMBS> {
+    #[inline(always)]
+    fn from(value: Boolean) -> Self {
+        Self::from(value.into_inner())
+    }
+}
+
 macro_rules! impl_from_primitive {
     ($($t:ty),+) => {
         $(
@@ -746,6 +753,9 @@ mod tests {
         let wrapped = Uint4::new(value);
         assert_eq!(wrapped.inner(), &value);
         assert_eq!(wrapped.into_inner(), value);
+
+        assert_eq!(Uint4::from(true), Uint4::ONE);
+        assert_eq!(Uint4::from(Boolean::TRUE), Uint4::ONE);
     }
 
     #[test]
