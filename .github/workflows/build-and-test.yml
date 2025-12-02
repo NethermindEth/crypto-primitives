@@ -18,6 +18,6 @@ jobs:
     - name: Build
       run: cargo test --workspace --verbose --no-run
     - name: Build benches
-      run: cargo build --benches --all-features
+      run: cargo build --benches --all-features --all-targets
     - name: Run tests
       run: cargo test --workspace --verbose
