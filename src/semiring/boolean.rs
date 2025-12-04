@@ -152,7 +152,7 @@ macro_rules! impl_from_boolean_for {
         impl From<Boolean> for $to {
             #[inline(always)]
             fn from(value: Boolean) -> Self {
-                value.0 as $to
+                <$to>::from(value.0)
             }
         }
     )*};
