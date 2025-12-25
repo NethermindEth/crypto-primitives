@@ -41,7 +41,7 @@ default = ["std"]
 
 rand = ["dep:rand", "crypto-bigint/rand_core"]
 serde = ["dep:serde", "crypto-bigint/serde"]
-zeroize = ["dep:zeroize", "crypto-bigint/zeroize"]
+zeroize = ["dep:zeroize"]
 
 std = ["num-traits/std", "ark-std/std", "ark-ff/std", "serde/std", "rand/std", "zeroize/std"]
 ark_std = ["dep:ark-std"]
