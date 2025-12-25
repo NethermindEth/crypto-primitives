@@ -372,11 +372,7 @@ impl Distribution<Boolean> for StandardUniform {
 //
 
 #[cfg(feature = "zeroize")]
-impl zeroize::Zeroize for Boolean {
-    fn zeroize(&mut self) {
-        self.0.zeroize()
-    }
-}
+impl zeroize::DefaultIsZeroes for Boolean {}
 
 //
 // Tests

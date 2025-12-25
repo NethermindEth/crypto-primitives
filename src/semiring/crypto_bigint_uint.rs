@@ -604,11 +604,7 @@ where
 //
 
 #[cfg(feature = "zeroize")]
-impl<const LIMBS: usize> zeroize::Zeroize for Uint<LIMBS> {
-    fn zeroize(&mut self) {
-        self.0.zeroize()
-    }
-}
+impl<const LIMBS: usize> zeroize::DefaultIsZeroes for Uint<LIMBS> {}
 
 //
 // Traits from crypto_bigint
