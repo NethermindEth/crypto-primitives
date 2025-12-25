@@ -81,7 +81,7 @@ crypto-primitives = { path = "." }
 crypto-primitives-proc-macros = { path = "proc-macros" }
 num-traits = { version = "0.2", default-features = false }
 proptest = { version = "1", default-features = false, features = ["alloc"] }
-rand = { version = "0.9", default-features = false }
+rand = { version = "~0.9", default-features = false }
 criterion = "0.7.0"
 
 [workspace.lints.rust]
