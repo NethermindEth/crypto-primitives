@@ -553,6 +553,7 @@ impl<const LIMBS: usize, const LIMBS2: usize> TryFrom<&crypto_bigint::Uint<LIMBS
         Ok(result.unwrap().into())
     }
 }
+
 //
 // Semiring and Ring
 //
@@ -631,6 +632,17 @@ where
         S: serde::Serializer,
     {
         self.0.serialize(serializer)
+    }
+}
+
+//
+// Zeroize
+//
+
+#[cfg(feature = "zeroize")]
+impl<const LIMBS: usize> zeroize::Zeroize for Int<LIMBS> {
+    fn zeroize(&mut self) {
+        self.0.as_mut_limbs().zeroize()
     }
 }
 

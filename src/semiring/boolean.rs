@@ -368,6 +368,17 @@ impl Distribution<Boolean> for StandardUniform {
 }
 
 //
+// Zeroize
+//
+
+#[cfg(feature = "zeroize")]
+impl zeroize::Zeroize for Boolean {
+    fn zeroize(&mut self) {
+        self.0.zeroize()
+    }
+}
+
+//
 // Tests
 //
 

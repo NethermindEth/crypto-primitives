@@ -600,6 +600,17 @@ where
 }
 
 //
+// Zeroize
+//
+
+#[cfg(feature = "zeroize")]
+impl<const LIMBS: usize> zeroize::Zeroize for Uint<LIMBS> {
+    fn zeroize(&mut self) {
+        self.0.zeroize()
+    }
+}
+
+//
 // Traits from crypto_bigint
 //
 

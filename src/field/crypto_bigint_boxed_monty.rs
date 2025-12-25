@@ -480,6 +480,17 @@ impl PrimeField for BoxedMontyField {
     }
 }
 
+//
+// Zeroize
+//
+
+#[cfg(feature = "zeroize")]
+impl zeroize::Zeroize for BoxedMontyField {
+    fn zeroize(&mut self) {
+        self.0.zeroize()
+    }
+}
+
 #[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
 #[cfg(test)]
 mod tests {
