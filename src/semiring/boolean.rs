@@ -368,6 +368,13 @@ impl Distribution<Boolean> for StandardUniform {
 }
 
 //
+// Zeroize
+//
+
+#[cfg(feature = "zeroize")]
+impl zeroize::DefaultIsZeroes for Boolean {}
+
+//
 // Tests
 //
 

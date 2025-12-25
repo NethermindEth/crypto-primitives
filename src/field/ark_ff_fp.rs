@@ -517,6 +517,17 @@ impl<P: FpConfig<N>, const N: usize> UniformRand for Fp<P, N> {
 }
 
 //
+// Zeroize
+//
+
+#[cfg(feature = "zeroize")]
+impl<P: FpConfig<N>, const N: usize> zeroize::Zeroize for Fp<P, N> {
+    fn zeroize(&mut self) {
+        self.0.zeroize()
+    }
+}
+
+//
 // Traits from ark-ff
 //
 
@@ -576,12 +587,6 @@ impl<P: FpConfig<N>, const N: usize> AdditiveGroup for Fp<P, N> {
     type Scalar = Self;
 
     const ZERO: Self = <Self as ConstZero>::ZERO;
-}
-
-impl<P: FpConfig<N>, const N: usize> zeroize::Zeroize for Fp<P, N> {
-    fn zeroize(&mut self) {
-        self.0.zeroize()
-    }
 }
 
 impl<P: FpConfig<N>, const N: usize> ArkWrappedField for Fp<P, N> {

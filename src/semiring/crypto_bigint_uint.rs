@@ -600,6 +600,13 @@ where
 }
 
 //
+// Zeroize
+//
+
+#[cfg(feature = "zeroize")]
+impl<const LIMBS: usize> zeroize::DefaultIsZeroes for Uint<LIMBS> {}
+
+//
 // Traits from crypto_bigint
 //
 

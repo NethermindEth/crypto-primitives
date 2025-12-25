@@ -539,6 +539,17 @@ impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
 }
 
 //
+// Zeroize
+//
+
+#[cfg(feature = "zeroize")]
+impl<const LIMBS: usize> zeroize::Zeroize for MontyField<LIMBS> {
+    fn zeroize(&mut self) {
+        self.0.zeroize()
+    }
+}
+
+//
 // Predefined fields of various sizes for convenience
 //
 

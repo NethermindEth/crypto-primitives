@@ -553,6 +553,7 @@ impl<const LIMBS: usize, const LIMBS2: usize> TryFrom<&crypto_bigint::Uint<LIMBS
         Ok(result.unwrap().into())
     }
 }
+
 //
 // Semiring and Ring
 //
@@ -633,6 +634,13 @@ where
         self.0.serialize(serializer)
     }
 }
+
+//
+// Zeroize
+//
+
+#[cfg(feature = "zeroize")]
+impl<const LIMBS: usize> zeroize::DefaultIsZeroes for Int<LIMBS> {}
 
 //
 // Traits from crypto_bigint

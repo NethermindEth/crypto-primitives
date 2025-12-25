@@ -431,6 +431,17 @@ impl<F: ArkWrappedField> UniformRand for ArkField<F> {
 }
 
 //
+// Zeroize
+//
+
+#[cfg(feature = "zeroize")]
+impl<F: ArkWrappedField> zeroize::Zeroize for ArkField<F> {
+    fn zeroize(&mut self) {
+        self.0.zeroize()
+    }
+}
+
+//
 // Traits from ark-ff
 //
 
@@ -490,12 +501,6 @@ impl<F: ArkWrappedField> AdditiveGroup for ArkField<F> {
     type Scalar = Self;
 
     const ZERO: Self = <Self as ConstZero>::ZERO;
-}
-
-impl<F: ArkWrappedField> zeroize::Zeroize for ArkField<F> {
-    fn zeroize(&mut self) {
-        self.0.zeroize()
-    }
 }
 
 impl<F: ArkWrappedField> ArkWrappedField for ArkField<F> {
