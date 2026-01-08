@@ -54,41 +54,49 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstMontyField<Mod, LIMBS> {
 
     /// Retrieves the integer currently encoded in this [`ConstMontyForm`],
     /// guaranteed to be reduced.
+    #[inline(always)]
     pub const fn retrieve(&self) -> Uint<LIMBS> {
         Uint::new(self.0.retrieve())
     }
 
     /// Access the value in Montgomery form.
+    #[inline(always)]
     pub const fn as_montgomery(&self) -> &Uint<LIMBS> {
         Uint::new_ref(self.0.as_montgomery())
     }
 
     /// Mutably access the value in Montgomery form.
+    #[inline(always)]
     pub fn as_montgomery_mut(&mut self) -> &mut Uint<LIMBS> {
         Uint::new_ref_mut(self.0.as_montgomery_mut())
     }
 
     /// Create a `ConstMontyForm` from a value in Montgomery form.
+    #[inline(always)]
     pub const fn from_montgomery(integer: Uint<LIMBS>) -> Self {
         Self(ConstMontyForm::from_montgomery(integer.into_inner()))
     }
 
     /// Extract the value from the `ConstMontyForm` in Montgomery form.
+    #[inline(always)]
     pub const fn to_montgomery(&self) -> Uint<LIMBS> {
         Uint::new(self.0.to_montgomery())
     }
 
     /// Performs division by 2, that is returns `x` such that `x + x = self`.
+    #[inline(always)]
     pub const fn div_by_2(&self) -> Self {
         Self(self.0.div_by_2())
     }
 
     /// Double `self`.
+    #[inline(always)]
     pub const fn double(&self) -> Self {
         Self(self.0.double())
     }
 
     /// See [ConstMontyForm::pow_bounded_exp].
+    #[inline(always)]
     pub const fn pow_bounded_exp<const RHS_LIMBS: usize>(
         &self,
         exponent: &Uint<RHS_LIMBS>,
@@ -103,12 +111,14 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstMontyField<Mod, LIMBS> {
 //
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Debug for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         Debug::fmt(&self.0, f)
     }
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Display for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{} (mod {})", self.0.retrieve(), Mod::PARAMS.modulus())
     }
@@ -122,18 +132,21 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Default for ConstMontyField<Mod, LI
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> PartialOrd for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Ord for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
         Ord::cmp(self.0.as_montgomery(), other.0.as_montgomery())
     }
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Hash for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.as_montgomery().hash(state)
     }
@@ -142,6 +155,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Hash for ConstMontyField<Mod, LIMBS
 impl<Mod: Params<LIMBS>, const LIMBS: usize> FromStr for ConstMontyField<Mod, LIMBS> {
     type Err = ();
 
+    #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let uint = Uint::<LIMBS>::from_str(s)?;
         Ok(Self(ConstMontyForm::new(uint.inner())))
@@ -250,6 +264,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Div for ConstMontyField<Mod, LIMBS>
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Div<&Self> for ConstMontyField<Mod, LIMBS> {
     type Output = Self;
 
+    #[inline(always)]
     fn div(self, rhs: &Self) -> Self::Output {
         self.checked_div(rhs).expect("Division by zero")
     }
@@ -267,6 +282,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Div for &ConstMontyField<Mod, LIMBS
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Pow<u32> for ConstMontyField<Mod, LIMBS> {
     type Output = Self;
 
+    #[inline(always)]
     fn pow(self, rhs: u32) -> Self::Output {
         Self(self.0.pow(&crypto_bigint::U64::from_u32(rhs)))
     }
@@ -275,6 +291,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Pow<u32> for ConstMontyField<Mod, L
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Inv for ConstMontyField<Mod, LIMBS> {
     type Output = Option<Self>;
 
+    #[inline(always)]
     fn inv(self) -> Self::Output {
         Some(Self(Option::from(self.0.invert_vartime())?))
     }
@@ -287,6 +304,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Inv for ConstMontyField<Mod, LIMBS>
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> CheckedDiv for ConstMontyField<Mod, LIMBS> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
+    #[inline(always)]
     fn checked_div(&self, rhs: &Self) -> Option<Self> {
         Some(self * rhs.inv()?)
     }
@@ -299,12 +317,14 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> CheckedDiv for ConstMontyField<Mod,
 macro_rules! impl_field_op_assign {
     ($trait:ident, $method:ident, $inner:ident) => {
         impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait for ConstMontyField<Mod, LIMBS> {
+            #[inline(always)]
             fn $method(&mut self, rhs: Self) {
                 // Use reference for inner call to avoid moves of rhs.0 where not needed
                 *self = self.$inner(&rhs);
             }
         }
         impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait<&Self> for ConstMontyField<Mod, LIMBS> {
+            #[inline(always)]
             fn $method(&mut self, rhs: &Self) {
                 *self = self.$inner(rhs);
             }
@@ -323,6 +343,7 @@ impl_field_op_assign!(DivAssign, div_assign, div);
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Sum for ConstMontyField<Mod, LIMBS> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
+    #[inline(always)]
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
         iter.fold(Self::ZERO, |acc, x| acc + x)
     }
@@ -330,6 +351,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Sum for ConstMontyField<Mod, LIMBS>
 
 impl<'a, Mod: Params<LIMBS>, const LIMBS: usize> Sum<&'a Self> for ConstMontyField<Mod, LIMBS> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
+    #[inline(always)]
     fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
         iter.fold(Self::ZERO, |acc, x| acc + x)
     }
@@ -337,6 +359,7 @@ impl<'a, Mod: Params<LIMBS>, const LIMBS: usize> Sum<&'a Self> for ConstMontyFie
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Product for ConstMontyField<Mod, LIMBS> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
+    #[inline(always)]
     fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
         iter.fold(Self::ONE, |acc, x| acc * x)
     }
@@ -344,6 +367,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Product for ConstMontyField<Mod, LI
 
 impl<'a, Mod: Params<LIMBS>, const LIMBS: usize> Product<&'a Self> for ConstMontyField<Mod, LIMBS> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
+    #[inline(always)]
     fn product<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
         iter.fold(Self::ONE, |acc, x| acc * x)
     }
@@ -374,6 +398,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> From<ConstMontyField<Mod, LIMBS>>
 impl<Mod: Params<LIMBS>, const LIMBS: usize> From<&ConstMontyField<Mod, LIMBS>>
     for ConstMontyField<Mod, LIMBS>
 {
+    #[inline(always)]
     fn from(value: &Self) -> Self {
         *value
     }
@@ -384,6 +409,7 @@ macro_rules! impl_from_unsigned {
     ($($t:ty),* $(,)?) => {
         $(
             impl<Mod: Params<LIMBS>, const LIMBS: usize> From<$t> for ConstMontyField<Mod, LIMBS> {
+                #[inline(always)]
                 fn from(value: $t) -> Self {
                     let value = Uint::from(value);
                     Self(ConstMontyForm::new(value.inner()))
@@ -391,6 +417,7 @@ macro_rules! impl_from_unsigned {
             }
 
             impl<Mod: Params<LIMBS>, const LIMBS: usize> From<&$t> for ConstMontyField<Mod, LIMBS> {
+                #[inline(always)]
                 fn from(value: &$t) -> Self {
                     Self::from(*value)
                 }
@@ -405,6 +432,7 @@ macro_rules! impl_from_signed {
         $(
             impl<Mod: Params<LIMBS>, const LIMBS: usize> From<$t> for ConstMontyField<Mod, LIMBS> {
                 #![allow(clippy::arithmetic_side_effects)]
+                #[inline(always)]
                 fn from(value: $t) -> Self {
                     let magnitude = Uint::from(value.abs_diff(0));
                     let form = ConstMontyForm::new(magnitude.inner());
@@ -413,6 +441,7 @@ macro_rules! impl_from_signed {
             }
 
             impl<Mod: Params<LIMBS>, const LIMBS: usize> From<&$t> for ConstMontyField<Mod, LIMBS> {
+                #[inline(always)]
                 fn from(value: &$t) -> Self {
                     Self::from(*value)
                 }
@@ -425,30 +454,35 @@ impl_from_unsigned!(u8, u16, u32, u64, u128);
 impl_from_signed!(i8, i16, i32, i64, i128);
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> From<bool> for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn from(value: bool) -> Self {
         if value { Self::ONE } else { Self::ZERO }
     }
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> From<Boolean> for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn from(value: Boolean) -> Self {
         Self::from(*value)
     }
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> From<&Boolean> for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn from(value: &Boolean) -> Self {
         Self::from(**value)
     }
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> From<Uint<LIMBS>> for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn from(value: Uint<LIMBS>) -> Self {
         Self::from(&value)
     }
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> From<&Uint<LIMBS>> for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn from(value: &Uint<LIMBS>) -> Self {
         Self(ConstMontyForm::new(value.inner()))
     }
@@ -457,6 +491,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> From<&Uint<LIMBS>> for ConstMontyFi
 impl<Mod: Params<LIMBS>, const LIMBS: usize, const LIMBS2: usize> From<Int<LIMBS2>>
     for ConstMontyField<Mod, LIMBS>
 {
+    #[inline(always)]
     fn from(value: Int<LIMBS2>) -> Self {
         Self::from(value.inner())
     }
@@ -465,6 +500,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize, const LIMBS2: usize> From<Int<LIMBS
 impl<Mod: Params<LIMBS>, const LIMBS: usize, const LIMBS2: usize> From<&Int<LIMBS2>>
     for ConstMontyField<Mod, LIMBS>
 {
+    #[inline(always)]
     fn from(value: &Int<LIMBS2>) -> Self {
         Self::from(value.inner())
     }
@@ -473,6 +509,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize, const LIMBS2: usize> From<&Int<LIMB
 impl<Mod: Params<LIMBS>, const LIMBS: usize, const LIMBS2: usize> From<crypto_bigint::Int<LIMBS2>>
     for ConstMontyField<Mod, LIMBS>
 {
+    #[inline(always)]
     fn from(value: crypto_bigint::Int<LIMBS2>) -> Self {
         Self::from(&value)
     }
@@ -482,6 +519,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize, const LIMBS2: usize> From<&crypto_b
     for ConstMontyField<Mod, LIMBS>
 {
     #![allow(clippy::arithmetic_side_effects)] // False alert
+    #[inline(always)]
     fn from(value: &crypto_bigint::Int<LIMBS2>) -> Self {
         assert!(
             LIMBS >= LIMBS2,
@@ -551,6 +589,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstPrimeField for ConstMontyField
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Distribution<ConstMontyField<Mod, LIMBS>>
     for StandardUniform
 {
+    #[inline(always)]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> ConstMontyField<Mod, LIMBS> {
         crypto_bigint::Random::random(rng)
     }
@@ -558,6 +597,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Distribution<ConstMontyField<Mod, L
 
 #[cfg(feature = "rand")]
 impl<Mod: Params<LIMBS>, const LIMBS: usize> crypto_bigint::Random for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn try_random<R: TryRngCore + ?Sized>(rng: &mut R) -> Result<Self, R::Error> {
         ConstMontyForm::try_random(rng).map(Self)
     }
@@ -613,6 +653,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> zeroize::Zeroize for ConstMontyFiel
 //
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstantTimeEq for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn ct_eq(&self, other: &Self) -> Choice {
         self.0.ct_eq(&other.0)
     }
@@ -642,6 +683,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> crypto_bigint::One for ConstMontyFi
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> crypto_bigint::Square for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn square(&self) -> Self {
         Self(self.0.square())
     }
@@ -650,6 +692,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> crypto_bigint::Square for ConstMont
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Retrieve for ConstMontyField<Mod, LIMBS> {
     type Output = Uint<LIMBS>;
 
+    #[inline(always)]
     fn retrieve(&self) -> Self::Output {
         self.retrieve()
     }
