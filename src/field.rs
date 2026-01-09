@@ -36,7 +36,7 @@ pub trait Field:
     + for<'a> DivAssign<&'a Self>
 {
     /// Underlying representation of an element
-    type Inner: Debug + Eq + Clone;
+    type Inner: Debug + Eq + Clone + Sync + Send;
 
     fn inner(&self) -> &Self::Inner;
     fn inner_mut(&mut self) -> &mut Self::Inner;
