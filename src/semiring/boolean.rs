@@ -417,16 +417,11 @@ mod tests {
 
     #[test]
     fn widen() {
-        let f = Boolean::FALSE;
-        let t = Boolean::TRUE;
+        assert_eq!(Boolean::FALSE.widen::<i32>(), 0);
+        assert_eq!(Boolean::TRUE.widen::<i32>(), 1);
 
-        // Widening to i32
-        assert_eq!(f.widen::<i32>(), 0);
-        assert_eq!(t.widen::<i32>(), 1);
-
-        // Widening to ConstZero and ConstOne
-        assert_eq!(f.const_widen::<i32>(), 0);
-        assert_eq!(t.const_widen::<i32>(), 1);
+        assert_eq!(Boolean::FALSE.const_widen::<i32>(), 0);
+        assert_eq!(Boolean::TRUE.const_widen::<i32>(), 1);
     }
 
     #[test]
