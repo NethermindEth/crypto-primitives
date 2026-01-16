@@ -52,6 +52,26 @@ impl Boolean {
     pub const fn from_u8(value: u8) -> Self {
         Self(value != 0)
     }
+
+    /// Convert to a constant type that implements ConstOne and ConstZero
+    #[inline(always)]
+    pub const fn const_widen<T: ConstOne + ConstZero>(&self) -> T {
+        if self.0 {
+            T::ONE
+        } else {
+            T::ZERO
+        }
+    }
+
+    /// Convert to a type that implements One and Zero
+    #[inline(always)]
+    pub fn widen<T: One + Zero>(&self) -> T {
+        if self.0 {
+            T::one()
+        } else {
+            T::zero()
+        }
+    }
 }
 
 //
