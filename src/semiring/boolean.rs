@@ -56,21 +56,13 @@ impl Boolean {
     /// Convert to a constant type that implements ConstOne and ConstZero
     #[inline(always)]
     pub const fn const_widen<T: ConstOne + ConstZero>(&self) -> T {
-        if self.0 {
-            T::ONE
-        } else {
-            T::ZERO
-        }
+        if self.0 { T::ONE } else { T::ZERO }
     }
 
     /// Convert to a type that implements One and Zero
     #[inline(always)]
     pub fn widen<T: One + Zero>(&self) -> T {
-        if self.0 {
-            T::one()
-        } else {
-            T::zero()
-        }
+        if self.0 { T::one() } else { T::zero() }
     }
 }
 
@@ -421,6 +413,20 @@ mod tests {
         assert_eq!(Boolean::TRUE, Boolean(true));
         assert_eq!(Boolean::ZERO, Boolean(false));
         assert_eq!(Boolean::ONE, Boolean(true));
+    }
+
+    #[test]
+    fn widen() {
+        let f = Boolean::FALSE;
+        let t = Boolean::TRUE;
+
+        // Widening to i32
+        assert_eq!(f.widen::<i32>(), 0);
+        assert_eq!(t.widen::<i32>(), 1);
+
+        // Widening to ConstZero and ConstOne
+        assert_eq!(f.const_widen::<i32>(), 0);
+        assert_eq!(t.const_widen::<i32>(), 1);
     }
 
     #[test]
