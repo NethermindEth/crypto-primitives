@@ -12,6 +12,7 @@ pub mod crypto_bigint_monty;
 use crate::{ConstSemiring, ring::Ring};
 use core::{
     fmt::Debug,
+    iter::{Product, Sum},
     ops::{Div, DivAssign, Neg},
 };
 use num_traits::{Inv, Pow, Zero};
@@ -34,6 +35,10 @@ pub trait Field:
     // Arithmetic operations with rhs reference
     + for<'a> Div<&'a Self, Output=Self>
     + for<'a> DivAssign<&'a Self>
+        + Sum
+        + Product
+        + for<'a> Sum<&'a Self>
+        + for<'a> Product<&'a Self>
 {
     /// Underlying representation of an element
     type Inner: Debug + Eq + Clone + Sync + Send;

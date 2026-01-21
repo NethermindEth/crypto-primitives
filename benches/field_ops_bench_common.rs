@@ -3,7 +3,6 @@
 
 use std::{
     hint::black_box,
-    iter::{Product, Sum},
     ops::{Add, Div, Mul},
 };
 
@@ -16,7 +15,7 @@ fn bench_random_field<F>(
     config: &F::Config,
 ) where
     for<'a> &'a F: Add<&'a F> + Mul<&'a F> + Div<&'a F>,
-    F: FromPrimitiveWithConfig + for<'a> Sum<&'a F> + for<'a> Product<&'a F>,
+    F: FromPrimitiveWithConfig,
 {
     let field_elem = F::from_with_cfg(num, config);
     let param = format!("Param = {}", num);
@@ -221,7 +220,7 @@ fn bench_random_field<F>(
 pub fn field_benchmarks<F>(c: &mut Criterion, name: &str, config: &F::Config)
 where
     for<'a> &'a F: Add<&'a F> + Mul<&'a F> + Div<&'a F>,
-    F: FromPrimitiveWithConfig + for<'a> Sum<&'a F> + for<'a> Product<&'a F>,
+    F: FromPrimitiveWithConfig,
 {
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
 
