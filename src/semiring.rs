@@ -37,8 +37,6 @@ pub trait Semiring:
     + AddAssign
     + SubAssign
     + MulAssign
-    + Sum
-    + Product
     // Arithmetic operations with rhs reference
     + for<'a> Add<&'a Self, Output=Self>
     + for<'a> Sub<&'a Self, Output=Self>
@@ -46,13 +44,24 @@ pub trait Semiring:
     + for<'a> AddAssign<&'a Self>
     + for<'a> SubAssign<&'a Self>
     + for<'a> MulAssign<&'a Self>
-    + for<'a> Sum<&'a Self>
-    + for<'a> Product<&'a Self>
     {}
 
 /// Ring whose zero and one elements can be constructed from the type alone.
-pub trait FixedSemiring: Semiring + Default + Zero + One {}
-impl<T> FixedSemiring for T where T: Semiring + Default + Zero + One {}
+pub trait FixedSemiring:
+    Semiring + Sum + Product + for<'a> Sum<&'a Self> + for<'a> Product<&'a Self> + Default + Zero + One
+{
+}
+impl<T> FixedSemiring for T where
+    T: Semiring
+        + Sum
+        + Product
+        + for<'a> Sum<&'a Self>
+        + for<'a> Product<&'a Self>
+        + Default
+        + Zero
+        + One
+{
+}
 
 pub trait ConstSemiring: FixedSemiring + ConstZero + ConstOne + From<bool> {}
 impl<T> ConstSemiring for T where T: FixedSemiring + ConstZero + ConstOne + From<bool> {}
