@@ -238,31 +238,37 @@ impl<const LIMBS: usize> Neg for Int<LIMBS> {
 
 macro_rules! impl_basic_and_wrapping_op {
     ($trait_name:tt, $trait_op:tt) => {
-        impl<const LIMBS: usize> $trait_name for Int<LIMBS> {
-            type Output = Self;
-
-            #[inline(always)]
-            fn $trait_op(self, rhs: Self) -> Self::Output {
-                self.$trait_op(&rhs)
-            }
-        }
-
-        impl<'a, const LIMBS: usize> $trait_name<&'a Self> for Int<LIMBS> {
-            type Output = Self;
-
-            #[inline(always)]
-            fn $trait_op(self, rhs: &'a Self) -> Self::Output {
-                Self(self.0.$trait_op(&rhs.0))
-            }
-        }
-
         paste! {
-        impl<const LIMBS: usize> [<Wrapping $trait_name>] for Int<LIMBS> {
-            #[inline(always)]
-            fn [<wrapping_ $trait_op>](&self, rhs: &Self) -> Self {
-                Self(self.0.[<wrapping_ $trait_op>](&rhs.0))
+            impl<const LIMBS: usize> $trait_name for Int<LIMBS> {
+                type Output = Self;
+
+                #[inline(always)]
+                fn $trait_op(self, rhs: Self) -> Self::Output {
+                    self.$trait_op(&rhs)
+                }
             }
-        }
+
+            impl<'a, const LIMBS: usize> $trait_name<&'a Self> for Int<LIMBS> {
+                type Output = Self;
+
+                #[inline(always)]
+                fn $trait_op(self, rhs: &'a Self) -> Self::Output {
+                    if cfg!(debug_assertions) {
+                        // In debug mode
+                        Self(self.0.$trait_op(&rhs.0))
+                    } else {
+                        // In release mode, wrap around silently
+                        self.[<wrapping_ $trait_op>](rhs)
+                    }
+                }
+            }
+
+            impl<const LIMBS: usize> [<Wrapping $trait_name>] for Int<LIMBS> {
+                #[inline(always)]
+                fn [<wrapping_ $trait_op>](&self, rhs: &Self) -> Self {
+                    Self(self.0.[<wrapping_ $trait_op>](&rhs.0))
+                }
+            }
         }
     };
 }

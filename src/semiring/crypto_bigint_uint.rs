@@ -13,7 +13,8 @@ use core::{
 };
 use crypto_bigint::{Integer, Limb, Word};
 use num_traits::{
-    CheckedAdd, CheckedMul, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow, WrappingAdd, WrappingMul, WrappingSub, Zero,
+    CheckedAdd, CheckedMul, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow, WrappingAdd,
+    WrappingMul, WrappingSub, Zero,
 };
 use pastey::paste;
 
@@ -245,31 +246,37 @@ impl<const LIMBS: usize> ConstOne for Uint<LIMBS> {
 
 macro_rules! impl_basic_and_wrapping_op {
     ($trait_name:tt, $trait_op:tt) => {
-        impl<const LIMBS: usize> $trait_name for Uint<LIMBS> {
-            type Output = Self;
-
-            #[inline(always)]
-            fn $trait_op(self, rhs: Self) -> Self::Output {
-                self.$trait_op(&rhs)
-            }
-        }
-
-        impl<'a, const LIMBS: usize> $trait_name<&'a Self> for Uint<LIMBS> {
-            type Output = Self;
-
-            #[inline(always)]
-            fn $trait_op(self, rhs: &'a Self) -> Self::Output {
-                Self(self.0.$trait_op(&rhs.0))
-            }
-        }
-
         paste! {
-        impl<const LIMBS: usize> [<Wrapping $trait_name>] for Uint<LIMBS> {
-            #[inline(always)]
-            fn [<wrapping_ $trait_op>](&self, rhs: &Self) -> Self {
-                Self(self.0.[<wrapping_ $trait_op>](&rhs.0))
+            impl<const LIMBS: usize> $trait_name for Uint<LIMBS> {
+                type Output = Self;
+
+                #[inline(always)]
+                fn $trait_op(self, rhs: Self) -> Self::Output {
+                    self.$trait_op(&rhs)
+                }
             }
-        }
+
+            impl<'a, const LIMBS: usize> $trait_name<&'a Self> for Uint<LIMBS> {
+                type Output = Self;
+
+                #[inline(always)]
+                fn $trait_op(self, rhs: &'a Self) -> Self::Output {
+                    if cfg!(debug_assertions) {
+                        // In debug mode
+                        Self(self.0.$trait_op(&rhs.0))
+                    } else {
+                        // In release mode, wrap around silently
+                        self.[<wrapping_ $trait_op>](rhs)
+                    }
+                }
+            }
+
+            impl<const LIMBS: usize> [<Wrapping $trait_name>] for Uint<LIMBS> {
+                #[inline(always)]
+                fn [<wrapping_ $trait_op>](&self, rhs: &Self) -> Self {
+                    Self(self.0.[<wrapping_ $trait_op>](&rhs.0))
+                }
+            }
         }
     };
 }
