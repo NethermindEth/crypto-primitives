@@ -12,7 +12,7 @@ use core::{
     str::FromStr,
 };
 use crypto_bigint::{
-    CheckedMul as CryptoCheckedMul, CheckedSub as CryptoCheckedSub, Integer, Word,
+    CheckedMul as CryptoCheckedMul, CheckedSub as CryptoCheckedSub, ConcatMixed, Integer, Word,
 };
 use num_traits::{
     CheckedAdd, CheckedMul, CheckedNeg, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow,
@@ -77,6 +77,20 @@ impl<const LIMBS: usize> Int<LIMBS> {
             None => None,
             Some(inner) => Some(Int(inner)),
         }
+    }
+
+    /// Multiply `self` by `rhs`, returning a concatenated "wide" result.
+    pub const fn concatenating_mul<const RHS_LIMBS: usize, const WIDE_LIMBS: usize>(
+        &self,
+        rhs: &Int<RHS_LIMBS>,
+    ) -> Int<WIDE_LIMBS>
+    where
+        crypto_bigint::Uint<LIMBS>: ConcatMixed<
+                crypto_bigint::Uint<RHS_LIMBS>,
+                MixedOutput = crypto_bigint::Uint<WIDE_LIMBS>,
+            >,
+    {
+        Int(self.0.concatenating_mul(&rhs.0))
     }
 
     /// See [crypto_bigint::Int::cmp_vartime]
