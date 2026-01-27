@@ -442,6 +442,10 @@ impl PrimeField for BoxedMontyField {
         self.0.params()
     }
 
+    fn is_zero(value: &Self) -> bool {
+        value.0.is_zero().into()
+    }
+
     fn modulus(&self) -> Self::Inner {
         self.0.params().modulus().clone().get()
     }
@@ -469,10 +473,6 @@ impl PrimeField for BoxedMontyField {
 
     fn zero_with_cfg(cfg: &Self::Config) -> Self {
         Self(BoxedMontyForm::zero(cfg.clone()))
-    }
-
-    fn is_zero_with_cfg(&self, _cfg: &Self::Config) -> bool {
-        self.0.is_zero().into()
     }
 
     fn one_with_cfg(cfg: &Self::Config) -> Self {
@@ -554,9 +554,9 @@ mod tests {
     #[test]
     fn zero_one_basics() {
         let z = zero();
-        assert!(z.is_zero_with_cfg(&test_config()));
+        assert!(F::is_zero(&z));
         let o = one();
-        assert!(!o.is_zero_with_cfg(&test_config()));
+        assert!(!F::is_zero(&o));
         assert_ne!(z, o);
     }
 
@@ -1052,9 +1052,9 @@ mod tests {
 
         // Test zero_with_cfg and one_with_cfg
         let z = F::zero_with_cfg(cfg);
-        assert!(z.is_zero_with_cfg(cfg));
+        assert!(F::is_zero(&z));
         let o = F::one_with_cfg(cfg);
-        assert!(!o.is_zero_with_cfg(cfg));
+        assert!(!F::is_zero(&o));
     }
 
     #[test]

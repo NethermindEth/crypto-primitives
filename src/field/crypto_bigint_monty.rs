@@ -497,6 +497,10 @@ impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
         self.0.params()
     }
 
+    fn is_zero(value: &Self) -> bool {
+        value.0.as_montgomery().is_zero()
+    }
+
     fn modulus(&self) -> Self::Inner {
         Uint::new(self.0.params().modulus().get())
     }
@@ -527,10 +531,6 @@ impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
 
     fn zero_with_cfg(cfg: &Self::Config) -> Self {
         Self(MontyForm::zero(*cfg))
-    }
-
-    fn is_zero_with_cfg(&self, _cfg: &Self::Config) -> bool {
-        self.0.as_montgomery().is_zero()
     }
 
     fn one_with_cfg(cfg: &Self::Config) -> Self {
@@ -639,9 +639,9 @@ mod tests {
     #[test]
     fn zero_one_basics() {
         let z = zero();
-        assert!(z.is_zero_with_cfg(&test_config()));
+        assert!(F::is_zero(&z));
         let o = one();
-        assert!(!o.is_zero_with_cfg(&test_config()));
+        assert!(!F::is_zero(&o));
         assert_ne!(z, o);
     }
 
@@ -1190,9 +1190,9 @@ mod tests {
 
         // Test zero_with_cfg and one_with_cfg
         let z = F::zero_with_cfg(cfg);
-        assert!(z.is_zero_with_cfg(cfg));
+        assert!(F::is_zero(&z));
         let o = F::one_with_cfg(cfg);
-        assert!(!o.is_zero_with_cfg(cfg));
+        assert!(!F::is_zero(&o));
     }
 
     #[test]
