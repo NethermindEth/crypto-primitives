@@ -15,7 +15,8 @@ use crypto_bigint::{
     CheckedMul as CryptoCheckedMul, CheckedSub as CryptoCheckedSub, Integer, Word,
 };
 use num_traits::{
-    CheckedAdd, CheckedMul, CheckedNeg, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow, Zero,
+    CheckedAdd, CheckedMul, CheckedNeg, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow,
+    WrappingAdd, WrappingMul, WrappingSub, Zero,
 };
 use pastey::paste;
 
@@ -235,7 +236,7 @@ impl<const LIMBS: usize> Neg for Int<LIMBS> {
     }
 }
 
-macro_rules! impl_basic_op {
+macro_rules! impl_basic_and_wrapping_op {
     ($trait_name:tt, $trait_op:tt) => {
         impl<const LIMBS: usize> $trait_name for Int<LIMBS> {
             type Output = Self;
@@ -254,12 +255,21 @@ macro_rules! impl_basic_op {
                 Self(self.0.$trait_op(&rhs.0))
             }
         }
+
+        paste! {
+        impl<const LIMBS: usize> [<Wrapping $trait_name>] for Int<LIMBS> {
+            #[inline(always)]
+            fn [<wrapping_ $trait_op>](&self, rhs: &Self) -> Self {
+                Self(self.0.[<wrapping_ $trait_op>](&rhs.0))
+            }
+        }
+        }
     };
 }
 
-impl_basic_op!(Add, add);
-impl_basic_op!(Sub, sub);
-impl_basic_op!(Mul, mul);
+impl_basic_and_wrapping_op!(Add, add);
+impl_basic_and_wrapping_op!(Sub, sub);
+impl_basic_and_wrapping_op!(Mul, mul);
 
 impl<const LIMBS: usize> Rem for Int<LIMBS> {
     type Output = Self;
