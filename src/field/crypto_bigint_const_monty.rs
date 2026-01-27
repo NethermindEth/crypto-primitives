@@ -723,8 +723,10 @@ mod tests {
     fn zero_one_basics() {
         let z = F::zero();
         assert!(z.is_zero());
+        assert!(PrimeField::is_zero(&z));
         let o = F::one();
         assert!(!o.is_zero());
+        assert!(!PrimeField::is_zero(&o));
         assert_ne!(z, o);
     }
 

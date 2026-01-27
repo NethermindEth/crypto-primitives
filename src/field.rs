@@ -57,6 +57,9 @@ pub trait PrimeField: Field {
 
     fn cfg(&self) -> &Self::Config;
 
+    // Note: Not using `&self` to avoid conflicts with `Zero` trait.
+    fn is_zero(value: &Self) -> bool;
+
     fn modulus(&self) -> Self::Inner;
 
     fn modulus_minus_one_div_two(&self) -> Self::Inner;
@@ -78,8 +81,6 @@ pub trait PrimeField: Field {
     fn new_unchecked_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self;
 
     fn zero_with_cfg(cfg: &Self::Config) -> Self;
-
-    fn is_zero_with_cfg(&self, cfg: &Self::Config) -> bool;
 
     fn one_with_cfg(cfg: &Self::Config) -> Self;
 }
@@ -115,6 +116,11 @@ impl<T: ConstPrimeField> PrimeField for T {
     }
 
     #[inline(always)]
+    fn is_zero(value: &Self) -> bool {
+        Zero::is_zero(value)
+    }
+
+    #[inline(always)]
     fn modulus(&self) -> Self::Inner {
         Self::MODULUS
     }
@@ -145,11 +151,6 @@ impl<T: ConstPrimeField> PrimeField for T {
     #[inline(always)]
     fn zero_with_cfg(_cfg: &Self::Config) -> Self {
         Self::ZERO
-    }
-
-    #[inline(always)]
-    fn is_zero_with_cfg(&self, _cfg: &Self::Config) -> bool {
-        Zero::is_zero(self)
     }
 
     #[inline(always)]
