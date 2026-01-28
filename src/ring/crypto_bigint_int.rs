@@ -1345,4 +1345,67 @@ mod tests {
 
         assert_ne!(random3, random4);
     }
+
+    #[test]
+    fn wrapping_operations() {
+        // WrappingAdd
+        let max = Int1::MAX;
+        let one = Int1::ONE;
+        let wrapped_add = max.wrapping_add(&one);
+        assert_eq!(wrapped_add, Int1::MIN); // MAX + 1 wraps to MIN
+
+        // WrappingSub
+        let min = Int1::MIN;
+        let wrapped_sub = min.wrapping_sub(&one);
+        assert_eq!(wrapped_sub, Int1::MAX); // MIN - 1 wraps to MAX
+
+        // WrappingMul
+        let large = Int1::from(i64::MAX);
+        let two = Int1::from(2_i64);
+        let wrapped_mul = large.wrapping_mul(&two);
+        // i64::MAX * 2 overflows, result should be -2
+        assert_eq!(wrapped_mul, Int1::from(-2_i64));
+
+        // Non-overflowing cases should work normally
+        let a = Int4::from(10_i64);
+        let b = Int4::from(5_i64);
+        assert_eq!(a.wrapping_add(&b), Int4::from(15_i64));
+        assert_eq!(a.wrapping_sub(&b), Int4::from(5_i64));
+        assert_eq!(a.wrapping_mul(&b), Int4::from(50_i64));
+    }
+
+    #[test]
+    fn concatenating_mul() {
+        // Test concatenating_mul with small values
+        let a = Int2::from(100_i64);
+        let b = Int2::from(200_i64);
+        let result: Int4 = a.concatenating_mul(&b);
+        assert_eq!(result, Int4::from(20000_i64));
+
+        // Test with values that would overflow in regular multiplication
+        let large_a = Int1::from(i64::MAX);
+        let large_b = Int1::from(2_i64);
+        let wide_result: Int2 = large_a.concatenating_mul(&large_b);
+        // i64::MAX * 2 = 18446744073709551614
+        let expected = Int2::from_i128(i64::MAX as i128 * 2);
+        assert_eq!(wide_result, expected);
+
+        // Test with negative values
+        let neg_a = Int1::from(-100_i64);
+        let pos_b = Int1::from(50_i64);
+        let neg_result: Int2 = neg_a.concatenating_mul(&pos_b);
+        assert_eq!(neg_result, Int2::from(-5000_i64));
+
+        // Test with both negative values
+        let neg_c = Int1::from(-100_i64);
+        let neg_d = Int1::from(-50_i64);
+        let pos_result: Int2 = neg_c.concatenating_mul(&neg_d);
+        assert_eq!(pos_result, Int2::from(5000_i64));
+
+        // Test with zero
+        let zero = Int1::ZERO;
+        let any = Int1::from(12345_i64);
+        let zero_result: Int2 = zero.concatenating_mul(&any);
+        assert_eq!(zero_result, Int2::ZERO);
+    }
 }

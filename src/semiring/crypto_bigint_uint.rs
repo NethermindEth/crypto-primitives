@@ -1214,4 +1214,38 @@ mod tests {
 
         assert_ne!(random3, random4);
     }
+
+    #[test]
+    fn wrapping_operations() {
+        // WrappingAdd
+        let max = Uint1::MAX;
+        let one = Uint1::ONE;
+        let wrapped_add = max.wrapping_add(&one);
+        assert_eq!(wrapped_add, Uint1::ZERO); // MAX + 1 wraps to 0
+
+        let wrapped_add2 = max.wrapping_add(&max);
+        assert_eq!(wrapped_add2, Uint1::MAX - Uint1::ONE); // MAX + MAX wraps
+
+        // WrappingSub
+        let zero = Uint1::ZERO;
+        let wrapped_sub = zero.wrapping_sub(&one);
+        assert_eq!(wrapped_sub, Uint1::MAX); // 0 - 1 wraps to MAX
+
+        let wrapped_sub2 = one.wrapping_sub(&Uint1::from(2_u64));
+        assert_eq!(wrapped_sub2, Uint1::MAX); // 1 - 2 wraps to MAX
+
+        // WrappingMul
+        let large = Uint1::from(u64::MAX);
+        let two = Uint1::from(2_u64);
+        let wrapped_mul = large.wrapping_mul(&two);
+        // u64::MAX * 2 = 2 * (2^64 - 1) = 2^65 - 2, which wraps to 2^64 - 2 = MAX - 1
+        assert_eq!(wrapped_mul, Uint1::MAX - Uint1::ONE);
+
+        // Non-overflowing cases should work normally
+        let a = Uint4::from(10_u64);
+        let b = Uint4::from(5_u64);
+        assert_eq!(a.wrapping_add(&b), Uint4::from(15_u64));
+        assert_eq!(a.wrapping_sub(&b), Uint4::from(5_u64));
+        assert_eq!(a.wrapping_mul(&b), Uint4::from(50_u64));
+    }
 }
