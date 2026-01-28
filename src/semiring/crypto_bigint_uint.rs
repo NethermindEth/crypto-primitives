@@ -13,7 +13,8 @@ use core::{
 };
 use crypto_bigint::{Integer, Limb, Word};
 use num_traits::{
-    CheckedAdd, CheckedMul, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow, Zero,
+    CheckedAdd, CheckedMul, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow, WrappingAdd,
+    WrappingMul, WrappingSub, Zero,
 };
 use pastey::paste;
 
@@ -243,31 +244,46 @@ impl<const LIMBS: usize> ConstOne for Uint<LIMBS> {
 // Basic arithmetic operations
 //
 
-macro_rules! impl_basic_op {
+macro_rules! impl_basic_and_wrapping_op {
     ($trait_name:tt, $trait_op:tt) => {
-        impl<const LIMBS: usize> $trait_name for Uint<LIMBS> {
-            type Output = Self;
+        paste! {
+            impl<const LIMBS: usize> $trait_name for Uint<LIMBS> {
+                type Output = Self;
 
-            #[inline(always)]
-            fn $trait_op(self, rhs: Self) -> Self::Output {
-                self.$trait_op(&rhs)
+                #[inline(always)]
+                fn $trait_op(self, rhs: Self) -> Self::Output {
+                    self.$trait_op(&rhs)
+                }
             }
-        }
 
-        impl<'a, const LIMBS: usize> $trait_name<&'a Self> for Uint<LIMBS> {
-            type Output = Self;
+            impl<'a, const LIMBS: usize> $trait_name<&'a Self> for Uint<LIMBS> {
+                type Output = Self;
 
-            #[inline(always)]
-            fn $trait_op(self, rhs: &'a Self) -> Self::Output {
-                Self(self.0.$trait_op(&rhs.0))
+                #[inline(always)]
+                fn $trait_op(self, rhs: &'a Self) -> Self::Output {
+                    if cfg!(debug_assertions) {
+                        // In debug mode
+                        Self(self.0.$trait_op(&rhs.0))
+                    } else {
+                        // In release mode, wrap around silently
+                        self.[<wrapping_ $trait_op>](rhs)
+                    }
+                }
+            }
+
+            impl<const LIMBS: usize> [<Wrapping $trait_name>] for Uint<LIMBS> {
+                #[inline(always)]
+                fn [<wrapping_ $trait_op>](&self, rhs: &Self) -> Self {
+                    Self(self.0.[<wrapping_ $trait_op>](&rhs.0))
+                }
             }
         }
     };
 }
 
-impl_basic_op!(Add, add);
-impl_basic_op!(Sub, sub);
-impl_basic_op!(Mul, mul);
+impl_basic_and_wrapping_op!(Add, add);
+impl_basic_and_wrapping_op!(Sub, sub);
+impl_basic_and_wrapping_op!(Mul, mul);
 
 impl<const LIMBS: usize> Div for Uint<LIMBS> {
     type Output = Self;
@@ -1197,5 +1213,39 @@ mod tests {
         let random4: Uint4 = rng.random();
 
         assert_ne!(random3, random4);
+    }
+
+    #[test]
+    fn wrapping_operations() {
+        // WrappingAdd
+        let max = Uint1::MAX;
+        let one = Uint1::ONE;
+        let wrapped_add = max.wrapping_add(&one);
+        assert_eq!(wrapped_add, Uint1::ZERO); // MAX + 1 wraps to 0
+
+        let wrapped_add2 = max.wrapping_add(&max);
+        assert_eq!(wrapped_add2, Uint1::MAX - Uint1::ONE); // MAX + MAX wraps
+
+        // WrappingSub
+        let zero = Uint1::ZERO;
+        let wrapped_sub = zero.wrapping_sub(&one);
+        assert_eq!(wrapped_sub, Uint1::MAX); // 0 - 1 wraps to MAX
+
+        let wrapped_sub2 = one.wrapping_sub(&Uint1::from(2_u64));
+        assert_eq!(wrapped_sub2, Uint1::MAX); // 1 - 2 wraps to MAX
+
+        // WrappingMul
+        let large = Uint1::from(u64::MAX);
+        let two = Uint1::from(2_u64);
+        let wrapped_mul = large.wrapping_mul(&two);
+        // u64::MAX * 2 = 2 * (2^64 - 1) = 2^65 - 2, which wraps to 2^64 - 2 = MAX - 1
+        assert_eq!(wrapped_mul, Uint1::MAX - Uint1::ONE);
+
+        // Non-overflowing cases should work normally
+        let a = Uint4::from(10_u64);
+        let b = Uint4::from(5_u64);
+        assert_eq!(a.wrapping_add(&b), Uint4::from(15_u64));
+        assert_eq!(a.wrapping_sub(&b), Uint4::from(5_u64));
+        assert_eq!(a.wrapping_mul(&b), Uint4::from(50_u64));
     }
 }
