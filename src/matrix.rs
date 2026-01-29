@@ -1,6 +1,9 @@
 use alloc::vec::Vec;
 use core::mem::{ManuallyDrop, MaybeUninit};
 
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
 /// A matrix, rectangular table of values
 pub trait Matrix<T> {
     /// Number of rows in this matrix
@@ -13,9 +16,29 @@ pub trait Matrix<T> {
     where
         T: 'a;
 
+    fn cells_mut<'a>(
+        &'a mut self,
+    ) -> impl Iterator<Item = impl Iterator<Item = (usize, &'a mut T)>>
+    where
+        T: 'a;
+
     fn is_empty(&self) -> bool {
         self.num_rows() == 0 || self.num_cols() == 0
     }
+
+    #[cfg(feature = "parallel")]
+    fn par_cells<'a>(
+        &'a self,
+    ) -> impl ParallelIterator<Item = impl Iterator<Item = (usize, &'a T)>>
+    where
+        T: 'a + Send + Sync;
+
+    #[cfg(feature = "parallel")]
+    fn par_cells_mut<'a>(
+        &'a mut self,
+    ) -> impl ParallelIterator<Item = impl Iterator<Item = (usize, &'a mut T)>>
+    where
+        T: 'a + Send + Sync;
 }
 
 /// Sparse matrix is a matrix with a fixed number non-zero of elements per row
@@ -55,6 +78,37 @@ impl<T> Matrix<T> for SparseMatrix<T> {
         self.cells
             .chunks(self.density)
             .map(|chunk| chunk.iter().map(|v| (v.0, &v.1)))
+    }
+
+    fn cells_mut<'a>(&'a mut self) -> impl Iterator<Item = impl Iterator<Item = (usize, &'a mut T)>>
+    where
+        T: 'a,
+    {
+        self.cells
+            .chunks_mut(self.density)
+            .map(|chunk| chunk.iter_mut().map(|v| (v.0, &mut v.1)))
+    }
+
+    #[cfg(feature = "parallel")]
+    fn par_cells<'a>(&'a self) -> impl ParallelIterator<Item = impl Iterator<Item = (usize, &'a T)>>
+    where
+        T: 'a + Send + Sync,
+    {
+        self.cells
+            .par_chunks(self.density)
+            .map(|chunk| chunk.iter().map(|v| (v.0, &v.1)))
+    }
+
+    #[cfg(feature = "parallel")]
+    fn par_cells_mut<'a>(
+        &'a mut self,
+    ) -> impl ParallelIterator<Item = impl Iterator<Item = (usize, &'a mut T)>>
+    where
+        T: 'a + Send + Sync,
+    {
+        self.cells
+            .par_chunks_mut(self.density)
+            .map(|chunk| chunk.iter_mut().map(|v| (v.0, &mut v.1)))
     }
 }
 
@@ -109,6 +163,22 @@ impl<T: Clone> DenseRowMatrix<T> {
 
     pub fn as_rows_mut(&mut self) -> impl Iterator<Item = &mut [T]> {
         self.data.chunks_exact_mut(self.num_cols)
+    }
+
+    #[cfg(feature = "parallel")]
+    pub fn as_rows_par(&self) -> impl ParallelIterator<Item = &[T]>
+    where
+        T: Send + Sync,
+    {
+        self.data.par_chunks_exact(self.num_cols)
+    }
+
+    #[cfg(feature = "parallel")]
+    pub fn as_rows_mut_par(&mut self) -> impl ParallelIterator<Item = &mut [T]>
+    where
+        T: Send + Sync,
+    {
+        self.data.par_chunks_exact_mut(self.num_cols)
     }
 
     pub fn to_rows_slices(&self) -> Vec<&[T]> {
@@ -166,6 +236,37 @@ impl<T> Matrix<T> for DenseRowMatrix<T> {
         self.data
             .chunks_exact(self.num_cols)
             .map(|row| row.iter().enumerate())
+    }
+
+    fn cells_mut<'a>(&'a mut self) -> impl Iterator<Item = impl Iterator<Item = (usize, &'a mut T)>>
+    where
+        T: 'a,
+    {
+        self.data
+            .chunks_exact_mut(self.num_cols)
+            .map(|row| row.iter_mut().enumerate())
+    }
+
+    #[cfg(feature = "parallel")]
+    fn par_cells<'a>(&'a self) -> impl ParallelIterator<Item = impl Iterator<Item = (usize, &'a T)>>
+    where
+        T: 'a + Send + Sync,
+    {
+        self.data
+            .par_chunks_exact(self.num_cols)
+            .map(|row| row.iter().enumerate())
+    }
+
+    #[cfg(feature = "parallel")]
+    fn par_cells_mut<'a>(
+        &'a mut self,
+    ) -> impl ParallelIterator<Item = impl Iterator<Item = (usize, &'a mut T)>>
+    where
+        T: 'a + Send + Sync,
+    {
+        self.data
+            .par_chunks_exact_mut(self.num_cols)
+            .map(|row| row.iter_mut().enumerate())
     }
 }
 
