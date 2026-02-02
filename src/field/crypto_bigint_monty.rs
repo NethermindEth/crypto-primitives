@@ -138,7 +138,7 @@ impl<const LIMBS: usize> Neg for MontyField<LIMBS> {
     }
 }
 
-macro_rules! impl_basic_op {
+macro_rules! impl_basic_op_boilerplate {
     ($trait:ident, $method:ident) => {
         impl<const LIMBS: usize> $trait for MontyField<LIMBS> {
             type Output = Self;
@@ -158,15 +158,6 @@ macro_rules! impl_basic_op {
             }
         }
 
-        impl<const LIMBS: usize> $trait for &MontyField<LIMBS> {
-            type Output = MontyField<LIMBS>;
-
-            #[inline(always)]
-            fn $method(self, rhs: Self) -> Self::Output {
-                MontyField(MontyForm::$method(&self.0, &rhs.0))
-            }
-        }
-
         impl<const LIMBS: usize> $trait<MontyField<LIMBS>> for &MontyField<LIMBS> {
             type Output = MontyField<LIMBS>;
 
@@ -178,9 +169,215 @@ macro_rules! impl_basic_op {
     };
 }
 
-impl_basic_op!(Add, add);
-impl_basic_op!(Sub, sub);
-impl_basic_op!(Mul, mul);
+macro_rules! impl_basic_op_forward {
+    ($trait:ident, $method:ident) => {
+        impl<const LIMBS: usize> $trait for &MontyField<LIMBS> {
+            type Output = MontyField<LIMBS>;
+
+            #[inline(always)]
+            fn $method(self, rhs: Self) -> Self::Output {
+                MontyField(MontyForm::$method(&self.0, &rhs.0))
+            }
+        }
+    };
+}
+
+impl_basic_op_boilerplate!(Add, add);
+impl_basic_op_boilerplate!(Sub, sub);
+impl_basic_op_boilerplate!(Mul, mul);
+
+impl_basic_op_forward!(Add, add);
+impl_basic_op_forward!(Sub, sub);
+
+impl<const LIMBS: usize> Mul for &MontyField<LIMBS> {
+    type Output = MontyField<LIMBS>;
+
+    #[inline(always)]
+    fn mul(self, rhs: Self) -> Self::Output {
+        let params: &mul::MontyParams<LIMBS> = unsafe { core::mem::transmute(self.0.params()) };
+        let mod_neg_inv = params.mod_inv.as_limbs()[0].wrapping_neg();
+
+        let mut out = crypto_bigint::Uint::<LIMBS>::ZERO;
+        let carry = mul::montgomery_multiply_optimized(
+            self.0.as_montgomery().as_limbs(),
+            rhs.0.as_montgomery().as_limbs(),
+            out.as_mut_limbs(),
+            params.modulus.as_limbs(),
+            mod_neg_inv,
+        );
+
+        let mf = mul::sub_mod_with_carry(&out, carry, params.modulus.as_ref(), params.modulus.as_ref());
+
+        let mf = MontyForm::from_montgomery(mf, self.0.params().clone());
+        MontyField(mf)
+        // MontyField(MontyForm::mul(&self.0, &rhs.0))
+    }
+}
+
+mod mul {
+    // #[cfg(target_arch = "aarch64")]
+    // use core::arch::aarch64::*;
+
+    use crypto_bigint::{Limb, Odd, Uint, WideWord, Word};
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct MontyParams<const LIMBS: usize> {
+        /// The constant modulus
+        pub modulus: Odd<Uint<LIMBS>>,
+        /// 1 in Montgomery form (a.k.a. `R`)
+        pub one: Uint<LIMBS>,
+        /// `R^2 mod modulus`, used to move into Montgomery form
+        pub r2: Uint<LIMBS>,
+        /// The lowest limbs of MODULUS^-1 mod 2**64
+        /// This value is used in Montgomery reduction and modular inversion
+        pub mod_inv: crypto_bigint::U64,
+        /// Leading zeros in the modulus, used to choose optimized algorithms
+        pub mod_leading_zeros: u32,
+    }
+
+    /// Returns `(self..., carry) - (rhs...) mod (p...)`, where `carry <= 1`.
+    /// Assumes `-(p...) <= (self..., carry) - (rhs...) < (p...)`.
+    #[inline(always)]
+    pub fn sub_mod_with_carry<const LIMBS: usize>(lhs: &Uint<LIMBS>, carry: Limb, rhs: &Uint<LIMBS>, p: &Uint<LIMBS>) -> Uint<LIMBS> {
+        debug_assert!(carry.0 <= 1);
+
+        let (out, borrow) = lhs.borrowing_sub(rhs, Limb::ZERO);
+        let (_, mask) = carry.borrowing_sub(Limb::ZERO, borrow);
+
+        // If underflow occurred on the final limb, borrow = 0xfff...fff, otherwise
+        // borrow = 0x000...000. Thus, we use it as a mask to conditionally add the modulus.
+        out.wrapping_add(&p.bitand_limb(mask))
+    }
+
+    /// Optimized CIOS Montgomery Multiplication
+    ///
+    /// Algorithmic Changes:
+    /// 1. Uses Coarsely Integrated Operand Scanning (CIOS) for better pipelining.
+    /// 2. Uses `u128` for automatic usage of hardware carry flags (ADC).
+    /// 3. Unrolls inner loops to hide instruction latency.
+    #[inline(never)] // Let the caller decide inlining, but usually keeps code size sane
+    pub fn montgomery_multiply_optimized(
+        x: &[Limb],
+        y: &[Limb],
+        out: &mut [Limb],
+        modulus: &[Limb],
+        mod_neg_inv: Limb,
+    ) -> Limb {
+        let n = modulus.len();
+        // Ensure strict equality of lengths to help the optimizer remove bounds checks
+        assert!(x.len() == n && y.len() == n && out.len() == n);
+
+        // Initialize output with zeros (or handle uninitialized memory carefully)
+        out.fill(Limb(0));
+
+        // A small temporary carry for the high part of the accumulation
+        let mut t_extra: Word = 0;
+
+        for i in 0..n {
+            let xi = x[i].0 as WideWord;
+
+            // ====================================================================
+            // STEP 1: Multiplication Phase (T = T + x[i] * Y)
+            // ====================================================================
+            // We add x[i] * y[j] to the existing value in out[j].
+
+            let mut carry: Word = 0;
+            let mut j = 0;
+
+            // Unrolled loop (4 limbs at a time)
+            while j + 4 <= n {
+                carry = mac_add(out, y, j, xi, carry);
+                carry = mac_add(out, y, j + 1, xi, carry);
+                carry = mac_add(out, y, j + 2, xi, carry);
+                carry = mac_add(out, y, j + 3, xi, carry);
+                j += 4;
+            }
+            // Handle remainder
+            while j < n {
+                carry = mac_add(out, y, j, xi, carry);
+                j += 1;
+            }
+
+            // Add the carry to the "extra" limb (conceptually out[n])
+            let (sum, c1) = t_extra.overflowing_add(carry);
+            t_extra = sum;
+            // Note: overflow c1 is possible here in rare cases, tracked implicitly by algorithm bounds
+
+            // ====================================================================
+            // STEP 2: Reduction Phase (T = (T + m * M) / R)
+            // ====================================================================
+            // Calculate the Montgomery reduction factor 'm'
+            // m = t[0] * k' mod R
+            let m = (out[0].0 as WideWord).wrapping_mul(mod_neg_inv.0 as WideWord) as Word;
+            let mw = m as WideWord;
+
+            let mut carry: Word = 0;
+            let mut j = 0;
+
+            // Optimized Reduction Loop:
+            // We know (out[0] + m * modulus[0]) is 0 mod 2^64.
+            // We compute it just to get the carry, then strictly shift the array "left"
+            // by writing to index [j-1] in the next step.
+
+            // Handle j=0 specifically to extract carry
+            {
+                let res = (out[0].0 as WideWord) + (modulus[0].0 as WideWord) * mw + (carry as WideWord);
+                carry = (res >> 64) as Word;
+                // The lower 64 bits are zero by definition, we discard them.
+                j += 1;
+            }
+
+            // Unrolled loop for the rest
+            // Note: We write to `out[j-1]` effectively shifting the result down.
+            while j + 4 <= n {
+                carry = mac_reduce(out, modulus, j, mw, carry);
+                carry = mac_reduce(out, modulus, j + 1, mw, carry);
+                carry = mac_reduce(out, modulus, j + 2, mw, carry);
+                carry = mac_reduce(out, modulus, j + 3, mw, carry);
+                j += 4;
+            }
+            while j < n {
+                carry = mac_reduce(out, modulus, j, mw, carry);
+                j += 1;
+            }
+
+            // Final carry handling
+            // result = t_extra + carry
+            let (res, c2) = t_extra.overflowing_add(carry);
+            out[n - 1] = Limb(res);
+
+            // The carry from this addition (c2) and the previous overflow (c1)
+            // become the new t_extra for the next pass.
+            t_extra = (c2 as Word) + (if c1 { 1 } else { 0 });
+        }
+
+        // Final conditional subtraction is left to caller, as per your original spec.
+        // However, the result in `out` might be >= modulus, so the caller MUST handle it.
+
+        Limb(t_extra) // Return the final carry
+    }
+
+    /// Helper: Multiply-Accumulate-Add (T[j] += x_i * y[j] + carry)
+    #[inline(always)]
+    fn mac_add(out: &mut [Limb], y: &[Limb], j: usize, xi: WideWord, carry: Word) -> Word {
+        let product = (y[j].0 as WideWord) * xi;
+        let current = out[j].0 as WideWord;
+        let sum = product + current + (carry as WideWord);
+        out[j] = Limb(sum as Word);
+        (sum >> 64) as Word
+    }
+
+    /// Helper: Multiply-Accumulate-Reduce (T[j-1] = T[j] + m * Mod[j] + carry)
+    /// Writes to `out[j-1]` to perform the division by R (shift) implicitly.
+    #[inline(always)]
+    fn mac_reduce(out: &mut [Limb], modulus: &[Limb], j: usize, m: WideWord, carry: Word) -> Word {
+        let product = (modulus[j].0 as WideWord) * m;
+        let current = out[j].0 as WideWord;
+        let sum = product + current + (carry as WideWord);
+        out[j - 1] = Limb(sum as Word); // Store at j-1 (SHIFT)
+        (sum >> 64) as Word
+    }
+}
 
 impl<const LIMBS: usize> Div for MontyField<LIMBS> {
     type Output = Self;
