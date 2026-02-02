@@ -206,19 +206,20 @@ impl<const LIMBS: usize> Mul for &MontyField<LIMBS> {
             mod_neg_inv,
         );
 
-        let mf = mul::sub_mod_with_carry(&out, carry, params.modulus.as_ref(), params.modulus.as_ref());
+        let mf = mul::sub_mod_with_carry(
+            &out,
+            carry,
+            params.modulus.as_ref(),
+            params.modulus.as_ref(),
+        );
 
         let mf = MontyForm::from_montgomery(mf, self.0.params().clone());
         MontyField(mf)
-        // MontyField(MontyForm::mul(&self.0, &rhs.0))
     }
 }
 
 mod mul {
-    // #[cfg(target_arch = "aarch64")]
-    // use core::arch::aarch64::*;
-
-    use crypto_bigint::{Limb, Odd, Uint, WideWord, Word};
+    use crypto_bigint::{Limb, Odd, Uint, Word};
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub struct MontyParams<const LIMBS: usize> {
@@ -238,24 +239,25 @@ mod mul {
     /// Returns `(self..., carry) - (rhs...) mod (p...)`, where `carry <= 1`.
     /// Assumes `-(p...) <= (self..., carry) - (rhs...) < (p...)`.
     #[inline(always)]
-    pub fn sub_mod_with_carry<const LIMBS: usize>(lhs: &Uint<LIMBS>, carry: Limb, rhs: &Uint<LIMBS>, p: &Uint<LIMBS>) -> Uint<LIMBS> {
+    pub fn sub_mod_with_carry<const LIMBS: usize>(
+        lhs: &Uint<LIMBS>,
+        carry: Limb,
+        rhs: &Uint<LIMBS>,
+        p: &Uint<LIMBS>,
+    ) -> Uint<LIMBS> {
         debug_assert!(carry.0 <= 1);
 
         let (out, borrow) = lhs.borrowing_sub(rhs, Limb::ZERO);
         let (_, mask) = carry.borrowing_sub(Limb::ZERO, borrow);
 
         // If underflow occurred on the final limb, borrow = 0xfff...fff, otherwise
-        // borrow = 0x000...000. Thus, we use it as a mask to conditionally add the modulus.
+        // borrow = 0x000...000. Thus, we use it as a mask to conditionally add the
+        // modulus.
         out.wrapping_add(&p.bitand_limb(mask))
     }
 
     /// Optimized CIOS Montgomery Multiplication
-    ///
-    /// Algorithmic Changes:
-    /// 1. Uses Coarsely Integrated Operand Scanning (CIOS) for better pipelining.
-    /// 2. Uses `u128` for automatic usage of hardware carry flags (ADC).
-    /// 3. Unrolls inner loops to hide instruction latency.
-    #[inline(never)] // Let the caller decide inlining, but usually keeps code size sane
+    #[inline(never)]
     pub fn montgomery_multiply_optimized(
         x: &[Limb],
         y: &[Limb],
@@ -264,118 +266,205 @@ mod mul {
         mod_neg_inv: Limb,
     ) -> Limb {
         let n = modulus.len();
-        // Ensure strict equality of lengths to help the optimizer remove bounds checks
-        assert!(x.len() == n && y.len() == n && out.len() == n);
+        debug_assert_eq!(x.len(), n);
+        debug_assert_eq!(y.len(), n);
+        debug_assert_eq!(out.len(), n);
 
-        // Initialize output with zeros (or handle uninitialized memory carefully)
-        out.fill(Limb(0));
-
-        // A small temporary carry for the high part of the accumulation
+        out.fill(Limb::ZERO);
         let mut t_extra: Word = 0;
 
         for i in 0..n {
-            let xi = x[i].0 as WideWord;
+            let xi = x[i].0;
 
-            // ====================================================================
+            // ----------------------------------------------------------------
             // STEP 1: Multiplication Phase (T = T + x[i] * Y)
-            // ====================================================================
-            // We add x[i] * y[j] to the existing value in out[j].
+            // ----------------------------------------------------------------
+            // Adds x[i] * y[0..n] to out[0..n]
+            let carry_mul = unsafe { add_mul_row(out.as_mut_ptr(), y.as_ptr(), xi, n) };
 
-            let mut carry: Word = 0;
-            let mut j = 0;
-
-            // Unrolled loop (4 limbs at a time)
-            while j + 4 <= n {
-                carry = mac_add(out, y, j, xi, carry);
-                carry = mac_add(out, y, j + 1, xi, carry);
-                carry = mac_add(out, y, j + 2, xi, carry);
-                carry = mac_add(out, y, j + 3, xi, carry);
-                j += 4;
-            }
-            // Handle remainder
-            while j < n {
-                carry = mac_add(out, y, j, xi, carry);
-                j += 1;
-            }
-
-            // Add the carry to the "extra" limb (conceptually out[n])
-            let (sum, c1) = t_extra.overflowing_add(carry);
+            // Handle the carry to the temporary "extra" limb
+            let (sum, c1) = t_extra.overflowing_add(carry_mul);
             t_extra = sum;
-            // Note: overflow c1 is possible here in rare cases, tracked implicitly by algorithm bounds
 
-            // ====================================================================
+            // ----------------------------------------------------------------
             // STEP 2: Reduction Phase (T = (T + m * M) / R)
-            // ====================================================================
-            // Calculate the Montgomery reduction factor 'm'
-            // m = t[0] * k' mod R
-            let m = (out[0].0 as WideWord).wrapping_mul(mod_neg_inv.0 as WideWord) as Word;
-            let mw = m as WideWord;
+            // ----------------------------------------------------------------
+            // Calculate Montgomery factor m = out[0] * k' mod R
+            let m = out[0].0.wrapping_mul(mod_neg_inv.0);
 
-            let mut carry: Word = 0;
-            let mut j = 0;
+            // Reduction logic:
+            // The standard formula is (T + m * M) / R.
+            // Since we know the LSB is 0, we effectively "shift" the array
+            // by reading from index `j` and writing to `j-1`.
 
-            // Optimized Reduction Loop:
-            // We know (out[0] + m * modulus[0]) is 0 mod 2^64.
-            // We compute it just to get the carry, then strictly shift the array "left"
-            // by writing to index [j-1] in the next step.
+            // Handle j=0 explicitly (calculate carry, discard LSB result)
+            let carry_red_init = {
+                let res = (out[0].0 as u128) + (modulus[0].0 as u128) * (m as u128);
+                (res >> 64) as u64
+            };
 
-            // Handle j=0 specifically to extract carry
-            {
-                let res = (out[0].0 as WideWord) + (modulus[0].0 as WideWord) * mw + (carry as WideWord);
-                carry = (res >> 64) as Word;
-                // The lower 64 bits are zero by definition, we discard them.
-                j += 1;
-            }
+            // Run the reduction loop for j = 1..n
+            // Reads from out[1..], writes to out[0..]
+            let carry_red = unsafe {
+                mac_reduce_row(
+                    out.as_mut_ptr(),        // Write ptr (starts at index 0)
+                    out.as_ptr().add(1),     // Read ptr (starts at index 1)
+                    modulus.as_ptr().add(1), // Modulus ptr (starts at index 1)
+                    m,
+                    n - 1, // Length is n-1
+                    carry_red_init,
+                )
+            };
 
-            // Unrolled loop for the rest
-            // Note: We write to `out[j-1]` effectively shifting the result down.
-            while j + 4 <= n {
-                carry = mac_reduce(out, modulus, j, mw, carry);
-                carry = mac_reduce(out, modulus, j + 1, mw, carry);
-                carry = mac_reduce(out, modulus, j + 2, mw, carry);
-                carry = mac_reduce(out, modulus, j + 3, mw, carry);
-                j += 4;
-            }
-            while j < n {
-                carry = mac_reduce(out, modulus, j, mw, carry);
-                j += 1;
-            }
-
-            // Final carry handling
-            // result = t_extra + carry
-            let (res, c2) = t_extra.overflowing_add(carry);
+            // ----------------------------------------------------------------
+            // Final Carry Handling
+            // ----------------------------------------------------------------
+            let (res, c2) = t_extra.overflowing_add(carry_red);
             out[n - 1] = Limb(res);
 
-            // The carry from this addition (c2) and the previous overflow (c1)
-            // become the new t_extra for the next pass.
+            // Accumulate overflow bits for the next pass
             t_extra = (c2 as Word) + (if c1 { 1 } else { 0 });
         }
 
-        // Final conditional subtraction is left to caller, as per your original spec.
-        // However, the result in `out` might be >= modulus, so the caller MUST handle it.
-
-        Limb(t_extra) // Return the final carry
+        Limb(t_extra)
     }
 
-    /// Helper: Multiply-Accumulate-Add (T[j] += x_i * y[j] + carry)
+    // ========================================================================
+    // AArch64 Assembly Kernels (The "Secret Sauce")
+    // ========================================================================
+
+    #[cfg(target_arch = "aarch64")]
     #[inline(always)]
-    fn mac_add(out: &mut [Limb], y: &[Limb], j: usize, xi: WideWord, carry: Word) -> Word {
-        let product = (y[j].0 as WideWord) * xi;
-        let current = out[j].0 as WideWord;
-        let sum = product + current + (carry as WideWord);
-        out[j] = Limb(sum as Word);
-        (sum >> 64) as Word
+    unsafe fn add_mul_row(out: *mut Limb, y: *const Limb, xi: u64, len: usize) -> u64 {
+        let mut carry: u64 = 0;
+        let mut y_ptr = y;
+        let mut out_ptr = out;
+        let mut counter = len;
+
+        // Note: This loop processes 1 limb per iteration.
+        // For max speed, you can unroll this to 2 or 4 inside the ASM block.
+        core::arch::asm!(
+            // Ensure carry flag is clear initially?
+            // No, we pass 'carry' in generic reg, we must load it.
+            // But we can optimize: the first ADD doesn't need carry flag if we use 'adds'.
+
+            "1:", // Loop Label
+            "ldr x10, [{y_ptr}], #8",       // Load y[j], post-inc 8 bytes
+            "ldr x11, [{out_ptr}]",         // Load out[j]
+
+            "mul x12, x10, {xi}",           // Lo(y[j] * xi)
+            "umulh x13, x10, {xi}",         // Hi(y[j] * xi)
+
+            "adds x11, x11, {carry}",       // out[j] += carry_in (set flags)
+            "adcs x13, x13, xzr",           // Hi += 0 + C (accumulate carry to high)
+
+            "adds x11, x11, x12",           // out[j] += Lo (set flags)
+            "adcs {carry}, x13, xzr",       // carry_out = Hi + 0 + C
+
+            "str x11, [{out_ptr}], #8",     // Store result, post-inc 8 bytes
+
+            "subs {count}, {count}, #1",    // Decrement counter
+            "b.ne 1b",                      // Loop if not zero
+
+            y_ptr = inout(reg) y_ptr,
+            out_ptr = inout(reg) out_ptr,
+            xi = in(reg) xi,
+            count = inout(reg) counter,
+            carry = inout(reg) carry,
+            out("x10") _, out("x11") _, out("x12") _, out("x13") _,
+            options(nostack)
+        );
+        carry
     }
 
-    /// Helper: Multiply-Accumulate-Reduce (T[j-1] = T[j] + m * Mod[j] + carry)
-    /// Writes to `out[j-1]` to perform the division by R (shift) implicitly.
+    #[cfg(target_arch = "aarch64")]
     #[inline(always)]
-    fn mac_reduce(out: &mut [Limb], modulus: &[Limb], j: usize, m: WideWord, carry: Word) -> Word {
-        let product = (modulus[j].0 as WideWord) * m;
-        let current = out[j].0 as WideWord;
-        let sum = product + current + (carry as WideWord);
-        out[j - 1] = Limb(sum as Word); // Store at j-1 (SHIFT)
-        (sum >> 64) as Word
+    unsafe fn mac_reduce_row(
+        out_write: *mut Limb,
+        out_read: *const Limb,
+        modulus: *const Limb,
+        m: u64,
+        len: usize,
+        start_carry: u64,
+    ) -> u64 {
+        let mut carry = start_carry;
+        let mut w_ptr = out_write;
+        let mut r_ptr = out_read;
+        let mut m_ptr = modulus;
+        let mut counter = len;
+
+        core::arch::asm!(
+            "1:",
+            "ldr x10, [{m_ptr}], #8",       // Load mod[j]
+            "ldr x11, [{r_ptr}], #8",       // Load out[j] (read ahead)
+
+            "mul x12, x10, {m}",            // Lo(mod[j] * m)
+            "umulh x13, x10, {m}",          // Hi(mod[j] * m)
+
+            "adds x11, x11, {carry}",       // out[j] + carry
+            "adcs x13, x13, xzr",           // Hi + C
+
+            "adds x11, x11, x12",           // + Lo
+            "adcs {carry}, x13, xzr",       // New carry
+
+            "str x11, [{w_ptr}], #8",       // Store to out[j-1] (shift left)
+
+            "subs {count}, {count}, #1",
+            "b.ne 1b",
+
+            w_ptr = inout(reg) w_ptr,
+            r_ptr = inout(reg) r_ptr,
+            m_ptr = inout(reg) m_ptr,
+            m = in(reg) m,
+            count = inout(reg) counter,
+            carry = inout(reg) carry,
+            out("x10") _, out("x11") _, out("x12") _, out("x13") _,
+            options(nostack)
+        );
+        carry
+    }
+
+    // ========================================================================
+    // Portable Fallback (Pure Rust)
+    // ========================================================================
+
+    #[cfg(not(target_arch = "aarch64"))]
+    #[inline(always)]
+    unsafe fn add_mul_row(out: *mut Limb, y: *const Limb, xi: u64, len: usize) -> u64 {
+        use crypto_bigint::WideWord;
+        let mut carry: u64 = 0;
+        for i in 0..len {
+            let y_val = (*y.add(i)).0 as WideWord;
+            let out_val = (*out.add(i)).0 as WideWord;
+            let product = y_val * (xi as WideWord);
+            let sum = product + out_val + (carry as WideWord);
+            *out.add(i) = Limb(sum as u64);
+            carry = (sum >> 64) as u64;
+        }
+        carry
+    }
+
+    #[cfg(not(target_arch = "aarch64"))]
+    #[inline(always)]
+    unsafe fn mac_reduce_row(
+        out_write: *mut Limb,
+        out_read: *const Limb,
+        modulus: *const Limb,
+        m: u64,
+        len: usize,
+        start_carry: u64,
+    ) -> u64 {
+        use crypto_bigint::WideWord;
+        let mut carry = start_carry;
+        for i in 0..len {
+            let m_val = (*modulus.add(i)).0 as WideWord;
+            let r_val = (*out_read.add(i)).0 as WideWord;
+            let product = m_val * (m as WideWord);
+            let sum = product + r_val + (carry as WideWord);
+            *out_write.add(i) = Limb(sum as u64);
+            carry = (sum >> 64) as u64;
+        }
+        carry
     }
 }
 
