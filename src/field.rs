@@ -7,6 +7,8 @@ pub mod crypto_bigint_boxed_monty;
 #[cfg(feature = "crypto_bigint")]
 pub mod crypto_bigint_const_monty;
 #[cfg(feature = "crypto_bigint")]
+pub(crate) mod crypto_bigint_helpers;
+#[cfg(feature = "crypto_bigint")]
 pub mod crypto_bigint_monty;
 
 use crate::{ConstSemiring, ring::Ring};
