@@ -196,17 +196,22 @@ mod mul {
     //! cache-friendly than the FIOS method used in crypto-bigint.
 
     use super::*;
-    use crypto_bigint::Word;
+    use crypto_bigint::{WideWord, Word};
+    use num_traits::ConstZero;
+
+    const LOG2_WORD_BITS: u32 = Word::BITS.trailing_zeros();
 
     /// Compute modulus^-1 mod 2^64 (the negative of it, for Montgomery reduction).
     /// Uses Newton's method: x_{n+1} = x_n * (2 - m * x_n)
-    #[inline(always)]
+    #[inline(never)]
     const fn compute_mod_neg_inv(m0: Word) -> Word {
-        let mut inv = 1u64;
-        // Newton iterations - converges in log2(64) = 6 iterations for 64-bit
+        const TWO: Word = 2;
+
+        let mut inv: Word = 1;
         let mut i = 0;
-        while i < 6 {
-            inv = inv.wrapping_mul(2u64.wrapping_sub(m0.wrapping_mul(inv)));
+        // Newton iterations - converges in log2(word_bits) = 6 iterations for 64-bit
+        while i < LOG2_WORD_BITS {
+            inv = inv.wrapping_mul(TWO.wrapping_sub(m0.wrapping_mul(inv)));
             i += 1;
         }
         inv.wrapping_neg()
@@ -225,24 +230,24 @@ mod mul {
         let mod_words = a.0.params().modulus().as_ref().as_words();
         let mod_neg_inv = compute_mod_neg_inv(mod_words[0]);
 
-        let mut result = [0u64; LIMBS];
+        let mut result = [0; LIMBS];
         let carry = montgomery_mul_cios::<LIMBS>(a_words, b_words, mod_words, mod_neg_inv, &mut result);
 
         // Conditional subtraction: subtract modulus if carry != 0 OR result >= modulus
         // First compute result - modulus
-        let mut diff = [0u64; LIMBS];
-        let mut borrow = 0u64;
+        let mut diff: [Word; _] = [0; LIMBS];
+        let mut borrow: Word = 0;
         for i in 0..LIMBS {
             let (d, b1) = result[i].overflowing_sub(mod_words[i]);
             let (d, b2) = d.overflowing_sub(borrow);
             diff[i] = d;
-            borrow = (b1 as u64) | (b2 as u64);
+            borrow = (b1 as Word) | (b2 as Word);
         }
 
         // Use diff if: carry != 0 (overflow) OR borrow == 0 (result >= modulus)
         // i.e., use result only if: carry == 0 AND borrow != 0
         let use_diff = (carry != 0) | (borrow == 0);
-        let mask = 0u64.wrapping_sub(use_diff as u64);
+        let mask = Word::ZERO.wrapping_sub(use_diff as u64);
         for i in 0..LIMBS {
             result[i] = (diff[i] & mask) | (result[i] & !mask);
         }
@@ -265,14 +270,14 @@ mod mul {
         mod_neg_inv: Word,
         out: &mut [Word; LIMBS],
     ) -> Word {
-        let mut acc = [0u64; LIMBS];
-        let mut acc_hi = 0u64;
+        let mut acc: [Word; _] = [0; LIMBS];
+        let mut acc_hi: Word = 0;
 
         for i in 0..LIMBS {
             let ai = a[i];
 
             // Step 1: acc += ai * b
-            let mut carry = 0u64;
+            let mut carry = 0;
             for j in 0..LIMBS {
                 let (lo, hi) = mul_add_carry(ai, b[j], acc[j], carry);
                 acc[j] = lo;
@@ -297,7 +302,7 @@ mod mul {
 
             let (sum, c) = acc_hi.overflowing_add(carry);
             acc[LIMBS - 1] = sum;
-            acc_hi = (meta_carry as u64) + (c as u64);
+            acc_hi = (meta_carry as Word) + (c as Word);
         }
 
         // Copy result
@@ -305,15 +310,15 @@ mod mul {
             out[i] = acc[i];
         }
 
-        // Return carry - if non-zero, result >= 2^(64*LIMBS) and needs reduction
+        // Return carry - if non-zero, result >= 2^(word_bits*LIMBS) and needs reduction
         acc_hi
     }
 
-    /// Compute a * b + c + d, returning (lo, hi) of 128-bit result.
+    /// Compute a * b + c + d, returning (lo, hi) of WideWord result.
     #[inline(always)]
     fn mul_add_carry(a: Word, b: Word, c: Word, d: Word) -> (Word, Word) {
-        let wide = (a as u128) * (b as u128) + (c as u128) + (d as u128);
-        (wide as Word, (wide >> 64) as Word)
+        let wide = (a as WideWord) * (b as WideWord) + (c as WideWord) + (d as WideWord);
+        (wide as Word, (wide >> Word::BITS) as Word)
     }
 }
 
@@ -816,6 +821,36 @@ mod tests {
         let den = from_u64(5);
         let q = num.clone() / den.clone();
         assert_eq!(&q * &den, num);
+    }
+
+    #[test]
+    fn basic_operations_overflow() {
+        let params = test_config();
+        let mod_minus_one = Uint::new(params.modulus().get() - crypto_bigint::Uint::one());
+        let mod_minus_one = F::from_with_cfg(mod_minus_one, &params);
+
+        // Negation
+        let res = -mod_minus_one.clone();
+        assert_eq!(res, one());
+
+        // Addition
+        let res = mod_minus_one.clone() + one();
+        assert_eq!(res, zero());
+
+        // Subtraction
+        let res = zero() - one();
+        assert_eq!(res, mod_minus_one);
+
+        // Multiplication
+        let res = mod_minus_one.clone() * from_u64(2);
+        assert_eq!(res, mod_minus_one.clone() - one());
+
+        let res = mod_minus_one.clone() * mod_minus_one.clone();
+        assert_eq!(res, one());
+
+        // Division
+        let res = one() / mod_minus_one.clone();
+        assert_eq!(res, mod_minus_one);
     }
 
     #[test]
