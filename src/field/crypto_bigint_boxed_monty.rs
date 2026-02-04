@@ -75,7 +75,7 @@ impl Neg for BoxedMontyField {
     }
 }
 
-macro_rules! impl_basic_op {
+macro_rules! impl_basic_op_boilerplate {
     ($trait:ident, $method:ident) => {
         impl $trait for BoxedMontyField {
             type Output = Self;
@@ -95,15 +95,6 @@ macro_rules! impl_basic_op {
             }
         }
 
-        impl $trait for &BoxedMontyField {
-            type Output = BoxedMontyField;
-
-            #[inline(always)]
-            fn $method(self, rhs: Self) -> Self::Output {
-                BoxedMontyField(BoxedMontyForm::$method(&self.0, &rhs.0))
-            }
-        }
-
         impl $trait<BoxedMontyField> for &BoxedMontyField {
             type Output = BoxedMontyField;
 
@@ -115,9 +106,42 @@ macro_rules! impl_basic_op {
     };
 }
 
-impl_basic_op!(Add, add);
-impl_basic_op!(Sub, sub);
-impl_basic_op!(Mul, mul);
+macro_rules! impl_basic_op_forward {
+    ($trait:ident, $method:ident) => {
+        impl $trait for &BoxedMontyField {
+            type Output = BoxedMontyField;
+
+            #[inline(always)]
+            fn $method(self, rhs: Self) -> Self::Output {
+                BoxedMontyField(BoxedMontyForm::$method(&self.0, &rhs.0))
+            }
+        }
+    };
+}
+
+impl_basic_op_boilerplate!(Add, add);
+impl_basic_op_boilerplate!(Sub, sub);
+impl_basic_op_boilerplate!(Mul, mul);
+
+impl_basic_op_forward!(Add, add);
+impl_basic_op_forward!(Sub, sub);
+
+impl Mul for &BoxedMontyField {
+    type Output = BoxedMontyField;
+
+    #[inline(always)]
+    fn mul(self, rhs: Self) -> Self::Output {
+        let monty_mul = crypto_bigint_helpers::mul::monty_mul_dynamic(
+            self.0.as_montgomery(),
+            rhs.0.as_montgomery(),
+            self.0.params().modulus().as_ref(),
+        );
+        BoxedMontyField(BoxedMontyForm::from_montgomery(
+            monty_mul,
+            self.0.params().clone(),
+        ))
+    }
+}
 
 impl Div for BoxedMontyField {
     type Output = Self;
@@ -192,23 +216,25 @@ impl CheckedDiv for BoxedMontyField {
 //
 
 macro_rules! impl_field_op_assign {
-    ($trait:ident, $method:ident) => {
+    ($trait:ident, $method:ident, $inner:ident) => {
         impl $trait for BoxedMontyField {
+            #[inline(always)]
             fn $method(&mut self, rhs: Self) {
-                self.0.$method(&rhs.0);
+                *self = (&*self).$inner(&rhs);
             }
         }
         impl $trait<&Self> for BoxedMontyField {
+            #[inline(always)]
             fn $method(&mut self, rhs: &Self) {
-                self.0.$method(&rhs.0);
+                *self = (&*self).$inner(rhs);
             }
         }
     };
 }
 
-impl_field_op_assign!(AddAssign, add_assign);
-impl_field_op_assign!(SubAssign, sub_assign);
-impl_field_op_assign!(MulAssign, mul_assign);
+impl_field_op_assign!(AddAssign, add_assign, add);
+impl_field_op_assign!(SubAssign, sub_assign, sub);
+impl_field_op_assign!(MulAssign, mul_assign, mul);
 
 impl DivAssign for BoxedMontyField {
     fn div_assign(&mut self, rhs: Self) {
@@ -245,21 +271,22 @@ impl<'a> Sum<&'a Self> for BoxedMontyField {
 }
 
 impl Product for BoxedMontyField {
+    #[allow(clippy::arithmetic_side_effects)] // False alert
     fn product<I: Iterator<Item = Self>>(mut iter: I) -> Self {
-        let Some(BoxedMontyField(first)) = iter.next() else {
+        let Some(first) = iter.next() else {
             panic!("Product of an empty iterator is not defined for BoxedMontyField");
         };
-        Self(iter.fold(first, |acc, x| BoxedMontyForm::mul(&acc, &x.0)))
+        iter.fold(first, |acc, x| acc * x)
     }
 }
 
 impl<'a> Product<&'a Self> for BoxedMontyField {
     #[allow(clippy::arithmetic_side_effects)] // False alert
     fn product<I: Iterator<Item = &'a Self>>(mut iter: I) -> Self {
-        let Some(BoxedMontyField(first)) = iter.next() else {
+        let Some(first) = iter.next() else {
             panic!("Product of an empty iterator is not defined for BoxedMontyField");
         };
-        Self(iter.fold(first.clone(), |acc, x| BoxedMontyForm::mul(&acc, &x.0)))
+        iter.fold(first.clone(), |acc, x| acc * x)
     }
 }
 
@@ -587,6 +614,36 @@ mod tests {
         let den = from_u64(5);
         let q = num.clone() / den.clone();
         assert_eq!(&q * &den, num);
+    }
+
+    #[test]
+    fn basic_operations_overflow() {
+        let params = test_config();
+        let mod_minus_one = params.modulus().as_ref().clone() - BoxedUint::one();
+        let mod_minus_one = F::from_with_cfg(mod_minus_one, &params);
+
+        // Negation
+        let res = -mod_minus_one.clone();
+        assert_eq!(res, one());
+
+        // Addition
+        let res = mod_minus_one.clone() + one();
+        assert_eq!(res, zero());
+
+        // Subtraction
+        let res = zero() - one();
+        assert_eq!(res, mod_minus_one);
+
+        // Multiplication
+        let res = mod_minus_one.clone() * from_u64(2);
+        assert_eq!(res, mod_minus_one.clone() - one());
+
+        let res = mod_minus_one.clone() * mod_minus_one.clone();
+        assert_eq!(res, one());
+
+        // Division
+        let res = one() / mod_minus_one.clone();
+        assert_eq!(res, mod_minus_one);
     }
 
     #[test]

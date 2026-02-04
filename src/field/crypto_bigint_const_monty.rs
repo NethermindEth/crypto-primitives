@@ -322,7 +322,6 @@ macro_rules! impl_field_op_assign {
         impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait for ConstMontyField<Mod, LIMBS> {
             #[inline(always)]
             fn $method(&mut self, rhs: Self) {
-                // Use reference for inner call to avoid moves of rhs.0 where not needed
                 *self = self.$inner(&rhs);
             }
         }

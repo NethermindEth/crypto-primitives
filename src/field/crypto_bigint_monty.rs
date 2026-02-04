@@ -278,11 +278,13 @@ impl<const LIMBS: usize> CheckedDiv for MontyField<LIMBS> {
 macro_rules! impl_field_op_assign {
     ($trait:ident, $method:ident, $inner:ident) => {
         impl<const LIMBS: usize> $trait for MontyField<LIMBS> {
+            #[inline(always)]
             fn $method(&mut self, rhs: Self) {
                 *self = (&*self).$inner(&rhs);
             }
         }
         impl<const LIMBS: usize> $trait<&Self> for MontyField<LIMBS> {
+            #[inline(always)]
             fn $method(&mut self, rhs: &Self) {
                 *self = (&*self).$inner(rhs);
             }
@@ -334,7 +336,7 @@ impl<const LIMBS: usize> Product for MontyField<LIMBS> {
         let Some(first) = iter.next() else {
             panic!("Product of an empty iterator is not defined for MontyField");
         };
-        iter.fold(first, |acc, x| acc * &x)
+        iter.fold(first, |acc, x| acc * x)
     }
 }
 
