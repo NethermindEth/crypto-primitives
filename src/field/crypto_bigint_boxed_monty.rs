@@ -122,40 +122,18 @@ macro_rules! impl_basic_op_forward {
 impl_basic_op_boilerplate!(Add, add);
 impl_basic_op_boilerplate!(Sub, sub);
 impl_basic_op_boilerplate!(Mul, mul);
+impl_basic_op_boilerplate!(Div, div);
 
 impl_basic_op_forward!(Add, add);
 impl_basic_op_forward!(Sub, sub);
 impl_basic_op_forward!(Mul, mul); // Note: CIOS multiplication is worse for this
 
-impl Div for BoxedMontyField {
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        self.div(&rhs)
-    }
-}
-
-impl Div<&Self> for BoxedMontyField {
-    type Output = Self;
-
-    fn div(self, rhs: &Self) -> Self::Output {
-        self.checked_div(rhs).expect("Division by zero")
-    }
-}
-
 impl Div for &BoxedMontyField {
     type Output = BoxedMontyField;
 
-    fn div(self, rhs: Self) -> Self::Output {
+    #[inline(always)]
+    fn div(self, rhs: &BoxedMontyField) -> Self::Output {
         self.checked_div(rhs).expect("Division by zero")
-    }
-}
-
-impl Div<BoxedMontyField> for &BoxedMontyField {
-    type Output = BoxedMontyField;
-
-    fn div(self, rhs: BoxedMontyField) -> Self::Output {
-        self.div(&rhs)
     }
 }
 

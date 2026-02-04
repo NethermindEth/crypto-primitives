@@ -241,6 +241,7 @@ macro_rules! impl_basic_op_forward {
 impl_basic_op_boilerplate!(Add, add);
 impl_basic_op_boilerplate!(Sub, sub);
 impl_basic_op_boilerplate!(Mul, mul);
+impl_basic_op_boilerplate!(Div, div);
 
 impl_basic_op_forward!(Add, add);
 impl_basic_op_forward!(Sub, sub);
@@ -256,23 +257,6 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Mul for &ConstMontyField<Mod, LIMBS
             Mod::PARAMS.modulus().as_ref(),
         );
         ConstMontyField(ConstMontyForm::from_montgomery(monty_mul))
-    }
-}
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> Div for ConstMontyField<Mod, LIMBS> {
-    type Output = Self;
-
-    #[inline(always)]
-    fn div(self, rhs: Self) -> Self::Output {
-        self.div(&rhs)
-    }
-}
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> Div<&Self> for ConstMontyField<Mod, LIMBS> {
-    type Output = Self;
-
-    fn div(self, rhs: &Self) -> Self::Output {
-        self.checked_div(rhs).expect("Division by zero")
     }
 }
 

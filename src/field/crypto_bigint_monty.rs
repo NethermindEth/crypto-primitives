@@ -185,6 +185,7 @@ macro_rules! impl_basic_op_forward {
 impl_basic_op_boilerplate!(Add, add);
 impl_basic_op_boilerplate!(Sub, sub);
 impl_basic_op_boilerplate!(Mul, mul);
+impl_basic_op_boilerplate!(Div, div);
 
 impl_basic_op_forward!(Add, add);
 impl_basic_op_forward!(Sub, sub);
@@ -203,35 +204,12 @@ impl<const LIMBS: usize> Mul for &MontyField<LIMBS> {
     }
 }
 
-impl<const LIMBS: usize> Div for MontyField<LIMBS> {
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        self.div(&rhs)
-    }
-}
-
-impl<const LIMBS: usize> Div<&Self> for MontyField<LIMBS> {
-    type Output = Self;
-
-    fn div(self, rhs: &Self) -> Self::Output {
-        self.checked_div(rhs).expect("Division by zero")
-    }
-}
-
 impl<const LIMBS: usize> Div for &MontyField<LIMBS> {
     type Output = MontyField<LIMBS>;
 
+    #[inline(always)]
     fn div(self, rhs: Self) -> Self::Output {
         self.checked_div(rhs).expect("Division by zero")
-    }
-}
-
-impl<const LIMBS: usize> Div<MontyField<LIMBS>> for &MontyField<LIMBS> {
-    type Output = MontyField<LIMBS>;
-
-    fn div(self, rhs: MontyField<LIMBS>) -> Self::Output {
-        self.div(&rhs)
     }
 }
 
