@@ -863,7 +863,6 @@ mod tests {
         assert_eq!(q * den, num);
     }
 
-
     #[test]
     fn basic_operations_overflow() {
         let mod_minus_one = Uint::new(ModP::PARAMS.modulus().get() - crypto_bigint::Uint::one());
