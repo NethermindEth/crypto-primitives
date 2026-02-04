@@ -276,23 +276,23 @@ impl<const LIMBS: usize> CheckedDiv for MontyField<LIMBS> {
 //
 
 macro_rules! impl_field_op_assign {
-    ($trait:ident, $method:ident) => {
+    ($trait:ident, $method:ident, $inner:ident) => {
         impl<const LIMBS: usize> $trait for MontyField<LIMBS> {
             fn $method(&mut self, rhs: Self) {
-                self.0.$method(&rhs.0);
+                *self = (&*self).$inner(&rhs);
             }
         }
         impl<const LIMBS: usize> $trait<&Self> for MontyField<LIMBS> {
             fn $method(&mut self, rhs: &Self) {
-                self.0.$method(&rhs.0);
+                *self = (&*self).$inner(rhs);
             }
         }
     };
 }
 
-impl_field_op_assign!(AddAssign, add_assign);
-impl_field_op_assign!(SubAssign, sub_assign);
-impl_field_op_assign!(MulAssign, mul_assign);
+impl_field_op_assign!(AddAssign, add_assign, add);
+impl_field_op_assign!(SubAssign, sub_assign, sub);
+impl_field_op_assign!(MulAssign, mul_assign, mul);
 
 impl<const LIMBS: usize> DivAssign for MontyField<LIMBS> {
     fn div_assign(&mut self, rhs: Self) {
@@ -302,7 +302,7 @@ impl<const LIMBS: usize> DivAssign for MontyField<LIMBS> {
 
 impl<const LIMBS: usize> DivAssign<&Self> for MontyField<LIMBS> {
     fn div_assign(&mut self, rhs: &Self) {
-        self.0.mul_assign(rhs.0.invert().unwrap())
+        self.mul_assign(rhs.inv().unwrap())
     }
 }
 
@@ -329,21 +329,22 @@ impl<'a, const LIMBS: usize> Sum<&'a Self> for MontyField<LIMBS> {
 }
 
 impl<const LIMBS: usize> Product for MontyField<LIMBS> {
+    #[allow(clippy::arithmetic_side_effects)] // False alert
     fn product<I: Iterator<Item = Self>>(mut iter: I) -> Self {
-        let Some(MontyField(first)) = iter.next() else {
+        let Some(first) = iter.next() else {
             panic!("Product of an empty iterator is not defined for MontyField");
         };
-        Self(iter.fold(first, |acc, x| MontyForm::mul(&acc, &x.0)))
+        iter.fold(first, |acc, x| acc * &x)
     }
 }
 
 impl<'a, const LIMBS: usize> Product<&'a Self> for MontyField<LIMBS> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
     fn product<I: Iterator<Item = &'a Self>>(mut iter: I) -> Self {
-        let Some(MontyField(first)) = iter.next() else {
+        let Some(first) = iter.next() else {
             panic!("Product of an empty iterator is not defined for MontyField");
         };
-        Self(iter.fold(*first, |acc, x| MontyForm::mul(&acc, &x.0)))
+        iter.fold(first.clone(), |acc, x| acc * x)
     }
 }
 

@@ -85,13 +85,11 @@ pub mod mul {
     ) -> Word {
         let mut acc_hi: Word = 0;
 
-        for i in 0..LIMBS {
-            let ai = a[i];
-
-            // Step 1: acc += ai * b
+        for &a_i in a {
+            // Step 1: acc += a_i * b
             let mut carry = 0;
             for j in 0..LIMBS {
-                let (lo, hi) = mul_add_carry(ai, b[j], out[j], carry);
+                let (lo, hi) = mul_add_carry(a_i, b[j], out[j], carry);
                 out[j] = lo;
                 carry = hi;
             }
