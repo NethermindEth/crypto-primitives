@@ -302,7 +302,7 @@ impl<const LIMBS: usize> DivAssign for MontyField<LIMBS> {
 
 impl<const LIMBS: usize> DivAssign<&Self> for MontyField<LIMBS> {
     fn div_assign(&mut self, rhs: &Self) {
-        self.mul_assign(rhs.inv().unwrap())
+        self.mul_assign(rhs.inv().expect("Division by zero"));
     }
 }
 

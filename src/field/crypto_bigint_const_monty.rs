@@ -192,14 +192,14 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Neg for ConstMontyField<Mod, LIMBS>
     }
 }
 
-macro_rules! impl_basic_op {
+macro_rules! impl_basic_op_boilerplate {
     ($trait:ident, $method:ident) => {
         impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait for ConstMontyField<Mod, LIMBS> {
             type Output = Self;
 
             #[inline(always)]
             fn $method(self, rhs: Self) -> Self::Output {
-                Self(self.0.$method(rhs.0))
+                (&self).$method(&rhs)
             }
         }
 
@@ -208,16 +208,7 @@ macro_rules! impl_basic_op {
 
             #[inline(always)]
             fn $method(self, rhs: &Self) -> Self::Output {
-                Self(self.0.$method(&rhs.0))
-            }
-        }
-
-        impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait for &ConstMontyField<Mod, LIMBS> {
-            type Output = ConstMontyField<Mod, LIMBS>;
-
-            #[inline(always)]
-            fn $method(self, rhs: Self) -> Self::Output {
-                ConstMontyField(self.0.$method(rhs.0))
+                (&self).$method(rhs)
             }
         }
 
@@ -228,15 +219,45 @@ macro_rules! impl_basic_op {
 
             #[inline(always)]
             fn $method(self, rhs: ConstMontyField<Mod, LIMBS>) -> Self::Output {
-                ConstMontyField(self.0.$method(&rhs.0))
+                self.$method(&rhs)
             }
         }
     };
 }
 
-impl_basic_op!(Add, add);
-impl_basic_op!(Sub, sub);
-impl_basic_op!(Mul, mul);
+macro_rules! impl_basic_op_forward {
+    ($trait:ident, $method:ident) => {
+        impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait for &ConstMontyField<Mod, LIMBS> {
+            type Output = ConstMontyField<Mod, LIMBS>;
+
+            #[inline(always)]
+            fn $method(self, rhs: Self) -> Self::Output {
+                ConstMontyField(self.0.$method(rhs.0))
+            }
+        }
+    };
+}
+
+impl_basic_op_boilerplate!(Add, add);
+impl_basic_op_boilerplate!(Sub, sub);
+impl_basic_op_boilerplate!(Mul, mul);
+
+impl_basic_op_forward!(Add, add);
+impl_basic_op_forward!(Sub, sub);
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> Mul for &ConstMontyField<Mod, LIMBS> {
+    type Output = ConstMontyField<Mod, LIMBS>;
+
+    #[inline(always)]
+    fn mul(self, rhs: Self) -> Self::Output {
+        let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+            self.0.as_montgomery(),
+            rhs.0.as_montgomery(),
+            Mod::PARAMS.modulus().as_ref(),
+        );
+        ConstMontyField(ConstMontyForm::from_montgomery(monty_mul))
+    }
+}
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Div for ConstMontyField<Mod, LIMBS> {
     type Output = Self;
@@ -299,12 +320,14 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> CheckedDiv for ConstMontyField<Mod,
 macro_rules! impl_field_op_assign {
     ($trait:ident, $method:ident, $inner:ident) => {
         impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait for ConstMontyField<Mod, LIMBS> {
+            #[inline(always)]
             fn $method(&mut self, rhs: Self) {
                 // Use reference for inner call to avoid moves of rhs.0 where not needed
                 *self = self.$inner(&rhs);
             }
         }
         impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait<&Self> for ConstMontyField<Mod, LIMBS> {
+            #[inline(always)]
             fn $method(&mut self, rhs: &Self) {
                 *self = self.$inner(rhs);
             }
@@ -838,6 +861,36 @@ mod tests {
         let den: F = 5_u64.into();
         let q = num / den;
         assert_eq!(q * den, num);
+    }
+
+
+    #[test]
+    fn basic_operations_overflow() {
+        let mod_minus_one = Uint::new(ModP::PARAMS.modulus().get() - crypto_bigint::Uint::one());
+        let mod_minus_one = F::from(mod_minus_one);
+
+        // Negation
+        let res = -mod_minus_one;
+        assert_eq!(res, F::one());
+
+        // Addition
+        let res = mod_minus_one + F::one();
+        assert_eq!(res, F::zero());
+
+        // Subtraction
+        let res = F::zero() - F::one();
+        assert_eq!(res, mod_minus_one);
+
+        // Multiplication
+        let res = mod_minus_one * F::from(2);
+        assert_eq!(res, mod_minus_one - F::one());
+
+        let res = mod_minus_one * mod_minus_one;
+        assert_eq!(res, F::one());
+
+        // Division
+        let res = F::one() / mod_minus_one;
+        assert_eq!(res, mod_minus_one);
     }
 
     #[test]
