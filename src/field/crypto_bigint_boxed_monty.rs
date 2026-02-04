@@ -125,23 +125,7 @@ impl_basic_op_boilerplate!(Mul, mul);
 
 impl_basic_op_forward!(Add, add);
 impl_basic_op_forward!(Sub, sub);
-
-impl Mul for &BoxedMontyField {
-    type Output = BoxedMontyField;
-
-    #[inline(always)]
-    fn mul(self, rhs: Self) -> Self::Output {
-        let monty_mul = crypto_bigint_helpers::mul::monty_mul_dynamic(
-            self.0.as_montgomery(),
-            rhs.0.as_montgomery(),
-            self.0.params().modulus().as_ref(),
-        );
-        BoxedMontyField(BoxedMontyForm::from_montgomery(
-            monty_mul,
-            self.0.params().clone(),
-        ))
-    }
-}
+impl_basic_op_forward!(Mul, mul); // Note: CIOS multiplication is worse for this
 
 impl Div for BoxedMontyField {
     type Output = Self;
