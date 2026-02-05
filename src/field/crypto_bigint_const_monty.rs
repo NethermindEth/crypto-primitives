@@ -187,8 +187,12 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Neg for ConstMontyField<Mod, LIMBS>
     type Output = Self;
 
     #[inline(always)]
-    fn neg(self) -> Self::Output {
-        Self(self.0.neg())
+    fn neg(mut self) -> Self::Output {
+        *self.0.as_montgomery_mut() = self
+            .0
+            .as_montgomery()
+            .neg_mod(Mod::PARAMS.modulus().as_nz_ref());
+        self
     }
 }
 

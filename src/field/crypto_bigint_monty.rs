@@ -133,8 +133,12 @@ impl<const LIMBS: usize> Hash for MontyField<LIMBS> {
 impl<const LIMBS: usize> Neg for MontyField<LIMBS> {
     type Output = Self;
 
-    fn neg(self) -> Self::Output {
-        Self(self.0.neg())
+    fn neg(mut self) -> Self::Output {
+        *self.0.as_montgomery_mut() = self
+            .0
+            .as_montgomery()
+            .neg_mod(self.0.params().modulus().as_nz_ref());
+        self
     }
 }
 
