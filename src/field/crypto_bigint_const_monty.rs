@@ -144,7 +144,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> FromStr for ConstMontyField<Mod, LI
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let uint = Uint::<LIMBS>::from_str(s)?;
-        Ok(Self(ConstMontyForm::new(uint.inner())))
+        Ok(Self::from(uint))
     }
 }
 
@@ -192,32 +192,24 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Neg for ConstMontyField<Mod, LIMBS>
     }
 }
 
-macro_rules! impl_basic_op {
-    ($trait:ident, $method:ident) => {
+macro_rules! impl_basic_op_forward_to_assign {
+    ($trait:ident, $method:ident, $assign_method:ident) => {
         impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait for ConstMontyField<Mod, LIMBS> {
-            type Output = Self;
+            type Output = ConstMontyField<Mod, LIMBS>;
 
             #[inline(always)]
-            fn $method(self, rhs: Self) -> Self::Output {
-                Self(self.0.$method(rhs.0))
+            fn $method(self, rhs: ConstMontyField<Mod, LIMBS>) -> Self::Output {
+                self.$method(&rhs)
             }
         }
 
         impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait<&Self> for ConstMontyField<Mod, LIMBS> {
-            type Output = Self;
-
-            #[inline(always)]
-            fn $method(self, rhs: &Self) -> Self::Output {
-                Self(self.0.$method(&rhs.0))
-            }
-        }
-
-        impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait for &ConstMontyField<Mod, LIMBS> {
             type Output = ConstMontyField<Mod, LIMBS>;
 
             #[inline(always)]
-            fn $method(self, rhs: Self) -> Self::Output {
-                ConstMontyField(self.0.$method(rhs.0))
+            fn $method(mut self, rhs: &ConstMontyField<Mod, LIMBS>) -> Self::Output {
+                self.$assign_method(rhs);
+                self
             }
         }
 
@@ -228,41 +220,25 @@ macro_rules! impl_basic_op {
 
             #[inline(always)]
             fn $method(self, rhs: ConstMontyField<Mod, LIMBS>) -> Self::Output {
-                ConstMontyField(self.0.$method(&rhs.0))
+                self.clone().$method(&rhs)
+            }
+        }
+
+        impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait for &ConstMontyField<Mod, LIMBS> {
+            type Output = ConstMontyField<Mod, LIMBS>;
+
+            #[inline(always)]
+            fn $method(self, rhs: &ConstMontyField<Mod, LIMBS>) -> Self::Output {
+                self.clone().$method(rhs)
             }
         }
     };
 }
 
-impl_basic_op!(Add, add);
-impl_basic_op!(Sub, sub);
-impl_basic_op!(Mul, mul);
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> Div for ConstMontyField<Mod, LIMBS> {
-    type Output = Self;
-
-    #[inline(always)]
-    fn div(self, rhs: Self) -> Self::Output {
-        self.div(&rhs)
-    }
-}
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> Div<&Self> for ConstMontyField<Mod, LIMBS> {
-    type Output = Self;
-
-    fn div(self, rhs: &Self) -> Self::Output {
-        self.checked_div(rhs).expect("Division by zero")
-    }
-}
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> Div for &ConstMontyField<Mod, LIMBS> {
-    type Output = ConstMontyField<Mod, LIMBS>;
-
-    #[inline(always)]
-    fn div(self, rhs: Self) -> Self::Output {
-        self.checked_div(rhs).expect("Division by zero")
-    }
-}
+impl_basic_op_forward_to_assign!(Add, add, add_assign);
+impl_basic_op_forward_to_assign!(Sub, sub, sub_assign);
+impl_basic_op_forward_to_assign!(Mul, mul, mul_assign);
+impl_basic_op_forward_to_assign!(Div, div, div_assign);
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Pow<u32> for ConstMontyField<Mod, LIMBS> {
     type Output = Self;
@@ -296,26 +272,54 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> CheckedDiv for ConstMontyField<Mod,
 // Arithmetic assign operations
 //
 
-macro_rules! impl_field_op_assign {
-    ($trait:ident, $method:ident, $inner:ident) => {
+macro_rules! impl_op_assign_boilerplate {
+    ($trait:ident, $method:ident) => {
         impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait for ConstMontyField<Mod, LIMBS> {
-            fn $method(&mut self, rhs: Self) {
-                // Use reference for inner call to avoid moves of rhs.0 where not needed
-                *self = self.$inner(&rhs);
-            }
-        }
-        impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait<&Self> for ConstMontyField<Mod, LIMBS> {
-            fn $method(&mut self, rhs: &Self) {
-                *self = self.$inner(rhs);
+            #[inline(always)]
+            fn $method(&mut self, rhs: ConstMontyField<Mod, LIMBS>) {
+                self.$method(&rhs);
             }
         }
     };
 }
 
-impl_field_op_assign!(AddAssign, add_assign, add);
-impl_field_op_assign!(SubAssign, sub_assign, sub);
-impl_field_op_assign!(MulAssign, mul_assign, mul);
-impl_field_op_assign!(DivAssign, div_assign, div);
+impl_op_assign_boilerplate!(AddAssign, add_assign);
+impl_op_assign_boilerplate!(SubAssign, sub_assign);
+impl_op_assign_boilerplate!(MulAssign, mul_assign);
+impl_op_assign_boilerplate!(DivAssign, div_assign);
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> AddAssign<&Self> for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: &Self) {
+        self.0.add_assign(&rhs.0);
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> SubAssign<&Self> for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
+    fn sub_assign(&mut self, rhs: &Self) {
+        self.0.sub_assign(&rhs.0);
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> MulAssign<&Self> for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
+    fn mul_assign(&mut self, rhs: &Self) {
+        let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+            self.0.as_montgomery(),
+            rhs.0.as_montgomery(),
+            Mod::PARAMS.modulus().as_ref(),
+        );
+        *self.0.as_montgomery_mut() = monty_mul;
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> DivAssign<&Self> for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
+    fn div_assign(&mut self, rhs: &Self) {
+        self.mul_assign(rhs.inv().expect("Division by zero"));
+    }
+}
 
 //
 // Aggregate operations
@@ -386,7 +390,12 @@ macro_rules! impl_from_unsigned {
             impl<Mod: Params<LIMBS>, const LIMBS: usize> From<$t> for ConstMontyField<Mod, LIMBS> {
                 fn from(value: $t) -> Self {
                     let value = Uint::from(value);
-                    Self(ConstMontyForm::new(value.inner()))
+                    let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+                        value.inner(),
+                        Mod::PARAMS.r2(),
+                        Mod::PARAMS.modulus().as_ref(),
+                    );
+                    ConstMontyField(ConstMontyForm::from_montgomery(monty_mul))
                 }
             }
 
@@ -407,8 +416,13 @@ macro_rules! impl_from_signed {
                 #![allow(clippy::arithmetic_side_effects)]
                 fn from(value: $t) -> Self {
                     let magnitude = Uint::from(value.abs_diff(0));
-                    let form = ConstMontyForm::new(magnitude.inner());
-                    Self(if value.is_negative() { -form } else { form })
+                    let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+                        magnitude.inner(),
+                        Mod::PARAMS.r2(),
+                        Mod::PARAMS.modulus().as_ref(),
+                    );
+                    let result = ConstMontyField(ConstMontyForm::from_montgomery(monty_mul));
+                    if value.is_negative() { -result } else { result }
                 }
             }
 
@@ -450,7 +464,12 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> From<Uint<LIMBS>> for ConstMontyFie
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> From<&Uint<LIMBS>> for ConstMontyField<Mod, LIMBS> {
     fn from(value: &Uint<LIMBS>) -> Self {
-        Self(ConstMontyForm::new(value.inner()))
+        let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+            value.inner(),
+            Mod::PARAMS.r2(),
+            Mod::PARAMS.modulus().as_ref(),
+        );
+        ConstMontyField(ConstMontyForm::from_montgomery(monty_mul))
     }
 }
 
@@ -489,8 +508,13 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize, const LIMBS2: usize> From<&crypto_b
         );
         let value = value.resize();
         // Note: abs() returns Uint so it's guaranteed to fit
-        let result = Self(ConstMontyForm::new(&value.abs()));
-
+        let abs = value.abs();
+        let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+            &abs,
+            Mod::PARAMS.r2(),
+            Mod::PARAMS.modulus().as_ref(),
+        );
+        let result = ConstMontyField(ConstMontyForm::from_montgomery(monty_mul));
         if value.is_negative().into() {
             -result
         } else {
@@ -838,6 +862,35 @@ mod tests {
         let den: F = 5_u64.into();
         let q = num / den;
         assert_eq!(q * den, num);
+    }
+
+    #[test]
+    fn basic_operations_overflow() {
+        let mod_minus_one = Uint::new(ModP::PARAMS.modulus().get() - crypto_bigint::Uint::one());
+        let mod_minus_one = F::from(mod_minus_one);
+
+        // Negation
+        let res = -mod_minus_one;
+        assert_eq!(res, F::one());
+
+        // Addition
+        let res = mod_minus_one + F::one();
+        assert_eq!(res, F::zero());
+
+        // Subtraction
+        let res = F::zero() - F::one();
+        assert_eq!(res, mod_minus_one);
+
+        // Multiplication
+        let res = mod_minus_one * F::from(2);
+        assert_eq!(res, mod_minus_one - F::one());
+
+        let res = mod_minus_one * mod_minus_one;
+        assert_eq!(res, F::one());
+
+        // Division
+        let res = F::one() / mod_minus_one;
+        assert_eq!(res, mod_minus_one);
     }
 
     #[test]
