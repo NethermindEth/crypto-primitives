@@ -177,7 +177,7 @@ impl CheckedDiv for BoxedMontyField {
 // Arithmetic assign operations
 //
 
-macro_rules! impl_field_op_assign {
+macro_rules! impl_op_assign {
     ($trait:ident, $method:ident, $inner:ident) => {
         impl $trait for BoxedMontyField {
             #[inline(always)]
@@ -194,9 +194,9 @@ macro_rules! impl_field_op_assign {
     };
 }
 
-impl_field_op_assign!(AddAssign, add_assign, add);
-impl_field_op_assign!(SubAssign, sub_assign, sub);
-impl_field_op_assign!(MulAssign, mul_assign, mul);
+impl_op_assign!(AddAssign, add_assign, add);
+impl_op_assign!(SubAssign, sub_assign, sub);
+impl_op_assign!(MulAssign, mul_assign, mul);
 
 impl DivAssign for BoxedMontyField {
     fn div_assign(&mut self, rhs: Self) {
