@@ -291,14 +291,20 @@ impl_op_assign_boilerplate!(DivAssign, div_assign);
 impl<Mod: Params<LIMBS>, const LIMBS: usize> AddAssign<&Self> for ConstMontyField<Mod, LIMBS> {
     #[inline(always)]
     fn add_assign(&mut self, rhs: &Self) {
-        self.0.add_assign(&rhs.0);
+        *self.0.as_montgomery_mut() = self
+            .0
+            .as_montgomery()
+            .add_mod(rhs.0.as_montgomery(), Mod::PARAMS.modulus().as_nz_ref());
     }
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> SubAssign<&Self> for ConstMontyField<Mod, LIMBS> {
     #[inline(always)]
     fn sub_assign(&mut self, rhs: &Self) {
-        self.0.sub_assign(&rhs.0);
+        *self.0.as_montgomery_mut() = self
+            .0
+            .as_montgomery()
+            .sub_mod(rhs.0.as_montgomery(), Mod::PARAMS.modulus().as_nz_ref());
     }
 }
 
