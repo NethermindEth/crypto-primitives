@@ -1,9 +1,11 @@
+/// Optimized Montgomery multiplication.
+///
+/// Uses CIOS (Coarsely Integrated Operand Scanning) method which is more
+/// cache-friendly than the FIOS method used in crypto-bigint.
+/// Based on the implementation described in the Section 5 of the paper
+/// "Analyzing and comparing Montgomery multiplication algorithms" with some
+/// slight tweaks: https://www.microsoft.com/en-us/research/wp-content/uploads/1996/01/j37acmon.pdf
 pub mod mul {
-    //! Optimized Montgomery multiplication.
-    //!
-    //! Uses CIOS (Coarsely Integrated Operand Scanning) method which is more
-    //! cache-friendly than the FIOS method used in crypto-bigint.
-
     use crypto_bigint::{Uint, WideWord, Word};
     use num_traits::ConstZero;
 
