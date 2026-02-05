@@ -407,12 +407,12 @@ impl_from_signed!(i8, i16, i32, i64, i128);
 
 impl<const LIMBS: usize> FromWithConfig<bool> for MontyField<LIMBS> {
     fn from_with_cfg(value: bool, cfg: &Self::Config) -> Self {
-        let abs = if value {
+        let value = if value {
             crypto_bigint::Uint::one()
         } else {
             Zero::zero()
         };
-        Self(MontyForm::<LIMBS>::new(&abs, *cfg))
+        Self(MontyForm::new(&value, *cfg))
     }
 }
 
@@ -449,11 +449,7 @@ impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<&Int<LIMBS2>> for M
         };
         let abs = abs.resize();
 
-        let monty_mul = crypto_bigint_helpers::mul::monty_mul(
-            &abs,
-            cfg.r2(),
-            cfg.modulus(),
-        );
+        let monty_mul = crypto_bigint_helpers::mul::monty_mul(&abs, cfg.r2(), cfg.modulus());
         let result = MontyField(MontyForm::from_montgomery(monty_mul, *cfg));
 
         if value.is_negative() { -result } else { result }
@@ -469,25 +465,18 @@ impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<Uint<LIMBS2>> for M
 impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<&Uint<LIMBS2>> for MontyField<LIMBS> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
     fn from_with_cfg(value: &Uint<LIMBS2>, cfg: &Self::Config) -> Self {
-        let abs = if LIMBS >= LIMBS2 {
+        let value: crypto_bigint::Uint<LIMBS> = if LIMBS >= LIMBS2 {
             value.inner().resize()
         } else {
             value
                 .inner()
-                .rem(
-                    &NonZero::<crypto_bigint::Uint<LIMBS>>::new_unwrap(
-                        cfg.modulus().get(),
-                    ),
-                )
-                .resize::<LIMBS>()
+                .rem(&NonZero::<crypto_bigint::Uint<LIMBS>>::new_unwrap(
+                    cfg.modulus().get(),
+                ))
+                .resize()
         };
 
-
-        let monty_mul = crypto_bigint_helpers::mul::monty_mul(
-            &abs,
-            cfg.r2(),
-            cfg.modulus(),
-        );
+        let monty_mul = crypto_bigint_helpers::mul::monty_mul(&value, cfg.r2(), cfg.modulus());
         MontyField(MontyForm::from_montgomery(monty_mul, *cfg))
     }
 }

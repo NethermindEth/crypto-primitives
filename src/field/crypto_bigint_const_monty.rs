@@ -144,7 +144,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> FromStr for ConstMontyField<Mod, LI
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let uint = Uint::<LIMBS>::from_str(s)?;
-        Ok(Self(ConstMontyForm::new(uint.inner())))
+        Ok(Self::from(uint))
     }
 }
 
@@ -392,7 +392,12 @@ macro_rules! impl_from_unsigned {
             impl<Mod: Params<LIMBS>, const LIMBS: usize> From<$t> for ConstMontyField<Mod, LIMBS> {
                 fn from(value: $t) -> Self {
                     let value = Uint::from(value);
-                    Self(ConstMontyForm::new(value.inner()))
+                    let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+                        value.inner(),
+                        Mod::PARAMS.r2(),
+                        Mod::PARAMS.modulus().as_ref(),
+                    );
+                    ConstMontyField(ConstMontyForm::from_montgomery(monty_mul))
                 }
             }
 
@@ -413,8 +418,13 @@ macro_rules! impl_from_signed {
                 #![allow(clippy::arithmetic_side_effects)]
                 fn from(value: $t) -> Self {
                     let magnitude = Uint::from(value.abs_diff(0));
-                    let form = ConstMontyForm::new(magnitude.inner());
-                    Self(if value.is_negative() { -form } else { form })
+                    let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+                        magnitude.inner(),
+                        Mod::PARAMS.r2(),
+                        Mod::PARAMS.modulus().as_ref(),
+                    );
+                    let result = ConstMontyField(ConstMontyForm::from_montgomery(monty_mul));
+                    if value.is_negative() { -result } else { result }
                 }
             }
 
@@ -456,7 +466,12 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> From<Uint<LIMBS>> for ConstMontyFie
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> From<&Uint<LIMBS>> for ConstMontyField<Mod, LIMBS> {
     fn from(value: &Uint<LIMBS>) -> Self {
-        Self(ConstMontyForm::new(value.inner()))
+        let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+            value.inner(),
+            Mod::PARAMS.r2(),
+            Mod::PARAMS.modulus().as_ref(),
+        );
+        ConstMontyField(ConstMontyForm::from_montgomery(monty_mul))
     }
 }
 
@@ -495,8 +510,13 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize, const LIMBS2: usize> From<&crypto_b
         );
         let value = value.resize();
         // Note: abs() returns Uint so it's guaranteed to fit
-        let result = Self(ConstMontyForm::new(&value.abs()));
-
+        let abs = value.abs();
+        let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+            &abs,
+            Mod::PARAMS.r2(),
+            Mod::PARAMS.modulus().as_ref(),
+        );
+        let result = ConstMontyField(ConstMontyForm::from_montgomery(monty_mul));
         if value.is_negative().into() {
             -result
         } else {
