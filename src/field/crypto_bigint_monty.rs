@@ -358,7 +358,12 @@ macro_rules! impl_from_unsigned {
             impl<const LIMBS: usize>FromWithConfig<$t> for MontyField<LIMBS> {
                 fn from_with_cfg(value: $t, cfg: &Self::Config) -> Self {
                     let abs: crypto_bigint::Uint<LIMBS> = value.into();
-                    Self(MontyForm::<LIMBS>::new(&abs, *cfg))
+                    let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+                        &abs,
+                        cfg.r2(),
+                        cfg.modulus(),
+                    );
+                    MontyField(MontyForm::from_montgomery(monty_mul, *cfg))
                 }
             }
 
@@ -378,8 +383,13 @@ macro_rules! impl_from_signed {
             impl<const LIMBS: usize>FromWithConfig<$t> for MontyField<LIMBS> {
                 fn from_with_cfg(value: $t, cfg: &Self::Config) -> Self {
                     let magnitude = Uint::from(value.abs_diff(0));
-                    let form = MontyForm::new(magnitude.inner(), cfg.clone());
-                    Self(if value.is_negative() { -form } else { form })
+                    let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+                        magnitude.inner(),
+                        cfg.r2(),
+                        cfg.modulus(),
+                    );
+                    let result = MontyField(MontyForm::from_montgomery(monty_mul, *cfg));
+                    if value.is_negative() { -result } else { result }
                 }
             }
 
@@ -439,7 +449,12 @@ impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<&Int<LIMBS2>> for M
         };
         let abs = abs.resize();
 
-        let result = Self(MontyForm::<LIMBS>::new(&abs, *cfg));
+        let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+            &abs,
+            cfg.r2(),
+            cfg.modulus(),
+        );
+        let result = MontyField(MontyForm::from_montgomery(monty_mul, *cfg));
 
         if value.is_negative() { -result } else { result }
     }
@@ -454,19 +469,26 @@ impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<Uint<LIMBS2>> for M
 impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<&Uint<LIMBS2>> for MontyField<LIMBS> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
     fn from_with_cfg(value: &Uint<LIMBS2>, cfg: &Self::Config) -> Self {
-        if LIMBS >= LIMBS2 {
-            Self::new(MontyForm::new(&value.inner().resize(), *cfg))
+        let abs = if LIMBS >= LIMBS2 {
+            value.inner().resize()
         } else {
-            let abs = value
+            value
                 .inner()
                 .rem(
-                    &crypto_bigint::NonZero::<crypto_bigint::Uint<LIMBS>>::new_unwrap(
+                    &NonZero::<crypto_bigint::Uint<LIMBS>>::new_unwrap(
                         cfg.modulus().get(),
                     ),
                 )
-                .resize::<LIMBS>();
-            Self(MontyForm::<LIMBS>::new(&abs, *cfg))
-        }
+                .resize::<LIMBS>()
+        };
+
+
+        let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+            &abs,
+            cfg.r2(),
+            cfg.modulus(),
+        );
+        MontyField(MontyForm::from_montgomery(monty_mul, *cfg))
     }
 }
 
