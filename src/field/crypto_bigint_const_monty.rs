@@ -192,23 +192,24 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Neg for ConstMontyField<Mod, LIMBS>
     }
 }
 
-macro_rules! impl_basic_op_boilerplate {
-    ($trait:ident, $method:ident) => {
+macro_rules! impl_basic_op_forward_to_assign {
+    ($trait:ident, $method:ident, $assign_method:ident) => {
         impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait for ConstMontyField<Mod, LIMBS> {
-            type Output = Self;
+            type Output = ConstMontyField<Mod, LIMBS>;
 
             #[inline(always)]
-            fn $method(self, rhs: Self) -> Self::Output {
-                (&self).$method(&rhs)
+            fn $method(self, rhs: ConstMontyField<Mod, LIMBS>) -> Self::Output {
+                self.$method(&rhs)
             }
         }
 
         impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait<&Self> for ConstMontyField<Mod, LIMBS> {
-            type Output = Self;
+            type Output = ConstMontyField<Mod, LIMBS>;
 
             #[inline(always)]
-            fn $method(self, rhs: &Self) -> Self::Output {
-                (&self).$method(rhs)
+            fn $method(mut self, rhs: &ConstMontyField<Mod, LIMBS>) -> Self::Output {
+                self.$assign_method(rhs);
+                self
             }
         }
 
@@ -219,55 +220,25 @@ macro_rules! impl_basic_op_boilerplate {
 
             #[inline(always)]
             fn $method(self, rhs: ConstMontyField<Mod, LIMBS>) -> Self::Output {
-                self.$method(&rhs)
+                self.clone().$method(&rhs)
             }
         }
-    };
-}
 
-macro_rules! impl_basic_op_forward {
-    ($trait:ident, $method:ident) => {
         impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait for &ConstMontyField<Mod, LIMBS> {
             type Output = ConstMontyField<Mod, LIMBS>;
 
             #[inline(always)]
-            fn $method(self, rhs: Self) -> Self::Output {
-                ConstMontyField(self.0.$method(rhs.0))
+            fn $method(self, rhs: &ConstMontyField<Mod, LIMBS>) -> Self::Output {
+                self.clone().$method(rhs)
             }
         }
     };
 }
 
-impl_basic_op_boilerplate!(Add, add);
-impl_basic_op_boilerplate!(Sub, sub);
-impl_basic_op_boilerplate!(Mul, mul);
-impl_basic_op_boilerplate!(Div, div);
-
-impl_basic_op_forward!(Add, add);
-impl_basic_op_forward!(Sub, sub);
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> Mul for &ConstMontyField<Mod, LIMBS> {
-    type Output = ConstMontyField<Mod, LIMBS>;
-
-    #[inline(always)]
-    fn mul(self, rhs: Self) -> Self::Output {
-        let monty_mul = crypto_bigint_helpers::mul::monty_mul(
-            self.0.as_montgomery(),
-            rhs.0.as_montgomery(),
-            Mod::PARAMS.modulus().as_ref(),
-        );
-        ConstMontyField(ConstMontyForm::from_montgomery(monty_mul))
-    }
-}
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> Div for &ConstMontyField<Mod, LIMBS> {
-    type Output = ConstMontyField<Mod, LIMBS>;
-
-    #[inline(always)]
-    fn div(self, rhs: Self) -> Self::Output {
-        self.checked_div(rhs).expect("Division by zero")
-    }
-}
+impl_basic_op_forward_to_assign!(Add, add, add_assign);
+impl_basic_op_forward_to_assign!(Sub, sub, sub_assign);
+impl_basic_op_forward_to_assign!(Mul, mul, mul_assign);
+impl_basic_op_forward_to_assign!(Div, div, div_assign);
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Pow<u32> for ConstMontyField<Mod, LIMBS> {
     type Output = Self;
@@ -301,27 +272,54 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> CheckedDiv for ConstMontyField<Mod,
 // Arithmetic assign operations
 //
 
-macro_rules! impl_field_op_assign {
-    ($trait:ident, $method:ident, $inner:ident) => {
+macro_rules! impl_op_assign_boilerplate {
+    ($trait:ident, $method:ident) => {
         impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait for ConstMontyField<Mod, LIMBS> {
             #[inline(always)]
-            fn $method(&mut self, rhs: Self) {
-                *self = self.$inner(&rhs);
-            }
-        }
-        impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait<&Self> for ConstMontyField<Mod, LIMBS> {
-            #[inline(always)]
-            fn $method(&mut self, rhs: &Self) {
-                *self = self.$inner(rhs);
+            fn $method(&mut self, rhs: ConstMontyField<Mod, LIMBS>) {
+                self.$method(&rhs);
             }
         }
     };
 }
 
-impl_field_op_assign!(AddAssign, add_assign, add);
-impl_field_op_assign!(SubAssign, sub_assign, sub);
-impl_field_op_assign!(MulAssign, mul_assign, mul);
-impl_field_op_assign!(DivAssign, div_assign, div);
+impl_op_assign_boilerplate!(AddAssign, add_assign);
+impl_op_assign_boilerplate!(SubAssign, sub_assign);
+impl_op_assign_boilerplate!(MulAssign, mul_assign);
+impl_op_assign_boilerplate!(DivAssign, div_assign);
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> AddAssign<&Self> for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: &Self) {
+        self.0.add_assign(&rhs.0);
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> SubAssign<&Self> for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
+    fn sub_assign(&mut self, rhs: &Self) {
+        self.0.sub_assign(&rhs.0);
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> MulAssign<&Self> for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
+    fn mul_assign(&mut self, rhs: &Self) {
+        let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+            self.0.as_montgomery(),
+            rhs.0.as_montgomery(),
+            Mod::PARAMS.modulus().as_ref(),
+        );
+        *self.0.as_montgomery_mut() = monty_mul;
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> DivAssign<&Self> for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
+    fn div_assign(&mut self, rhs: &Self) {
+        self.mul_assign(rhs.inv().expect("Division by zero"));
+    }
+}
 
 //
 // Aggregate operations
