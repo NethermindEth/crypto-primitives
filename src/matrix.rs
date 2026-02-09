@@ -185,15 +185,17 @@ impl<T: Clone> DenseRowMatrix<T> {
         self.as_rows().collect()
     }
 
-    pub fn to_rows_slices_mut(&mut self) -> Vec<&mut [T]> {
-        self.as_rows_mut().collect()
-    }
-
     pub fn to_rows(&self) -> Vec<Vec<T>> {
         self.data
             .chunks_exact(self.num_cols)
             .map(|row| row.to_vec())
             .collect()
+    }
+}
+
+impl<T> DenseRowMatrix<T> {
+    pub fn to_rows_slices_mut(&mut self) -> Vec<&mut [T]> {
+        self.data.chunks_exact_mut(self.num_cols).collect()
     }
 }
 
