@@ -190,8 +190,13 @@ impl<const LIMBS: usize> FromStr for Int<LIMBS> {
         } else {
             (false, s)
         };
+        let (radix, s) = if let Some(s) = s.strip_prefix("0x") {
+            (16, s)
+        } else {
+            (10, s)
+        };
         use crypto_bigint::Uint;
-        let abs = Uint::<LIMBS>::from_str_radix_vartime(s, 10).map_err(|_| ())?;
+        let abs = Uint::<LIMBS>::from_str_radix_vartime(s, radix).map_err(|_| ())?;
         let res: Result<Self, _> = abs.try_into();
         match res {
             Ok(res) if neg => res.checked_neg().ok_or(()),
@@ -1303,8 +1308,9 @@ mod tests {
         assert_eq!(i64::MAX.to_string().parse::<Int1>().unwrap(), Int1::MAX);
         assert_eq!(i64::MIN.to_string().parse::<Int1>().unwrap(), Int1::MIN);
 
+        assert_eq!("0xFF".parse::<Int4>().unwrap(), Int4::from(255_i64));
+
         // Test invalid cases
-        assert!("0x123".parse::<Int4>().is_err());
         assert!("abc".parse::<Int4>().is_err());
         assert!("12.34".parse::<Int4>().is_err());
         assert!("".parse::<Int4>().is_err());

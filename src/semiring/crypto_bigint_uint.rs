@@ -204,7 +204,13 @@ impl<const LIMBS: usize> FromStr for Uint<LIMBS> {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let uint = crypto_bigint::Uint::<LIMBS>::from_str_radix_vartime(s, 10).map_err(|_| ())?;
+        let (radix, s) = if let Some(s) = s.strip_prefix("0x") {
+            (16, s)
+        } else {
+            (10, s)
+        };
+        let uint =
+            crypto_bigint::Uint::<LIMBS>::from_str_radix_vartime(s, radix).map_err(|_| ())?;
         Ok(Self(uint))
     }
 }
@@ -1177,8 +1183,9 @@ mod tests {
         assert_eq!(d, Uint4::one());
         assert_eq!(u64::MAX.to_string().parse::<Uint1>().unwrap(), Uint1::MAX);
 
+        assert_eq!("0xFF".parse::<Uint4>().unwrap(), Uint4::from(255_u64));
+
         // Test invalid cases
-        assert!("0x123".parse::<Uint4>().is_err());
         assert!("abc".parse::<Uint4>().is_err());
         assert!("12.34".parse::<Uint4>().is_err());
         assert!("".parse::<Uint4>().is_err());

@@ -1338,9 +1338,10 @@ mod tests {
         let c: F = "1".parse().unwrap();
         assert_eq!(c, F::one());
 
+        assert_eq!("0xFF".parse::<F>().unwrap(), F::from(255_u64));
+
         // Test invalid cases
         assert!("-123".parse::<F>().is_err()); // Negative not supported
-        assert!("0x123".parse::<F>().is_err()); // Hex not supported
         assert!("abc".parse::<F>().is_err());
         assert!("12.34".parse::<F>().is_err());
         assert!("".parse::<F>().is_err());
