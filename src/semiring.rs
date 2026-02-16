@@ -63,8 +63,15 @@ impl<T> FixedSemiring for T where
 {
 }
 
-pub trait ConstSemiring: FixedSemiring + ConstZero + ConstOne + From<bool> {}
-impl<T> ConstSemiring for T where T: FixedSemiring + ConstZero + ConstOne + From<bool> {}
+pub trait ConstSemiring: FixedSemiring + ConstZero + ConstOne + From<bool> {
+    /// Minimum value of the semiring. For fields, this is the smallest
+    /// representable value.
+    const MIN: Self;
+
+    /// Maximum value of the semiring. For fields, this is the largest
+    /// representable value.
+    const MAX: Self;
+}
 
 /// Semiring of integers
 pub trait IntSemiring: Semiring + PartialOrd + Pow<u32> {
@@ -88,6 +95,10 @@ impl<T> ConstIntSemiring for T where T: IntSemiring + ConstSemiring + FromStr {}
 macro_rules! primitive_int_semiring {
     ($t:ident) => {
         impl Semiring for $t {}
+        impl ConstSemiring for $t {
+            const MAX: Self = $t::MAX;
+            const MIN: Self = $t::MIN;
+        }
         impl IntSemiring for $t {
             fn is_odd(&self) -> bool {
                 *self & 1 == 1

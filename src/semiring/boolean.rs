@@ -1,4 +1,4 @@
-use crate::{IntSemiring, Semiring};
+use crate::{ConstSemiring, IntSemiring, Semiring};
 use core::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     hash::{Hash, Hasher},
@@ -357,6 +357,11 @@ impl Pow<u32> for Boolean {
 //
 
 impl Semiring for Boolean {}
+
+impl ConstSemiring for Boolean {
+    const MAX: Self = Self::TRUE;
+    const MIN: Self = Self::FALSE;
+}
 
 impl IntSemiring for Boolean {
     fn is_odd(&self) -> bool {

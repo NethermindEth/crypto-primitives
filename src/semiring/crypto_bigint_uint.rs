@@ -563,6 +563,11 @@ impl<const LIMBS: usize, const LIMBS2: usize> TryFrom<&crypto_bigint::Uint<LIMBS
 
 impl<const LIMBS: usize> Semiring for Uint<LIMBS> {}
 
+impl<const LIMBS: usize> ConstSemiring for Uint<LIMBS> {
+    const MAX: Self = Self(crypto_bigint::Uint::MAX);
+    const MIN: Self = Self(crypto_bigint::Uint::ZERO);
+}
+
 impl<const LIMBS: usize> IntSemiring for Uint<LIMBS> {
     fn is_odd(&self) -> bool {
         self.0.is_odd().into()

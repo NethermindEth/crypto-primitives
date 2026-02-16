@@ -539,6 +539,16 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize, const LIMBS2: usize> From<&crypto_b
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Semiring for ConstMontyField<Mod, LIMBS> {}
 
+impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstSemiring for ConstMontyField<Mod, LIMBS> {
+    const MAX: Self = Self(ConstMontyForm::new(
+        &Mod::PARAMS
+            .modulus()
+            .as_ref()
+            .wrapping_sub(&crypto_bigint::Uint::ONE),
+    ));
+    const MIN: Self = Self::ZERO;
+}
+
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Ring for ConstMontyField<Mod, LIMBS> {}
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Field for ConstMontyField<Mod, LIMBS> {
@@ -1045,6 +1055,13 @@ mod tests {
         assert_eq!(a * (b + c), a * b + a * c);
         assert_eq!((a + b) * c, a * c + b * c);
         assert_eq!(a - a, F::zero());
+
+        assert_eq!(F::MIN, F::ZERO);
+        assert_eq!(
+            F::MAX,
+            F::from_str("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2e")
+                .unwrap()
+        );
     }
 
     #[test]
