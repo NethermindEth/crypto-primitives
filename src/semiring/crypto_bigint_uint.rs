@@ -745,6 +745,10 @@ mod tests {
 
         // Test underflow
         assert!(b.checked_sub(&a).is_none());
+
+        // MIN and MAX
+        assert_eq!(Uint4::MAX.checked_add(&One::one()), None);
+        assert_eq!(Uint4::MIN.checked_sub(&One::one()), None);
     }
 
     #[allow(clippy::op_ref)]

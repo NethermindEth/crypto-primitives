@@ -772,6 +772,22 @@ mod tests {
     }
 
     #[test]
+    fn min_max() {
+        assert_eq!(F::MIN, F::zero());
+        assert_eq!(
+            F::MAX,
+            F::from_str(
+                "115792089237316195423570985008687907853269984665640564039457584007908834671662"
+            )
+            .unwrap()
+        );
+
+        assert_eq!(F::MAX + F::one(), F::zero());
+        assert_eq!(F::MIN - F::one(), F::MAX);
+        assert_eq!(F::MAX * F::MAX, F::one());
+    }
+
+    #[test]
     fn basic_operations() {
         // Negation
         let a: F = 9_u64.into();

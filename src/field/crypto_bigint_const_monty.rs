@@ -861,6 +861,20 @@ mod tests {
     }
 
     #[test]
+    fn min_max() {
+        assert_eq!(F::MIN, F::zero());
+        assert_eq!(
+            F::MAX,
+            F::from_str("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2e")
+                .unwrap()
+        );
+
+        assert_eq!(F::MAX + F::one(), F::zero());
+        assert_eq!(F::MIN - F::one(), F::MAX);
+        assert_eq!(F::MAX * F::MAX, F::one());
+    }
+
+    #[test]
     fn basic_ops() {
         let a: F = 9_u64.into();
         let neg_a = -a;
@@ -1055,13 +1069,6 @@ mod tests {
         assert_eq!(a * (b + c), a * b + a * c);
         assert_eq!((a + b) * c, a * c + b * c);
         assert_eq!(a - a, F::zero());
-
-        assert_eq!(F::MIN, F::ZERO);
-        assert_eq!(
-            F::MAX,
-            F::from_str("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2e")
-                .unwrap()
-        );
     }
 
     #[test]
