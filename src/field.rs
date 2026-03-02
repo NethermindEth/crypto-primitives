@@ -40,6 +40,11 @@ pub trait Field:
     /// Underlying representation of an element
     type Inner: Debug + Eq + Clone + Sync + Send;
 
+    /// Type used to represent the modulus. Usually the same as `Self::Inner`,
+    /// but may differ when the modulus doesn't fit in the element representation
+    /// (e.g. F2 where elements are `bool` but the modulus is `2: u8`).
+    type Modulus: Debug + Eq + Clone + Sync + Send;
+
     fn inner(&self) -> &Self::Inner;
     fn inner_mut(&mut self) -> &mut Self::Inner;
 }
@@ -62,11 +67,11 @@ pub trait PrimeField: Field {
     // Note: Not using `&self` to avoid conflicts with `Zero` trait.
     fn is_zero(value: &Self) -> bool;
 
-    fn modulus(&self) -> Self::Inner;
+    fn modulus(&self) -> Self::Modulus;
 
     fn modulus_minus_one_div_two(&self) -> Self::Inner;
 
-    fn make_cfg(modulus: &Self::Inner) -> Result<Self::Config, FieldError>;
+    fn make_cfg(modulus: &Self::Modulus) -> Result<Self::Config, FieldError>;
 
     /// Creates a new instance of a prime field element from
     /// an arbitrary element of `Self::Inner`. The method
@@ -91,7 +96,7 @@ pub trait PrimeField: Field {
 pub trait ConstPrimeField:
     Field + ConstSemiring + Inv<Output = Option<Self>> + From<u64> + From<u128> + From<Self::Inner>
 {
-    const MODULUS: Self::Inner;
+    const MODULUS: Self::Modulus;
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner;
 
     /// Creates a new instance of a prime field element from
@@ -123,7 +128,7 @@ impl<T: ConstPrimeField> PrimeField for T {
     }
 
     #[inline(always)]
-    fn modulus(&self) -> Self::Inner {
+    fn modulus(&self) -> Self::Modulus {
         Self::MODULUS
     }
 
@@ -132,7 +137,7 @@ impl<T: ConstPrimeField> PrimeField for T {
         Self::MODULUS_MINUS_ONE_DIV_TWO
     }
 
-    fn make_cfg(modulus: &Self::Inner) -> Result<Self::Config, FieldError> {
+    fn make_cfg(modulus: &Self::Modulus) -> Result<Self::Config, FieldError> {
         if *modulus == Self::MODULUS {
             Ok(())
         } else {

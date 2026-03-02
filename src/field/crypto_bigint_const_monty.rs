@@ -543,6 +543,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Ring for ConstMontyField<Mod, LIMBS
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Field for ConstMontyField<Mod, LIMBS> {
     type Inner = Uint<LIMBS>;
+    type Modulus = Self::Inner;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -556,7 +557,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Field for ConstMontyField<Mod, LIMB
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstPrimeField for ConstMontyField<Mod, LIMBS> {
-    const MODULUS: Self::Inner = *Uint::new_ref(Mod::PARAMS.modulus().as_ref());
+    const MODULUS: Self::Modulus = *Uint::new_ref(Mod::PARAMS.modulus().as_ref());
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner = {
         let m_minus_one = CBUint::wrapping_sub(Self::MODULUS.inner(), &CBUint::ONE);
         let two = CBUint::<LIMBS>::wrapping_add(&CBUint::ONE, &CBUint::ONE);

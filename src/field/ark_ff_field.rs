@@ -400,6 +400,7 @@ impl<F: ArkWrappedField> Ring for ArkField<F> {}
 
 impl<F: ArkWrappedField> Field for ArkField<F> {
     type Inner = F;
+    type Modulus = <F::BasePrimeField as ark_ff::PrimeField>::BigInt;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
