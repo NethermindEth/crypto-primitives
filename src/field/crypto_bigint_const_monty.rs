@@ -563,6 +563,11 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Field for ConstMontyField<Mod, LIMB
     fn inner_mut(&mut self) -> &mut Self::Inner {
         Uint::new_ref_mut(self.0.as_montgomery_mut())
     }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        Uint::new(self.0.to_montgomery())
+    }
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstPrimeField for ConstMontyField<Mod, LIMBS> {

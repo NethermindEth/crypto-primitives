@@ -501,6 +501,11 @@ impl<P: FpConfig<N>, const N: usize> Field for Fp<P, N> {
     fn inner_mut(&mut self) -> &mut Self::Inner {
         &mut self.0.0
     }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        self.0.0
+    }
 }
 
 /// ConstPrimeField is only implemented for MontConfig and MontBackend
