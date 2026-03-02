@@ -1,7 +1,7 @@
-use crate::{IntSemiring, Semiring};
+use crate::{IntSemiring, Semiring, f2::F2};
 use core::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
-    hash::{Hash, Hasher},
+    hash::Hash,
     iter::{Product, Sum},
     ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
     str::{FromStr, ParseBoolError},
@@ -15,7 +15,7 @@ use rand::{distr::StandardUniform, prelude::*};
 /// Arithmetic operations behave like modulo-2 arithmetic:
 /// - In debug mode: overflow panics (e.g., true + true panics)
 /// - In release mode: overflow wraps (e.g., true + true = false)
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct Boolean(bool);
 
@@ -98,12 +98,6 @@ impl Deref for Boolean {
     }
 }
 
-impl Hash for Boolean {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state)
-    }
-}
-
 impl FromStr for Boolean {
     type Err = ParseBoolError;
 
@@ -173,6 +167,18 @@ macro_rules! impl_from_boolean_for {
 impl_from_boolean_for!(bool);
 impl_from_boolean_for!(i8, i16, i32, i64, i128, isize);
 impl_from_boolean_for!(u8, u16, u32, u64, u128, usize);
+
+impl From<F2> for Boolean {
+    fn from(value: F2) -> Self {
+        Self(*value)
+    }
+}
+
+impl From<&F2> for Boolean {
+    fn from(value: &F2) -> Self {
+        Self(**value)
+    }
+}
 
 //
 // Basic arithmetic operations
