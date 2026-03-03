@@ -4,7 +4,7 @@ use core::{
     hash::Hash,
     iter::{Product, Sum},
     ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
-    str::{FromStr, ParseBoolError},
+    str::FromStr,
 };
 use num_traits::{CheckedAdd, CheckedMul, CheckedSub, ConstOne, ConstZero, One, Pow, Zero};
 
@@ -99,14 +99,29 @@ impl Deref for Boolean {
 }
 
 impl FromStr for Boolean {
-    type Err = ParseBoolError;
+    type Err = ();
 
-    /// In addition to "true" and "false", also supports "1" and "0".
+    /// Supports "false", "true" and numeric strings "0", "1".
+    /// Hexadecimal notation is also supported with "0x" prefix.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "1" => Ok(Self::TRUE),
-            "0" => Ok(Self::FALSE),
-            _ => bool::from_str(s).map(Self),
+            "false" => Ok(Self::ZERO),
+            "true" => Ok(Self::ONE),
+            _ => {
+                let (radix, s) = if let Some(s) = s.strip_prefix("0x") {
+                    (16, s)
+                } else {
+                    (10, s)
+                };
+                let parsed = u8::from_str_radix(s, radix).map_err(|_| ())?;
+                if parsed == 0 {
+                    Ok(Self::ZERO)
+                } else if parsed == 1 {
+                    Ok(Self::ONE)
+                } else {
+                    Err(())
+                }
+            }
         }
     }
 }
@@ -593,12 +608,23 @@ mod tests {
 
     #[test]
     fn from_str() {
-        assert_eq!("true".parse::<Boolean>(), Ok(Boolean::TRUE));
         assert_eq!("false".parse::<Boolean>(), Ok(Boolean::FALSE));
-        assert_eq!("1".parse::<Boolean>(), Ok(Boolean::TRUE));
+        assert_eq!("true".parse::<Boolean>(), Ok(Boolean::TRUE));
+
         assert_eq!("0".parse::<Boolean>(), Ok(Boolean::FALSE));
+        assert_eq!("0000".parse::<Boolean>(), Ok(Boolean::FALSE));
+        assert_eq!("0x0".parse::<Boolean>(), Ok(Boolean::FALSE));
+        assert_eq!("0x0000".parse::<Boolean>(), Ok(Boolean::FALSE));
+
+        assert_eq!("1".parse::<Boolean>(), Ok(Boolean::TRUE));
+        assert_eq!("0001".parse::<Boolean>(), Ok(Boolean::TRUE));
+        assert_eq!("0x1".parse::<Boolean>(), Ok(Boolean::TRUE));
+        assert_eq!("0x0001".parse::<Boolean>(), Ok(Boolean::TRUE));
+
         assert!("invalid".parse::<Boolean>().is_err());
         assert!("2".parse::<Boolean>().is_err());
+        assert!("-1".parse::<Boolean>().is_err());
+        assert!("".parse::<Boolean>().is_err());
     }
 
     #[test]

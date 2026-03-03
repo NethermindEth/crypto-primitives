@@ -71,14 +71,12 @@ impl Deref for F2 {
 }
 
 impl FromStr for F2 {
-    type Err = ();
+    type Err = <Boolean as FromStr>::Err;
 
+    /// See [`Boolean::from_str`] for accepted formats.
+    #[inline(always)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "0" | "false" => Ok(Self::ZERO),
-            "1" | "true" => Ok(Self::ONE),
-            _ => Err(()),
-        }
+        Boolean::from_str(s).map(|b| Self(*b))
     }
 }
 
@@ -745,14 +743,22 @@ mod tests {
 
     #[test]
     fn from_str() {
-        assert_eq!("0".parse::<F2>(), Ok(V0));
-        assert_eq!("1".parse::<F2>(), Ok(V1));
         assert_eq!("false".parse::<F2>(), Ok(V0));
         assert_eq!("true".parse::<F2>(), Ok(V1));
 
+        assert_eq!("0".parse::<F2>(), Ok(V0));
+        assert_eq!("0000".parse::<F2>(), Ok(V0));
+        assert_eq!("0x0".parse::<F2>(), Ok(V0));
+        assert_eq!("0x0000".parse::<F2>(), Ok(V0));
+
+        assert_eq!("1".parse::<F2>(), Ok(V1));
+        assert_eq!("0001".parse::<F2>(), Ok(V1));
+        assert_eq!("0x1".parse::<F2>(), Ok(V1));
+        assert_eq!("0x0001".parse::<F2>(), Ok(V1));
+
+        assert!("invalid".parse::<F2>().is_err());
         assert!("2".parse::<F2>().is_err());
         assert!("-1".parse::<F2>().is_err());
-        assert!("abc".parse::<F2>().is_err());
         assert!("".parse::<F2>().is_err());
     }
 
