@@ -138,7 +138,7 @@ impl<const LIMBS: usize> Int<LIMBS> {
     /// The number of limbs used on this platform.
     pub const LIMBS: usize = LIMBS;
 
-    define_consts!(MINUS_ONE, MIN, MAX, SIGN_MASK, FULL_MASK);
+    define_consts!(MINUS_ONE, SIGN_MASK, FULL_MASK);
 }
 
 //
@@ -598,8 +598,8 @@ impl<const LIMBS: usize, const LIMBS2: usize> TryFrom<&crypto_bigint::Uint<LIMBS
 impl<const LIMBS: usize> Semiring for Int<LIMBS> {}
 
 impl<const LIMBS: usize> ConstSemiring for Int<LIMBS> {
-    const MAX: Self = Self::MAX;
-    const MIN: Self = Self::MIN;
+    const MAX: Self = Self(crypto_bigint::Int::MAX);
+    const MIN: Self = Self(crypto_bigint::Int::MIN);
 }
 
 impl<const LIMBS: usize> Ring for Int<LIMBS> {}

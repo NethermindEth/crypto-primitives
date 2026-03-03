@@ -142,12 +142,6 @@ const fn checked_resize<const SRC: usize, const DST: usize>(
     Some(num.resize())
 }
 
-macro_rules! define_consts {
-    ($($name:ident),+) => {
-        $(pub const $name: Self = Self(crypto_bigint::Uint::<LIMBS>::$name);)+
-    };
-}
-
 impl<const LIMBS: usize> Uint<LIMBS> {
     /// Total size of the represented integer in bits.
     pub const BITS: u32 = crypto_bigint::Uint::<LIMBS>::BITS;
@@ -155,8 +149,6 @@ impl<const LIMBS: usize> Uint<LIMBS> {
     pub const BYTES: usize = crypto_bigint::Uint::<LIMBS>::BYTES;
     /// The number of limbs used on this platform.
     pub const LIMBS: usize = LIMBS;
-
-    define_consts!(MAX);
 }
 
 //
@@ -671,7 +663,7 @@ impl<const LIMBS: usize> crypto_bigint::Bounded for Uint<LIMBS> {
 }
 
 impl<const LIMBS: usize> crypto_bigint::Constants for Uint<LIMBS> {
-    const MAX: Self = Self::MAX;
+    const MAX: Self = ConstSemiring::MAX;
 }
 
 #[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
@@ -1169,14 +1161,11 @@ mod tests {
 
     #[test]
     fn crypto_bigint_traits() {
-        use crypto_bigint::{Bounded, Constants};
+        use crypto_bigint::Bounded;
 
         // Test Bounded trait
         assert_eq!(<Uint4 as Bounded>::BITS, 256);
         assert_eq!(<Uint4 as Bounded>::BYTES, 32);
-
-        // Test Constants trait
-        assert_eq!(<Uint4 as Constants>::MAX, Uint4::MAX);
     }
 
     #[test]
