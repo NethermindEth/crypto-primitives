@@ -539,6 +539,16 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize, const LIMBS2: usize> From<&crypto_b
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Semiring for ConstMontyField<Mod, LIMBS> {}
 
+impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstSemiring for ConstMontyField<Mod, LIMBS> {
+    const MAX: Self = Self(ConstMontyForm::new(
+        &Mod::PARAMS
+            .modulus()
+            .as_ref()
+            .wrapping_sub(&crypto_bigint::Uint::ONE),
+    ));
+    const MIN: Self = Self::ZERO;
+}
+
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Ring for ConstMontyField<Mod, LIMBS> {}
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Field for ConstMontyField<Mod, LIMBS> {
@@ -552,6 +562,11 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Field for ConstMontyField<Mod, LIMB
     #[inline(always)]
     fn inner_mut(&mut self) -> &mut Self::Inner {
         Uint::new_ref_mut(self.0.as_montgomery_mut())
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        Uint::new(self.0.to_montgomery())
     }
 }
 
@@ -848,6 +863,20 @@ mod tests {
             F::from(Int::<LIMBS>::MIN),
             F::from_str("841047259831499451").unwrap()
         );
+    }
+
+    #[test]
+    fn min_max() {
+        assert_eq!(F::MIN, F::zero());
+        assert_eq!(
+            F::MAX,
+            F::from_str("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2e")
+                .unwrap()
+        );
+
+        assert_eq!(F::MAX + F::one(), F::zero());
+        assert_eq!(F::MIN - F::one(), F::MAX);
+        assert_eq!(F::MAX * F::MAX, F::one());
     }
 
     #[test]
@@ -1338,9 +1367,10 @@ mod tests {
         let c: F = "1".parse().unwrap();
         assert_eq!(c, F::one());
 
+        assert_eq!("0xFF".parse::<F>().unwrap(), F::from(255_u64));
+
         // Test invalid cases
         assert!("-123".parse::<F>().is_err()); // Negative not supported
-        assert!("0x123".parse::<F>().is_err()); // Hex not supported
         assert!("abc".parse::<F>().is_err());
         assert!("12.34".parse::<F>().is_err());
         assert!("".parse::<F>().is_err());

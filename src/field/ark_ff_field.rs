@@ -410,6 +410,11 @@ impl<F: ArkWrappedField> Field for ArkField<F> {
     fn inner_mut(&mut self) -> &mut Self::Inner {
         &mut self.0
     }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        self.0
+    }
 }
 
 //

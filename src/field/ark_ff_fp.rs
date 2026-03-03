@@ -140,6 +140,7 @@ impl<P: FpConfig<N>, const N: usize> FromStr for Fp<P, N> {
     type Err = <ArkWrappedFp<P, N> as FromStr>::Err;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Note that it only accepts decimal strings
         ArkWrappedFp::<P, N>::from_str(s).map(Self)
     }
 }
@@ -443,6 +444,25 @@ impl<P: FpConfig<N>, const N: usize> From<Fp<P, N>> for BigUint {
 
 impl<P: FpConfig<N>, const N: usize> Semiring for Fp<P, N> {}
 
+impl<T: MontConfig<N>, const N: usize> ConstSemiring for Fp<MontBackend<T, N>, N> {
+    const MAX: Self = {
+        let mut value = T::MODULUS;
+        // Subtract one in const context (can't use checked_sub)
+        let mut i = 0;
+        while i < N {
+            if value.0[i] > 0 {
+                value.0[i] -= 1;
+                break;
+            } else {
+                value.0[i] = u64::MAX;
+                i += 1;
+            }
+        }
+        Self(ArkWrappedFp::new(value))
+    };
+    const MIN: Self = <Self as ConstZero>::ZERO;
+}
+
 impl<P: FpConfig<N>, const N: usize> Ring for Fp<P, N> {}
 
 impl<P: FpConfig<N>, const N: usize> IntSemiring for Fp<P, N> {
@@ -480,6 +500,11 @@ impl<P: FpConfig<N>, const N: usize> Field for Fp<P, N> {
     #[inline(always)]
     fn inner_mut(&mut self) -> &mut Self::Inner {
         &mut self.0.0
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        self.0.0
     }
 }
 
@@ -749,6 +774,22 @@ mod tests {
         let o = F::one();
         assert!(!o.is_zero());
         assert_ne!(z, o);
+    }
+
+    #[test]
+    fn min_max() {
+        assert_eq!(F::MIN, F::zero());
+        assert_eq!(
+            F::MAX,
+            F::from_str(
+                "115792089237316195423570985008687907853269984665640564039457584007908834671662"
+            )
+            .unwrap()
+        );
+
+        assert_eq!(F::MAX + F::one(), F::zero());
+        assert_eq!(F::MIN - F::one(), F::MAX);
+        assert_eq!(F::MAX * F::MAX, F::one());
     }
 
     #[test]
