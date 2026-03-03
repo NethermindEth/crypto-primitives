@@ -142,12 +142,6 @@ const fn checked_resize<const SRC: usize, const DST: usize>(
     Some(num.resize())
 }
 
-macro_rules! define_consts {
-    ($($name:ident),+) => {
-        $(pub const $name: Self = Self(crypto_bigint::Uint::<LIMBS>::$name);)+
-    };
-}
-
 impl<const LIMBS: usize> Uint<LIMBS> {
     /// Total size of the represented integer in bits.
     pub const BITS: u32 = crypto_bigint::Uint::<LIMBS>::BITS;
@@ -155,8 +149,6 @@ impl<const LIMBS: usize> Uint<LIMBS> {
     pub const BYTES: usize = crypto_bigint::Uint::<LIMBS>::BYTES;
     /// The number of limbs used on this platform.
     pub const LIMBS: usize = LIMBS;
-
-    define_consts!(MAX);
 }
 
 //
@@ -204,7 +196,13 @@ impl<const LIMBS: usize> FromStr for Uint<LIMBS> {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let uint = crypto_bigint::Uint::<LIMBS>::from_str_radix_vartime(s, 10).map_err(|_| ())?;
+        let (radix, s) = if let Some(s) = s.strip_prefix("0x") {
+            (16, s)
+        } else {
+            (10, s)
+        };
+        let uint =
+            crypto_bigint::Uint::<LIMBS>::from_str_radix_vartime(s, radix).map_err(|_| ())?;
         Ok(Self(uint))
     }
 }
@@ -557,6 +555,11 @@ impl<const LIMBS: usize, const LIMBS2: usize> TryFrom<&crypto_bigint::Uint<LIMBS
 
 impl<const LIMBS: usize> Semiring for Uint<LIMBS> {}
 
+impl<const LIMBS: usize> ConstSemiring for Uint<LIMBS> {
+    const MAX: Self = Self(crypto_bigint::Uint::MAX);
+    const MIN: Self = Self(crypto_bigint::Uint::ZERO);
+}
+
 impl<const LIMBS: usize> IntSemiring for Uint<LIMBS> {
     fn is_odd(&self) -> bool {
         self.0.is_odd().into()
@@ -660,7 +663,7 @@ impl<const LIMBS: usize> crypto_bigint::Bounded for Uint<LIMBS> {
 }
 
 impl<const LIMBS: usize> crypto_bigint::Constants for Uint<LIMBS> {
-    const MAX: Self = Self::MAX;
+    const MAX: Self = ConstSemiring::MAX;
 }
 
 #[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
@@ -734,6 +737,10 @@ mod tests {
 
         // Test underflow
         assert!(b.checked_sub(&a).is_none());
+
+        // MIN and MAX
+        assert_eq!(Uint4::MAX.checked_add(&One::one()), None);
+        assert_eq!(Uint4::MIN.checked_sub(&One::one()), None);
     }
 
     #[allow(clippy::op_ref)]
@@ -1154,14 +1161,11 @@ mod tests {
 
     #[test]
     fn crypto_bigint_traits() {
-        use crypto_bigint::{Bounded, Constants};
+        use crypto_bigint::Bounded;
 
         // Test Bounded trait
         assert_eq!(<Uint4 as Bounded>::BITS, 256);
         assert_eq!(<Uint4 as Bounded>::BYTES, 32);
-
-        // Test Constants trait
-        assert_eq!(<Uint4 as Constants>::MAX, Uint4::MAX);
     }
 
     #[test]
@@ -1177,8 +1181,9 @@ mod tests {
         assert_eq!(d, Uint4::one());
         assert_eq!(u64::MAX.to_string().parse::<Uint1>().unwrap(), Uint1::MAX);
 
+        assert_eq!("0xFF".parse::<Uint4>().unwrap(), Uint4::from(255_u64));
+
         // Test invalid cases
-        assert!("0x123".parse::<Uint4>().is_err());
         assert!("abc".parse::<Uint4>().is_err());
         assert!("12.34".parse::<Uint4>().is_err());
         assert!("".parse::<Uint4>().is_err());

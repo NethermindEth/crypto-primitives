@@ -423,6 +423,11 @@ impl Field for BoxedMontyField {
             but not yet available in the latest RC from the craits.io."
         )
     }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        self.0.to_montgomery()
+    }
 }
 
 impl PrimeField for BoxedMontyField {

@@ -1,5 +1,7 @@
 use super::*;
-use crate::{boolean::Boolean, crypto_bigint_uint::Uint, impl_pow_via_repeated_squaring};
+use crate::{
+    ConstSemiring, boolean::Boolean, crypto_bigint_uint::Uint, impl_pow_via_repeated_squaring,
+};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, LowerHex, Result as FmtResult, UpperHex},
@@ -136,7 +138,7 @@ impl<const LIMBS: usize> Int<LIMBS> {
     /// The number of limbs used on this platform.
     pub const LIMBS: usize = LIMBS;
 
-    define_consts!(MINUS_ONE, MIN, MAX, SIGN_MASK, FULL_MASK);
+    define_consts!(MINUS_ONE, SIGN_MASK, FULL_MASK);
 }
 
 //
@@ -190,8 +192,13 @@ impl<const LIMBS: usize> FromStr for Int<LIMBS> {
         } else {
             (false, s)
         };
+        let (radix, s) = if let Some(s) = s.strip_prefix("0x") {
+            (16, s)
+        } else {
+            (10, s)
+        };
         use crypto_bigint::Uint;
-        let abs = Uint::<LIMBS>::from_str_radix_vartime(s, 10).map_err(|_| ())?;
+        let abs = Uint::<LIMBS>::from_str_radix_vartime(s, radix).map_err(|_| ())?;
         let res: Result<Self, _> = abs.try_into();
         match res {
             Ok(res) if neg => res.checked_neg().ok_or(()),
@@ -590,6 +597,11 @@ impl<const LIMBS: usize, const LIMBS2: usize> TryFrom<&crypto_bigint::Uint<LIMBS
 
 impl<const LIMBS: usize> Semiring for Int<LIMBS> {}
 
+impl<const LIMBS: usize> ConstSemiring for Int<LIMBS> {
+    const MAX: Self = Self(crypto_bigint::Int::MAX);
+    const MIN: Self = Self(crypto_bigint::Int::MIN);
+}
+
 impl<const LIMBS: usize> Ring for Int<LIMBS> {}
 
 impl<const LIMBS: usize> IntSemiring for Int<LIMBS> {
@@ -710,7 +722,7 @@ impl<const LIMBS: usize> crypto_bigint::Bounded for Int<LIMBS> {
 }
 
 impl<const LIMBS: usize> crypto_bigint::Constants for Int<LIMBS> {
-    const MAX: Self = Self::MAX;
+    const MAX: Self = ConstSemiring::MAX;
 }
 
 #[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
@@ -792,6 +804,10 @@ mod tests {
         assert_eq!(a.checked_sub(&b), Some(Int4::from(5_i64)));
         assert_eq!(a.checked_mul(&b), Some(Int4::from(50_i64)));
         assert_eq!(a.checked_rem(&b), Some(Int4::ZERO));
+
+        // MIN and MAX
+        assert_eq!(Int4::MAX.checked_add(&One::one()), None);
+        assert_eq!(Int4::MIN.checked_sub(&One::one()), None);
     }
 
     #[allow(clippy::op_ref)]
@@ -1283,7 +1299,7 @@ mod tests {
         assert_eq!(<Int4 as Bounded>::BYTES, 32);
 
         // Test Constants trait
-        assert_eq!(<Int4 as Constants>::MAX, Int4::MAX);
+        assert_eq!(<Int4 as Constants>::MAX, <Int4 as ConstSemiring>::MAX);
     }
 
     #[test]
@@ -1303,8 +1319,9 @@ mod tests {
         assert_eq!(i64::MAX.to_string().parse::<Int1>().unwrap(), Int1::MAX);
         assert_eq!(i64::MIN.to_string().parse::<Int1>().unwrap(), Int1::MIN);
 
+        assert_eq!("0xFF".parse::<Int4>().unwrap(), Int4::from(255_i64));
+
         // Test invalid cases
-        assert!("0x123".parse::<Int4>().is_err());
         assert!("abc".parse::<Int4>().is_err());
         assert!("12.34".parse::<Int4>().is_err());
         assert!("".parse::<Int4>().is_err());

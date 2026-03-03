@@ -1,4 +1,4 @@
-use crate::{ConstPrimeField, Field, Ring, Semiring, boolean::Boolean};
+use crate::{ConstPrimeField, ConstSemiring, Field, Ring, Semiring, boolean::Boolean};
 use core::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     hash::Hash,
@@ -375,6 +375,11 @@ impl_from_signed!(i8, i16, i32, i64, i128);
 
 impl Semiring for F2 {}
 
+impl ConstSemiring for F2 {
+    const MAX: Self = Self::ONE;
+    const MIN: Self = Self::ZERO;
+}
+
 impl Ring for F2 {}
 
 impl Field for F2 {
@@ -389,6 +394,11 @@ impl Field for F2 {
     #[inline(always)]
     fn inner_mut(&mut self) -> &mut Self::Inner {
         &mut self.0
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        self.0
     }
 }
 

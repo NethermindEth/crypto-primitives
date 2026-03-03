@@ -48,6 +48,7 @@ pub trait Field:
 
     fn inner(&self) -> &Self::Inner;
     fn inner_mut(&mut self) -> &mut Self::Inner;
+    fn into_inner(self) -> Self::Inner;
 }
 
 /// Element of an integer field modulo prime number (F_p).
