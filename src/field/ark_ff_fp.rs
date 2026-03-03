@@ -491,6 +491,7 @@ impl<P: FpConfig<N>, const N: usize> IntRing for Fp<P, N> {
 
 impl<P: FpConfig<N>, const N: usize> Field for Fp<P, N> {
     type Inner = BigInt<N>;
+    type Modulus = Self::Inner;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -510,7 +511,7 @@ impl<P: FpConfig<N>, const N: usize> Field for Fp<P, N> {
 
 /// ConstPrimeField is only implemented for MontConfig and MontBackend
 impl<M: MontConfig<N>, const N: usize> ConstPrimeField for Fp<MontBackend<M, N>, N> {
-    const MODULUS: Self::Inner = M::MODULUS;
+    const MODULUS: Self::Modulus = M::MODULUS;
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner =
         <ArkWrappedFp<MontBackend<M, N>, N> as ArkPrimeField>::MODULUS_MINUS_ONE_DIV_TWO;
 

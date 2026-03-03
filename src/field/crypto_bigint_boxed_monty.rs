@@ -406,6 +406,7 @@ impl Ring for BoxedMontyField {}
 
 impl Field for BoxedMontyField {
     type Inner = BoxedUint;
+    type Modulus = Self::Inner;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -440,7 +441,7 @@ impl PrimeField for BoxedMontyField {
         value.0.is_zero().into()
     }
 
-    fn modulus(&self) -> Self::Inner {
+    fn modulus(&self) -> Self::Modulus {
         self.0.params().modulus().clone().get()
     }
 
@@ -450,7 +451,7 @@ impl PrimeField for BoxedMontyField {
         (value - BoxedUint::one()) / NonZero::new(BoxedUint::from(2_u8)).unwrap()
     }
 
-    fn make_cfg(modulus: &Self::Inner) -> Result<Self::Config, FieldError> {
+    fn make_cfg(modulus: &Self::Modulus) -> Result<Self::Config, FieldError> {
         let Some(modulus) = Odd::new(modulus.clone()).into_option() else {
             return Err(FieldError::InvalidModulus);
         };

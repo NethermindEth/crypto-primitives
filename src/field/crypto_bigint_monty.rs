@@ -487,6 +487,7 @@ impl<const LIMBS: usize> Ring for MontyField<LIMBS> {}
 
 impl<const LIMBS: usize> Field for MontyField<LIMBS> {
     type Inner = Uint<LIMBS>;
+    type Modulus = Self::Inner;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -515,7 +516,7 @@ impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
         value.0.as_montgomery().is_zero()
     }
 
-    fn modulus(&self) -> Self::Inner {
+    fn modulus(&self) -> Self::Modulus {
         Uint::new(self.0.params().modulus().get())
     }
 
@@ -528,7 +529,7 @@ impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
         )
     }
 
-    fn make_cfg(modulus: &Self::Inner) -> Result<Self::Config, FieldError> {
+    fn make_cfg(modulus: &Self::Modulus) -> Result<Self::Config, FieldError> {
         let Some(modulus) = Odd::new(*modulus.inner()).into_option() else {
             return Err(FieldError::InvalidModulus);
         };
