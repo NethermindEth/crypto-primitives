@@ -51,6 +51,11 @@ pub trait Field:
     fn into_inner(self) -> Self::Inner;
 }
 
+/// Canonical integer value
+pub trait Retrieve: Field {
+    fn retrieve(&self) -> Self::Inner;
+}
+
 /// Element of an integer field modulo prime number (F_p).
 /// Prime modulus might be dynamic and can be determined at runtime.
 ///

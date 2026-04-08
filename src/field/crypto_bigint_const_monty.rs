@@ -10,7 +10,7 @@ use core::{
 };
 use crypto_bigint::{
     Limb, NonZeroUint, Uint as CBUint,
-    modular::{ConstMontyForm, ConstMontyParams as Params, Retrieve},
+    modular::{ConstMontyForm, ConstMontyParams as Params},
     subtle::{Choice, ConditionallySelectable, ConstantTimeEq},
 };
 use crypto_primitives_proc_macros::InfallibleCheckedOp;
@@ -698,10 +698,9 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> crypto_bigint::Square for ConstMont
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Retrieve for ConstMontyField<Mod, LIMBS> {
-    type Output = Uint<LIMBS>;
-
-    fn retrieve(&self) -> Self::Output {
-        self.retrieve()
+    #[inline(always)]
+    fn retrieve(&self) -> Self::Inner {
+        Self::retrieve(self)
     }
 }
 
@@ -1344,7 +1343,7 @@ mod tests {
 
     #[test]
     fn retrieve_trait() {
-        use crypto_bigint::modular::Retrieve;
+        use crate::Retrieve;
 
         let a: F = 123_u64.into();
         let retrieved = Retrieve::retrieve(&a);

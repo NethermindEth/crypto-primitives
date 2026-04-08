@@ -505,6 +505,13 @@ impl<const LIMBS: usize> Field for MontyField<LIMBS> {
     }
 }
 
+impl<const LIMBS: usize> Retrieve for MontyField<LIMBS> {
+    #[inline(always)]
+    fn retrieve(&self) -> Self::Inner {
+        Self::retrieve(self)
+    }
+}
+
 impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
     type Config = MontyParams<LIMBS>;
 

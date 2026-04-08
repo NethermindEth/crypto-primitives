@@ -430,6 +430,13 @@ impl Field for BoxedMontyField {
     }
 }
 
+impl Retrieve for BoxedMontyField {
+    #[inline(always)]
+    fn retrieve(&self) -> Self::Inner {
+        self.0.retrieve()
+    }
+}
+
 impl PrimeField for BoxedMontyField {
     type Config = BoxedMontyParams;
 
