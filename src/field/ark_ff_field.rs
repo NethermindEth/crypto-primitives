@@ -418,8 +418,7 @@ where
     F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
 {
     type Inner = F;
-    type LiftedInt = BigInt<N>;
-    type Modulus = <F::BasePrimeField as ark_ff::PrimeField>::BigInt;
+    type Integer = BigInt<N>;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -437,7 +436,7 @@ where
     }
 
     #[inline(always)]
-    fn lift_to_integer(self) -> Self::LiftedInt {
+    fn lift_to_integer(self) -> Self::Integer {
         BigInt::new(self.0.into_bigint())
     }
 }

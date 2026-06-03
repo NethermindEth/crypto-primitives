@@ -409,8 +409,7 @@ impl Ring for BoxedMontyField {}
 
 impl Field for BoxedMontyField {
     type Inner = BoxedUint;
-    type LiftedInt = BoxedUint;
-    type Modulus = Self::Inner;
+    type Integer = BoxedUint;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -434,23 +433,25 @@ impl Field for BoxedMontyField {
     }
 
     #[inline(always)]
-    fn lift_to_integer(self) -> Self::LiftedInt {
+    fn lift_to_integer(self) -> Self::Integer {
         BoxedUint::new(self.0.retrieve())
     }
 }
 
-impl PrimeField for BoxedMontyField {
+impl HasPrimeFieldConfig for BoxedMontyField {
     type Config = BoxedMontyParams;
 
     fn cfg(&self) -> &Self::Config {
         self.0.params()
     }
+}
 
+impl PrimeField for BoxedMontyField {
     fn is_zero(value: &Self) -> bool {
         value.0.is_zero().into()
     }
 
-    fn modulus(&self) -> Self::Modulus {
+    fn modulus(&self) -> Self::Integer {
         BoxedUint::new(self.0.params().modulus().clone().get())
     }
 
@@ -460,7 +461,7 @@ impl PrimeField for BoxedMontyField {
         (value - BoxedUint::one()) / BoxedUint::from(2_u8)
     }
 
-    fn make_cfg(modulus: &Self::Modulus) -> Result<Self::Config, FieldError> {
+    fn make_cfg(modulus: &Self::Integer) -> Result<Self::Config, FieldError> {
         let Some(modulus) = Odd::new(modulus.clone().into_inner()).into_option() else {
             return Err(FieldError::InvalidModulus);
         };

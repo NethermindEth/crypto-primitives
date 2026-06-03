@@ -41,20 +41,27 @@ pub trait Field:
     /// Underlying representation of an element
     type Inner: Debug + Eq + Clone + Sync + Send;
 
-    /// Type used to represent the modulus. Usually the same as `Self::Inner`,
-    /// but may differ when the modulus doesn't fit in the element representation
-    /// (e.g. F2 where elements are `bool` but the modulus is `2: u8`).
-    type Modulus: Debug + Eq + Clone + Sync + Send;
-
     /// A semiring integer type that's used to represent the value of this field when lifted to integers.
-    type LiftedInt: Semiring;
+    /// Also used to represent modulus in prime fields.
+    type Integer: Semiring;
 
     fn inner(&self) -> &Self::Inner;
     fn inner_mut(&mut self) -> &mut Self::Inner;
     fn into_inner(self) -> Self::Inner;
 
-    /// Lift the field element to integer semiring by discarding the modulus.
-    fn lift_to_integer(self) -> Self::LiftedInt;
+    /// Lift the field element to integer semiring using a natural approach. Can be projected back to the field.
+    fn lift_to_integer(self) -> Self::Integer;
+}
+
+/// A helper supertrait for prime fields, allows decoupling of
+/// [`FromWithConfig`].
+pub trait HasPrimeFieldConfig {
+    /// Runtime configuration for the prime field, empty for constant prime
+    /// fields. For dynamic prime fields, it could be just modulus or more
+    /// complex structure.
+    type Config: Debug + Clone + Send + Sync + 'static;
+
+    fn cfg(&self) -> &Self::Config;
 }
 
 /// Element of an integer field modulo prime number (F_p).
@@ -64,22 +71,15 @@ pub trait Field:
 /// the same, otherwise operations should panic.
 ///
 /// Constant prime fields are considered a special case of dynamic prime fields.
-pub trait PrimeField: Field {
-    /// Runtime configuration for the prime field, empty for constant prime
-    /// fields. For dynamic prime fields, it could be just modulus or more
-    /// complex structure.
-    type Config: Debug + Clone + Send + Sync + 'static;
-
-    fn cfg(&self) -> &Self::Config;
-
+pub trait PrimeField: Field + HasPrimeFieldConfig + FromWithConfig<Self::Integer> {
     // Note: Not using `&self` to avoid conflicts with `Zero` trait.
     fn is_zero(value: &Self) -> bool;
 
-    fn modulus(&self) -> Self::Modulus;
+    fn modulus(&self) -> Self::Integer;
 
     fn modulus_minus_one_div_two(&self) -> Self::Inner;
 
-    fn make_cfg(modulus: &Self::Modulus) -> Result<Self::Config, FieldError>;
+    fn make_cfg(modulus: &Self::Integer) -> Result<Self::Config, FieldError>;
 
     /// Creates a new instance of a prime field element from
     /// an arbitrary element of `Self::Inner`. The method
@@ -102,9 +102,15 @@ pub trait PrimeField: Field {
 
 /// Prime field whose modulus is a constant value known at compile time.
 pub trait ConstPrimeField:
-    Field + ConstSemiring + Inv<Output = Option<Self>> + From<u64> + From<u128> + From<Self::Inner>
+    Field
+    + ConstSemiring
+    + Inv<Output = Option<Self>>
+    + From<u64>
+    + From<u128>
+    + From<Self::Inner>
+    + From<Self::Integer>
 {
-    const MODULUS: Self::Modulus;
+    const MODULUS: Self::Integer;
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner;
 
     /// Creates a new instance of a prime field element from
@@ -122,21 +128,23 @@ pub trait ConstPrimeField:
     fn new_unchecked(inner: Self::Inner) -> Self;
 }
 
-impl<T: ConstPrimeField> PrimeField for T {
+impl<T: ConstPrimeField> HasPrimeFieldConfig for T {
     /// For constant prime fields, the configuration is empty.
     type Config = ();
 
     fn cfg(&self) -> &Self::Config {
         &()
     }
+}
 
+impl<T: ConstPrimeField> PrimeField for T {
     #[inline(always)]
     fn is_zero(value: &Self) -> bool {
         Zero::is_zero(value)
     }
 
     #[inline(always)]
-    fn modulus(&self) -> Self::Modulus {
+    fn modulus(&self) -> Self::Integer {
         Self::MODULUS
     }
 
@@ -145,7 +153,7 @@ impl<T: ConstPrimeField> PrimeField for T {
         Self::MODULUS_MINUS_ONE_DIV_TWO
     }
 
-    fn make_cfg(modulus: &Self::Modulus) -> Result<Self::Config, FieldError> {
+    fn make_cfg(modulus: &Self::Integer) -> Result<Self::Config, FieldError> {
         if *modulus == Self::MODULUS {
             Ok(())
         } else {
@@ -185,7 +193,7 @@ pub trait MontgomeryField: PrimeField {
 }
 
 /// Analogous to `From` trait, but with a prime field configuration parameter.
-pub trait FromWithConfig<T>: PrimeField {
+pub trait FromWithConfig<T>: HasPrimeFieldConfig {
     fn from_with_cfg(value: T, cfg: &Self::Config) -> Self;
 }
 

@@ -382,8 +382,7 @@ impl Ring for F2 {}
 
 impl Field for F2 {
     type Inner = bool;
-    type LiftedInt = u8;
-    type Modulus = u8;
+    type Integer = u8;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -401,13 +400,13 @@ impl Field for F2 {
     }
 
     #[inline(always)]
-    fn lift_to_integer(self) -> Self::LiftedInt {
+    fn lift_to_integer(self) -> Self::Integer {
         u8::from(self.0)
     }
 }
 
 impl ConstPrimeField for F2 {
-    const MODULUS: Self::Modulus = 2;
+    const MODULUS: Self::Integer = 2;
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner = false;
 
     #[inline(always)]

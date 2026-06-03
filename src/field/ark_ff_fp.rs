@@ -494,8 +494,7 @@ impl<P: FpConfig<N>, const N: usize> IntRing for Fp<P, N> {
 
 impl<P: FpConfig<N>, const N: usize> Field for Fp<P, N> {
     type Inner = BigInt<N>;
-    type LiftedInt = BigInt<N>;
-    type Modulus = Self::Inner;
+    type Integer = BigInt<N>;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -513,14 +512,14 @@ impl<P: FpConfig<N>, const N: usize> Field for Fp<P, N> {
     }
 
     #[inline(always)]
-    fn lift_to_integer(self) -> Self::LiftedInt {
+    fn lift_to_integer(self) -> Self::Integer {
         BigInt::new(self.0.into_bigint())
     }
 }
 
 /// ConstPrimeField is only implemented for MontConfig and MontBackend
 impl<M: MontConfig<N>, const N: usize> ConstPrimeField for Fp<MontBackend<M, N>, N> {
-    const MODULUS: Self::Modulus = BigInt::new(M::MODULUS);
+    const MODULUS: Self::Integer = BigInt::new(M::MODULUS);
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner = BigInt::new(
         <ArkWrappedFp<MontBackend<M, N>, N> as ArkPrimeField>::MODULUS_MINUS_ONE_DIV_TWO,
     );

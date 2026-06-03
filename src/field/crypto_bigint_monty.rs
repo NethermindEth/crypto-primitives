@@ -487,8 +487,7 @@ impl<const LIMBS: usize> Ring for MontyField<LIMBS> {}
 
 impl<const LIMBS: usize> Field for MontyField<LIMBS> {
     type Inner = Uint<LIMBS>;
-    type LiftedInt = Uint<LIMBS>;
-    type Modulus = Self::Inner;
+    type Integer = Uint<LIMBS>;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -506,23 +505,25 @@ impl<const LIMBS: usize> Field for MontyField<LIMBS> {
     }
 
     #[inline(always)]
-    fn lift_to_integer(self) -> Self::LiftedInt {
+    fn lift_to_integer(self) -> Self::Integer {
         Uint::new(self.0.retrieve())
     }
 }
 
-impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
+impl<const LIMBS: usize> HasPrimeFieldConfig for MontyField<LIMBS> {
     type Config = MontyParams<LIMBS>;
 
     fn cfg(&self) -> &Self::Config {
         self.0.params()
     }
+}
 
+impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
     fn is_zero(value: &Self) -> bool {
         value.0.as_montgomery().is_zero()
     }
 
-    fn modulus(&self) -> Self::Modulus {
+    fn modulus(&self) -> Self::Integer {
         Uint::new(self.0.params().modulus().get())
     }
 
@@ -535,7 +536,7 @@ impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
         )
     }
 
-    fn make_cfg(modulus: &Self::Modulus) -> Result<Self::Config, FieldError> {
+    fn make_cfg(modulus: &Self::Integer) -> Result<Self::Config, FieldError> {
         let Some(modulus) = Odd::new(*modulus.inner()).into_option() else {
             return Err(FieldError::InvalidModulus);
         };
