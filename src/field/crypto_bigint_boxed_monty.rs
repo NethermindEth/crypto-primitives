@@ -468,10 +468,6 @@ impl PrimeField for BoxedMontyField {
         Ok(BoxedMontyParams::new(modulus))
     }
 
-    fn new_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self {
-        Self(BoxedMontyForm::new(inner.into_inner(), cfg.clone()))
-    }
-
     fn new_unchecked_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self {
         Self(BoxedMontyForm::from_montgomery(
             inner.into_inner(),
@@ -553,7 +549,7 @@ mod tests {
         )
         .unwrap();
 
-        let y = F::new_with_cfg(x, &test_config());
+        let y = F::from_with_cfg(x, &test_config());
 
         assert_eq!(y, F::one_with_cfg(&test_config()));
     }

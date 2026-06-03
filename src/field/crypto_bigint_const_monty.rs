@@ -588,11 +588,6 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstPrimeField for ConstMontyField
     };
 
     #[inline(always)]
-    fn new(inner: Self::Inner) -> Self {
-        Self(ConstMontyForm::new(inner.inner()))
-    }
-
-    #[inline(always)]
     fn new_unchecked(inner: Self::Inner) -> Self {
         Self(ConstMontyForm::from_montgomery(inner.into_inner()))
     }

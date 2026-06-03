@@ -410,11 +410,6 @@ impl ConstPrimeField for F2 {
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner = false;
 
     #[inline(always)]
-    fn new(inner: Self::Inner) -> Self {
-        Self(inner)
-    }
-
-    #[inline(always)]
     fn new_unchecked(inner: Self::Inner) -> Self {
         Self(inner)
     }

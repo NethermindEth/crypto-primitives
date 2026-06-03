@@ -23,6 +23,8 @@ use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, Pow
 pub struct MontyField<const LIMBS: usize>(MontyForm<LIMBS>);
 
 impl<const LIMBS: usize> MontyField<LIMBS> {
+    pub const LIMBS: usize = LIMBS;
+
     /// Creates a new `MontyField` from a `MontyForm`.
     #[inline(always)]
     pub const fn new(form: MontyForm<LIMBS>) -> Self {
@@ -543,10 +545,6 @@ impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
         Ok(MontyParams::new(modulus))
     }
 
-    fn new_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self {
-        Self(MontyForm::new(inner.inner(), *cfg))
-    }
-
     fn new_unchecked_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self {
         Self(MontyForm::from_montgomery(inner.into_inner(), *cfg))
     }
@@ -628,10 +626,11 @@ mod tests {
 
     #[test]
     fn new_with_cfg_correct() {
-        let x =
-            Uint::from_be_hex("fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30");
+        let x = Uint::<{ F256::LIMBS }>::from_be_hex(
+            "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30",
+        );
 
-        let y = F::new_with_cfg(x, &test_config());
+        let y = F::from_with_cfg(x, &test_config());
 
         assert_eq!(y, F::one_with_cfg(&test_config()));
     }

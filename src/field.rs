@@ -38,18 +38,23 @@ pub trait Field:
     + for<'a> Div<&'a Self, Output=Self>
     + for<'a> DivAssign<&'a Self>
 {
-    /// Underlying representation of an element
-    type Inner: Debug + Eq + Clone + Sync + Send;
-
     /// A semiring integer type that's used to represent the value of this field when lifted to integers.
     /// Also used to represent modulus in prime fields.
     type Integer: Semiring;
+
+    /// Type of the underlying representation of this field element. This type might differ from [`Self::Integer`],
+    /// and is *NOT* guaranteed to be normalized.
+    /// Should only be used to reconstruct the field using [`ConstPrimeField::new_unchecked`] and
+    /// [`PrimeField::new_unchecked_with_cfg`] (with the same config supplied!).
+    type Inner: Debug + Eq + Clone + Sync + Send;
 
     fn inner(&self) -> &Self::Inner;
     fn inner_mut(&mut self) -> &mut Self::Inner;
     fn into_inner(self) -> Self::Inner;
 
-    /// Lift the field element to integer semiring using a natural approach. Can be projected back to the field.
+    /// Lift the field element to integer semiring using a natural approach.
+    ///
+    /// Can be projected back to the field using [`FromWithConfig::from_with_cfg`] to get the same field element.
     fn lift_to_integer(self) -> Self::Integer;
 }
 
@@ -81,16 +86,9 @@ pub trait PrimeField: Field + HasPrimeFieldConfig + FromWithConfig<Self::Integer
 
     fn make_cfg(modulus: &Self::Integer) -> Result<Self::Config, FieldError>;
 
-    /// Creates a new instance of a prime field element from
-    /// an arbitrary element of `Self::Inner`. The method
-    /// should not assume the `Self::Inner` is coming in a
-    /// form internally used by the field type. So it
-    /// always should perform a reduction first.
-    fn new_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self;
-
     /// Creates a new instance of the prime field element from a representation
     /// known to be valid - should consume exactly the value returned by
-    /// `inner()`. Ideally, this should not check the validity of the
+    /// [`Self::inner()`]. Ideally, this should not check the validity of the
     /// element, but it's acceptable to perform a check if it can't be
     /// avoided.
     fn new_unchecked_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self;
@@ -112,13 +110,6 @@ pub trait ConstPrimeField:
 {
     const MODULUS: Self::Integer;
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner;
-
-    /// Creates a new instance of a prime field element from
-    /// an arbitrary element of `Self::Inner`. The method
-    /// should not assume the `Self::Inner` is coming in a
-    /// form internally used by the field type. So it
-    /// always should perform a reduction first.
-    fn new(inner: Self::Inner) -> Self;
 
     /// Creates a new instance of the prime field element from a representation
     /// known to be valid - should consume exactly the value returned by
@@ -159,11 +150,6 @@ impl<T: ConstPrimeField> PrimeField for T {
         } else {
             Err(FieldError::InvalidModulus)
         }
-    }
-
-    #[inline(always)]
-    fn new_with_cfg(inner: Self::Inner, _cfg: &Self::Config) -> Self {
-        ConstPrimeField::new(inner)
     }
 
     #[inline(always)]
