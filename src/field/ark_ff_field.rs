@@ -1,8 +1,8 @@
 use super::*;
-use crate::{Semiring, boolean::Boolean};
+use crate::{Semiring, boolean::Boolean, semiring::ark_ff_bigint::BigInt};
 use ark_ff::{
-    AdditiveGroup, CubicExtConfig, CubicExtField, LegendreSymbol, QuadExtConfig, QuadExtField,
-    SqrtPrecomputation, fields::Field as ArkWrappedField,
+    AdditiveGroup, FftField, LegendreSymbol, SqrtPrecomputation,
+    fields::{Field as ArkWrappedField, PrimeField as ArkWrappedPrimeField},
 };
 use ark_serialize::{
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
@@ -13,7 +13,7 @@ use core::{
     fmt::{Display, Formatter, Result as FmtResult},
     hash::{Hash, Hasher},
     iter::{Product, Sum},
-    ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
+    ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
     str::FromStr,
 };
 use crypto_primitives_proc_macros::InfallibleCheckedOp;
@@ -30,9 +30,9 @@ use rand::distr::StandardUniform;
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
 #[repr(transparent)]
-pub struct ArkField<F: ArkWrappedField>(F);
+pub struct ArkField<F: ArkWrappedPrimeField>(F);
 
-impl<F: ArkWrappedField> ArkField<F> {
+impl<F: ArkWrappedPrimeField> ArkField<F> {
     /// Wraps a given value into this wrapper type
     #[inline(always)]
     pub const fn new(value: F) -> Self {
@@ -53,71 +53,50 @@ impl<F: ArkWrappedField> ArkField<F> {
     }
 }
 
-impl<P: QuadExtConfig> ArkField<QuadExtField<P>> {
-    pub const fn new_ext(c0: P::BaseField, c1: P::BaseField) -> Self {
-        Self(QuadExtField::<P>::new(c0, c1))
-    }
-}
-
-impl<P: CubicExtConfig> ArkField<CubicExtField<P>> {
-    pub const fn new_ext(c0: P::BaseField, c1: P::BaseField, c2: P::BaseField) -> Self {
-        Self(CubicExtField::<P>::new(c0, c1, c2))
-    }
-}
-
 //
 // Core traits
 //
 
-impl<F: ArkWrappedField> Debug for ArkField<F> {
+impl<F: ArkWrappedPrimeField> Debug for ArkField<F> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         Debug::fmt(&self.0, f)
     }
 }
 
-impl<F: ArkWrappedField> Display for ArkField<F> {
+impl<F: ArkWrappedPrimeField> Display for ArkField<F> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{}", self.0)
     }
 }
 
-impl<F: ArkWrappedField> Default for ArkField<F> {
+impl<F: ArkWrappedPrimeField> Default for ArkField<F> {
     #[inline(always)]
     fn default() -> Self {
         Self::zero()
     }
 }
 
-impl<F: ArkWrappedField> Deref for ArkField<F> {
-    type Target = F;
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        self.inner()
-    }
-}
-
-impl<F: ArkWrappedField> PartialOrd for ArkField<F> {
+impl<F: ArkWrappedPrimeField> PartialOrd for ArkField<F> {
     #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<F: ArkWrappedField> Ord for ArkField<F> {
+impl<F: ArkWrappedPrimeField> Ord for ArkField<F> {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
         Ord::cmp(&self.0, &other.0)
     }
 }
 
-impl<F: ArkWrappedField> Hash for ArkField<F> {
+impl<F: ArkWrappedPrimeField> Hash for ArkField<F> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state)
     }
 }
 
-impl<F: ArkWrappedField + FromStr> FromStr for ArkField<F> {
+impl<F: ArkWrappedPrimeField + FromStr> FromStr for ArkField<F> {
     type Err = <F as FromStr>::Err;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -129,7 +108,7 @@ impl<F: ArkWrappedField + FromStr> FromStr for ArkField<F> {
 // Zero and One traits
 //
 
-impl<F: ArkWrappedField> Zero for ArkField<F> {
+impl<F: ArkWrappedPrimeField> Zero for ArkField<F> {
     #[inline]
     fn zero() -> Self {
         Self(F::zero())
@@ -141,18 +120,18 @@ impl<F: ArkWrappedField> Zero for ArkField<F> {
     }
 }
 
-impl<F: ArkWrappedField> One for ArkField<F> {
+impl<F: ArkWrappedPrimeField> One for ArkField<F> {
     #[inline(always)]
     fn one() -> Self {
         Self(F::one())
     }
 }
 
-impl<F: ArkWrappedField> ConstZero for ArkField<F> {
+impl<F: ArkWrappedPrimeField> ConstZero for ArkField<F> {
     const ZERO: Self = Self(<F as AdditiveGroup>::ZERO);
 }
 
-impl<F: ArkWrappedField> ConstOne for ArkField<F> {
+impl<F: ArkWrappedPrimeField> ConstOne for ArkField<F> {
     const ONE: Self = Self(F::ONE);
 }
 
@@ -160,7 +139,7 @@ impl<F: ArkWrappedField> ConstOne for ArkField<F> {
 // Basic arithmetic operations
 //
 
-impl<F: ArkWrappedField> Neg for ArkField<F> {
+impl<F: ArkWrappedPrimeField> Neg for ArkField<F> {
     type Output = Self;
 
     #[inline(always)]
@@ -171,7 +150,7 @@ impl<F: ArkWrappedField> Neg for ArkField<F> {
 
 macro_rules! impl_basic_op {
     ($trait:ident, $method:ident) => {
-        impl<F: ArkWrappedField> $trait for ArkField<F> {
+        impl<F: ArkWrappedPrimeField> $trait for ArkField<F> {
             type Output = Self;
 
             #[inline(always)]
@@ -180,7 +159,7 @@ macro_rules! impl_basic_op {
             }
         }
 
-        impl<F: ArkWrappedField> $trait<&Self> for ArkField<F> {
+        impl<F: ArkWrappedPrimeField> $trait<&Self> for ArkField<F> {
             type Output = Self;
 
             #[inline(always)]
@@ -189,7 +168,7 @@ macro_rules! impl_basic_op {
             }
         }
 
-        impl<F: ArkWrappedField> $trait<&mut Self> for ArkField<F> {
+        impl<F: ArkWrappedPrimeField> $trait<&mut Self> for ArkField<F> {
             type Output = Self;
 
             #[inline(always)]
@@ -198,7 +177,7 @@ macro_rules! impl_basic_op {
             }
         }
 
-        impl<F: ArkWrappedField> $trait for &ArkField<F> {
+        impl<F: ArkWrappedPrimeField> $trait for &ArkField<F> {
             type Output = ArkField<F>;
 
             #[inline(always)]
@@ -207,7 +186,7 @@ macro_rules! impl_basic_op {
             }
         }
 
-        impl<F: ArkWrappedField> $trait<ArkField<F>> for &ArkField<F> {
+        impl<F: ArkWrappedPrimeField> $trait<ArkField<F>> for &ArkField<F> {
             type Output = ArkField<F>;
 
             #[inline(always)]
@@ -222,7 +201,7 @@ impl_basic_op!(Add, add);
 impl_basic_op!(Sub, sub);
 impl_basic_op!(Mul, mul);
 
-impl<F: ArkWrappedField> Div for ArkField<F> {
+impl<F: ArkWrappedPrimeField> Div for ArkField<F> {
     type Output = Self;
 
     #[inline(always)]
@@ -231,7 +210,7 @@ impl<F: ArkWrappedField> Div for ArkField<F> {
     }
 }
 
-impl<F: ArkWrappedField> Div<&Self> for ArkField<F> {
+impl<F: ArkWrappedPrimeField> Div<&Self> for ArkField<F> {
     type Output = Self;
 
     fn div(self, rhs: &Self) -> Self::Output {
@@ -239,7 +218,7 @@ impl<F: ArkWrappedField> Div<&Self> for ArkField<F> {
     }
 }
 
-impl<F: ArkWrappedField> Div<&mut Self> for ArkField<F> {
+impl<F: ArkWrappedPrimeField> Div<&mut Self> for ArkField<F> {
     type Output = Self;
 
     #[inline(always)]
@@ -248,7 +227,7 @@ impl<F: ArkWrappedField> Div<&mut Self> for ArkField<F> {
     }
 }
 
-impl<F: ArkWrappedField> Pow<u32> for ArkField<F> {
+impl<F: ArkWrappedPrimeField> Pow<u32> for ArkField<F> {
     type Output = Self;
 
     fn pow(self, rhs: u32) -> Self::Output {
@@ -256,7 +235,7 @@ impl<F: ArkWrappedField> Pow<u32> for ArkField<F> {
     }
 }
 
-impl<F: ArkWrappedField> Inv for ArkField<F> {
+impl<F: ArkWrappedPrimeField> Inv for ArkField<F> {
     type Output = Option<Self>;
 
     fn inv(mut self) -> Self::Output {
@@ -270,7 +249,7 @@ impl<F: ArkWrappedField> Inv for ArkField<F> {
 // (Note: Field operations do not overflow)
 //
 
-impl<F: ArkWrappedField> CheckedDiv for ArkField<F> {
+impl<F: ArkWrappedPrimeField> CheckedDiv for ArkField<F> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
     fn checked_div(&self, rhs: &Self) -> Option<Self> {
         rhs.0.inverse().map(|inv| Self(self.0 * inv))
@@ -283,20 +262,20 @@ impl<F: ArkWrappedField> CheckedDiv for ArkField<F> {
 
 macro_rules! impl_field_op_assign {
     ($trait:ident, $method:ident, $inner:ident) => {
-        impl<F: ArkWrappedField> $trait for ArkField<F> {
+        impl<F: ArkWrappedPrimeField> $trait for ArkField<F> {
             fn $method(&mut self, rhs: Self) {
                 // Use reference for inner call to avoid moves of rhs.0 where not needed
                 *self = self.$inner(&rhs);
             }
         }
 
-        impl<F: ArkWrappedField> $trait<&Self> for ArkField<F> {
+        impl<F: ArkWrappedPrimeField> $trait<&Self> for ArkField<F> {
             fn $method(&mut self, rhs: &Self) {
                 *self = self.$inner(rhs);
             }
         }
 
-        impl<F: ArkWrappedField> $trait<&mut Self> for ArkField<F> {
+        impl<F: ArkWrappedPrimeField> $trait<&mut Self> for ArkField<F> {
             fn $method(&mut self, rhs: &mut Self) {
                 *self = self.$inner(rhs);
             }
@@ -313,28 +292,28 @@ impl_field_op_assign!(DivAssign, div_assign, div);
 // Aggregate operations
 //
 
-impl<F: ArkWrappedField> Sum for ArkField<F> {
+impl<F: ArkWrappedPrimeField> Sum for ArkField<F> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
         iter.fold(Self::zero(), |acc, x| acc + x)
     }
 }
 
-impl<'a, F: ArkWrappedField> Sum<&'a Self> for ArkField<F> {
+impl<'a, F: ArkWrappedPrimeField> Sum<&'a Self> for ArkField<F> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
     fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
         iter.fold(Self::zero(), |acc, x| acc + x)
     }
 }
 
-impl<F: ArkWrappedField> Product for ArkField<F> {
+impl<F: ArkWrappedPrimeField> Product for ArkField<F> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
     fn product<I: Iterator<Item = Self>>(iter: I) -> Self {
         iter.fold(Self::one(), |acc, x| acc * x)
     }
 }
 
-impl<'a, F: ArkWrappedField> Product<&'a Self> for ArkField<F> {
+impl<'a, F: ArkWrappedPrimeField> Product<&'a Self> for ArkField<F> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
     fn product<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
         iter.fold(Self::one(), |acc, x| acc * x)
@@ -345,7 +324,7 @@ impl<'a, F: ArkWrappedField> Product<&'a Self> for ArkField<F> {
 // Conversions
 //
 
-impl<F: ArkWrappedField> From<&ArkField<F>> for ArkField<F> {
+impl<F: ArkWrappedPrimeField> From<&ArkField<F>> for ArkField<F> {
     fn from(value: &Self) -> Self {
         *value
     }
@@ -354,13 +333,13 @@ impl<F: ArkWrappedField> From<&ArkField<F>> for ArkField<F> {
 macro_rules! impl_from_delegate {
     ($($t:ty),* $(,)?) => {
         $(
-            impl<F: ArkWrappedField> From<$t> for ArkField<F> {
+            impl<F: ArkWrappedPrimeField> From<$t> for ArkField<F> {
                 fn from(value: $t) -> Self {
                     Self(F::from(value))
                 }
             }
 
-            impl<F: ArkWrappedField> From<&$t> for ArkField<F> {
+            impl<F: ArkWrappedPrimeField> From<&$t> for ArkField<F> {
                 fn from(value: &$t) -> Self {
                     Self::from(*value)
                 }
@@ -372,21 +351,57 @@ macro_rules! impl_from_delegate {
 impl_from_delegate!(u8, u16, u32, u64, u128);
 impl_from_delegate!(i8, i16, i32, i64, i128);
 
-impl<F: ArkWrappedField> From<bool> for ArkField<F> {
+impl<F: ArkWrappedPrimeField> From<bool> for ArkField<F> {
     fn from(value: bool) -> Self {
         if value { Self::one() } else { Self::zero() }
     }
 }
 
-impl<F: ArkWrappedField> From<Boolean> for ArkField<F> {
+impl<F: ArkWrappedPrimeField> From<Boolean> for ArkField<F> {
     fn from(value: Boolean) -> Self {
         Self::from(*value)
     }
 }
 
-impl<F: ArkWrappedField> From<&Boolean> for ArkField<F> {
+impl<F: ArkWrappedPrimeField> From<&Boolean> for ArkField<F> {
     fn from(value: &Boolean) -> Self {
         Self::from(**value)
+    }
+}
+
+impl<F: ArkWrappedPrimeField + From<ark_ff::BigInt<N>>, const N: usize> From<ark_ff::BigInt<N>>
+    for ArkField<F>
+{
+    fn from(value: ark_ff::BigInt<N>) -> Self {
+        Self(F::from(value))
+    }
+}
+
+impl<F: ArkWrappedPrimeField + From<num_bigint::BigUint>> From<num_bigint::BigUint>
+    for ArkField<F>
+{
+    fn from(value: num_bigint::BigUint) -> Self {
+        Self(F::from(value))
+    }
+}
+
+//
+// Reverse From traits, required by ark-ff Field
+//
+
+impl<F: ArkWrappedPrimeField + Into<ark_ff::BigInt<N>>, const N: usize> From<ArkField<F>>
+    for ark_ff::BigInt<N>
+{
+    fn from(value: ArkField<F>) -> Self {
+        value.0.into()
+    }
+}
+
+impl<F: ArkWrappedPrimeField + Into<num_bigint::BigUint>> From<ArkField<F>>
+    for num_bigint::BigUint
+{
+    fn from(value: ArkField<F>) -> Self {
+        value.0.into()
     }
 }
 
@@ -394,12 +409,16 @@ impl<F: ArkWrappedField> From<&Boolean> for ArkField<F> {
 // Semiring, Ring and Field
 //
 
-impl<F: ArkWrappedField> Semiring for ArkField<F> {}
+impl<F: ArkWrappedPrimeField> Semiring for ArkField<F> {}
 
-impl<F: ArkWrappedField> Ring for ArkField<F> {}
+impl<F: ArkWrappedPrimeField> Ring for ArkField<F> {}
 
-impl<F: ArkWrappedField> Field for ArkField<F> {
+impl<F, const N: usize> Field for ArkField<F>
+where
+    F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
+{
     type Inner = F;
+    type LiftedInt = BigInt<N>;
     type Modulus = <F::BasePrimeField as ark_ff::PrimeField>::BigInt;
 
     #[inline(always)]
@@ -416,6 +435,11 @@ impl<F: ArkWrappedField> Field for ArkField<F> {
     fn into_inner(self) -> Self::Inner {
         self.0
     }
+
+    #[inline(always)]
+    fn lift_to_integer(self) -> Self::LiftedInt {
+        BigInt::new(self.0.into_bigint())
+    }
 }
 
 //
@@ -423,14 +447,14 @@ impl<F: ArkWrappedField> Field for ArkField<F> {
 //
 
 #[cfg(feature = "rand")]
-impl<F: ArkWrappedField> Distribution<ArkField<F>> for StandardUniform {
+impl<F: ArkWrappedPrimeField> Distribution<ArkField<F>> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> ArkField<F> {
         ArkField(UniformRand::rand(rng))
     }
 }
 
 #[cfg(feature = "rand")]
-impl<F: ArkWrappedField> UniformRand for ArkField<F> {
+impl<F: ArkWrappedPrimeField> UniformRand for ArkField<F> {
     fn rand<R: ark_std::rand::Rng + ?Sized>(rng: &mut R) -> Self {
         Self(F::rand(rng))
     }
@@ -441,7 +465,7 @@ impl<F: ArkWrappedField> UniformRand for ArkField<F> {
 //
 
 #[cfg(feature = "zeroize")]
-impl<F: ArkWrappedField> zeroize::Zeroize for ArkField<F> {
+impl<F: ArkWrappedPrimeField> zeroize::Zeroize for ArkField<F> {
     fn zeroize(&mut self) {
         self.0.zeroize()
     }
@@ -451,7 +475,7 @@ impl<F: ArkWrappedField> zeroize::Zeroize for ArkField<F> {
 // Traits from ark-ff
 //
 
-impl<F: ArkWrappedField> CanonicalSerialize for ArkField<F> {
+impl<F: ArkWrappedPrimeField> CanonicalSerialize for ArkField<F> {
     fn serialize_with_mode<W: Write>(
         &self,
         writer: W,
@@ -465,7 +489,7 @@ impl<F: ArkWrappedField> CanonicalSerialize for ArkField<F> {
     }
 }
 
-impl<F: ArkWrappedField> CanonicalSerializeWithFlags for ArkField<F> {
+impl<F: ArkWrappedPrimeField> CanonicalSerializeWithFlags for ArkField<F> {
     fn serialize_with_flags<W: Write, G: Flags>(
         &self,
         writer: W,
@@ -479,7 +503,7 @@ impl<F: ArkWrappedField> CanonicalSerializeWithFlags for ArkField<F> {
     }
 }
 
-impl<F: ArkWrappedField> CanonicalDeserialize for ArkField<F> {
+impl<F: ArkWrappedPrimeField> CanonicalDeserialize for ArkField<F> {
     fn deserialize_with_mode<R: Read>(
         reader: R,
         compress: Compress,
@@ -489,7 +513,7 @@ impl<F: ArkWrappedField> CanonicalDeserialize for ArkField<F> {
     }
 }
 
-impl<F: ArkWrappedField> CanonicalDeserializeWithFlags for ArkField<F> {
+impl<F: ArkWrappedPrimeField> CanonicalDeserializeWithFlags for ArkField<F> {
     fn deserialize_with_flags<R: Read, G: Flags>(
         reader: R,
     ) -> Result<(Self, G), SerializationError> {
@@ -497,20 +521,82 @@ impl<F: ArkWrappedField> CanonicalDeserializeWithFlags for ArkField<F> {
     }
 }
 
-impl<F: ArkWrappedField> Valid for ArkField<F> {
+impl<F: ArkWrappedPrimeField> Valid for ArkField<F> {
     fn check(&self) -> Result<(), SerializationError> {
         self.0.check()
     }
 }
 
-impl<F: ArkWrappedField> AdditiveGroup for ArkField<F> {
+impl<F> AdditiveGroup for ArkField<F>
+where
+    F: ArkWrappedPrimeField,
+    Self: From<F::BigInt> + Into<F::BigInt>,
+{
     type Scalar = Self;
 
     const ZERO: Self = <Self as ConstZero>::ZERO;
 }
 
-impl<F: ArkWrappedField> ArkWrappedField for ArkField<F> {
-    type BasePrimeField = F::BasePrimeField;
+impl<F> FftField for ArkField<F>
+where
+    F: ArkWrappedPrimeField,
+    Self: From<F::BigInt> + Into<F::BigInt>,
+{
+    const GENERATOR: Self = Self(F::GENERATOR);
+    const LARGE_SUBGROUP_ROOT_OF_UNITY: Option<Self> = match F::LARGE_SUBGROUP_ROOT_OF_UNITY {
+        None => None,
+        Some(root) => Some(Self(root)),
+    };
+    const SMALL_SUBGROUP_BASE: Option<u32> = F::SMALL_SUBGROUP_BASE;
+    const SMALL_SUBGROUP_BASE_ADICITY: Option<u32> = F::SMALL_SUBGROUP_BASE_ADICITY;
+    const TWO_ADICITY: u32 = F::TWO_ADICITY;
+    const TWO_ADIC_ROOT_OF_UNITY: Self = Self(F::TWO_ADIC_ROOT_OF_UNITY);
+
+    fn get_root_of_unity(n: u64) -> Option<Self> {
+        F::get_root_of_unity(n).map(Self)
+    }
+}
+
+impl<F> ArkWrappedPrimeField for ArkField<F>
+where
+    F: ArkWrappedPrimeField,
+    Self: From<F::BigInt> + Into<F::BigInt>,
+{
+    type BigInt = F::BigInt;
+
+    const MODULUS: Self::BigInt = F::MODULUS;
+    const MODULUS_BIT_SIZE: u32 = F::MODULUS_BIT_SIZE;
+    const MODULUS_MINUS_ONE_DIV_TWO: Self::BigInt = F::MODULUS_MINUS_ONE_DIV_TWO;
+    const TRACE: Self::BigInt = F::TRACE;
+    const TRACE_MINUS_ONE_DIV_TWO: Self::BigInt = F::TRACE_MINUS_ONE_DIV_TWO;
+
+    #[inline(always)]
+    fn from_bigint(repr: Self::BigInt) -> Option<Self> {
+        <F as ArkWrappedPrimeField>::from_bigint(repr).map(Self)
+    }
+
+    #[inline(always)]
+    fn into_bigint(self) -> Self::BigInt {
+        self.0.into_bigint()
+    }
+
+    #[inline(always)]
+    fn from_be_bytes_mod_order(bytes: &[u8]) -> Self {
+        Self::new(F::from_be_bytes_mod_order(bytes))
+    }
+
+    #[inline(always)]
+    fn from_le_bytes_mod_order(bytes: &[u8]) -> Self {
+        Self::new(F::from_le_bytes_mod_order(bytes))
+    }
+}
+
+impl<F> ArkWrappedField for ArkField<F>
+where
+    F: ArkWrappedPrimeField,
+    Self: From<F::BigInt> + Into<F::BigInt>,
+{
+    type BasePrimeField = Self;
 
     const ONE: Self = <Self as ConstOne>::ONE;
     const SQRT_PRECOMP: Option<SqrtPrecomputation<Self>> = {
@@ -544,17 +630,17 @@ impl<F: ArkWrappedField> ArkWrappedField for ArkField<F> {
     }
 
     fn to_base_prime_field_elements(&self) -> impl Iterator<Item = Self::BasePrimeField> {
-        self.0.to_base_prime_field_elements()
+        self.0.to_base_prime_field_elements().map(Self)
     }
 
     fn from_base_prime_field_elems(
         elems: impl IntoIterator<Item = Self::BasePrimeField>,
     ) -> Option<Self> {
-        F::from_base_prime_field_elems(elems).map(Self)
+        F::from_base_prime_field_elems(elems.into_iter().map(|v| v.0)).map(Self)
     }
 
     fn from_base_prime_field(elem: Self::BasePrimeField) -> Self {
-        Self(F::from_base_prime_field(elem))
+        Self(F::from_base_prime_field(elem.0))
     }
 
     fn from_random_bytes_with_flags<G: Flags>(bytes: &[u8]) -> Option<(Self, G)> {
@@ -588,7 +674,7 @@ impl<F: ArkWrappedField> ArkWrappedField for ArkField<F> {
     }
 
     fn mul_by_base_prime_field(&self, elem: &Self::BasePrimeField) -> Self {
-        Self(self.0.mul_by_base_prime_field(elem))
+        Self(self.0.mul_by_base_prime_field(&elem.0))
     }
 }
 
@@ -979,7 +1065,7 @@ mod tests {
 
     #[test]
     fn conversions() {
-        // Test From<ArkWrappedField> for ArkField (via new)
+        // Test From<ArkWrappedPrimeField> for ArkField (via new)
         let inner = ArkFp::from(123_u64);
         let wrapped = F::new(inner);
         assert_eq!(wrapped, F::from(123_u64));

@@ -12,7 +12,7 @@ pub(crate) mod crypto_bigint_helpers;
 pub mod crypto_bigint_monty;
 pub mod f2;
 
-use crate::{ConstSemiring, ring::Ring};
+use crate::{ConstSemiring, Semiring, ring::Ring};
 use core::{
     fmt::Debug,
     ops::{Div, DivAssign, Neg},
@@ -46,9 +46,15 @@ pub trait Field:
     /// (e.g. F2 where elements are `bool` but the modulus is `2: u8`).
     type Modulus: Debug + Eq + Clone + Sync + Send;
 
+    /// A semiring integer type that's used to represent the value of this field when lifted to integers.
+    type LiftedInt: Semiring;
+
     fn inner(&self) -> &Self::Inner;
     fn inner_mut(&mut self) -> &mut Self::Inner;
     fn into_inner(self) -> Self::Inner;
+
+    /// Lift the field element to integer semiring by discarding the modulus.
+    fn lift_to_integer(self) -> Self::LiftedInt;
 }
 
 /// Element of an integer field modulo prime number (F_p).

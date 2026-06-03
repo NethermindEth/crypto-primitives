@@ -553,6 +553,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Ring for ConstMontyField<Mod, LIMBS
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Field for ConstMontyField<Mod, LIMBS> {
     type Inner = Uint<LIMBS>;
+    type LiftedInt = Uint<LIMBS>;
     type Modulus = Self::Inner;
 
     #[inline(always)]
@@ -568,6 +569,11 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Field for ConstMontyField<Mod, LIMB
     #[inline(always)]
     fn into_inner(self) -> Self::Inner {
         Uint::new(self.0.to_montgomery())
+    }
+
+    #[inline(always)]
+    fn lift_to_integer(self) -> Self::LiftedInt {
+        Uint::new(self.0.retrieve())
     }
 }
 

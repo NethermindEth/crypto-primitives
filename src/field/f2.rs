@@ -382,6 +382,7 @@ impl Ring for F2 {}
 
 impl Field for F2 {
     type Inner = bool;
+    type LiftedInt = u8;
     type Modulus = u8;
 
     #[inline(always)]
@@ -397,6 +398,11 @@ impl Field for F2 {
     #[inline(always)]
     fn into_inner(self) -> Self::Inner {
         self.0
+    }
+
+    #[inline(always)]
+    fn lift_to_integer(self) -> Self::LiftedInt {
+        u8::from(self.0)
     }
 }
 

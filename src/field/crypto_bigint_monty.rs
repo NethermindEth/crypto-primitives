@@ -487,6 +487,7 @@ impl<const LIMBS: usize> Ring for MontyField<LIMBS> {}
 
 impl<const LIMBS: usize> Field for MontyField<LIMBS> {
     type Inner = Uint<LIMBS>;
+    type LiftedInt = Uint<LIMBS>;
     type Modulus = Self::Inner;
 
     #[inline(always)]
@@ -502,6 +503,11 @@ impl<const LIMBS: usize> Field for MontyField<LIMBS> {
     #[inline(always)]
     fn into_inner(self) -> Self::Inner {
         Uint::new(self.0.to_montgomery())
+    }
+
+    #[inline(always)]
+    fn lift_to_integer(self) -> Self::LiftedInt {
+        Uint::new(self.0.retrieve())
     }
 }
 
