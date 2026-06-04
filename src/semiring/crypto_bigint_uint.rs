@@ -11,7 +11,7 @@ use core::{
     },
     str::FromStr,
 };
-use crypto_bigint::{Integer, Limb, Word};
+use crypto_bigint::{DivVartime, Integer, Limb, Word};
 use num_traits::{
     CheckedAdd, CheckedMul, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow, WrappingAdd,
     WrappingMul, WrappingSub, Zero,
@@ -297,7 +297,7 @@ impl<'a, const LIMBS: usize> Div<&'a Self> for Uint<LIMBS> {
 
     fn div(self, rhs: &'a Self) -> Self::Output {
         let non_zero = crypto_bigint::NonZero::new(rhs.0).expect("division by zero");
-        Self(self.0.div(&non_zero))
+        Self(self.0.div_vartime(&non_zero))
     }
 }
 
@@ -315,7 +315,7 @@ impl<'a, const LIMBS: usize> Rem<&'a Self> for Uint<LIMBS> {
 
     fn rem(self, rhs: &'a Self) -> Self::Output {
         let non_zero = crypto_bigint::NonZero::new(rhs.0).expect("division by zero");
-        Self(self.0.rem(&non_zero))
+        Self(self.0.rem_vartime(&non_zero))
     }
 }
 
@@ -854,34 +854,22 @@ mod tests {
     fn resize_method() {
         // Test resizing to same size
         let a = Uint4::from(0x12345678_u64);
-        let resized_same = a.resize::<4>();
+        let resized_same = a.resize::<{ 4 * WORD_FACTOR }>();
         assert_eq!(resized_same, a);
 
         // Test resizing to larger size
         let b = Uint2::from(0x9ABCDEF0_u64);
-        let resized_larger = b.resize::<4>();
-        assert_eq!(
-            resized_larger.into_inner().to_words()[0],
-            b.into_inner().to_words()[0]
-        );
-        assert_eq!(
-            resized_larger.into_inner().to_words()[1],
-            b.into_inner().to_words()[1]
-        );
-        assert_eq!(resized_larger.into_inner().to_words()[2], 0);
-        assert_eq!(resized_larger.into_inner().to_words()[3], 0);
+        let resized_larger = b.resize::<{ 4 * WORD_FACTOR }>();
+        assert_eq!(resized_larger.as_words()[0], b.as_words()[0]);
+        assert_eq!(resized_larger.as_words()[1], b.as_words()[1]);
+        assert_eq!(resized_larger.as_words()[2], 0);
+        assert_eq!(resized_larger.as_words()[3], 0);
 
         // Test resizing to smaller size (truncation)
         let c = Uint4::from(0x1234567890ABCDEF_u64);
-        let resized_smaller = c.resize::<2>();
-        assert_eq!(
-            resized_smaller.into_inner().to_words()[0],
-            c.into_inner().to_words()[0]
-        );
-        assert_eq!(
-            resized_smaller.into_inner().to_words()[1],
-            c.into_inner().to_words()[1]
-        );
+        let resized_smaller = c.resize::<{ 2 * WORD_FACTOR }>();
+        assert_eq!(resized_smaller.as_words()[0], c.as_words()[0]);
+        assert_eq!(resized_smaller.as_words()[1], c.as_words()[1]);
     }
 
     #[test]
@@ -889,7 +877,7 @@ mod tests {
         // Test with single limb
         let words = [0x1234567890ABCDEF];
         let a = Uint1::from_words(words);
-        assert_eq!(a.into_inner().to_words()[0], words[0]);
+        assert_eq!(a.as_words()[0], words[0]);
 
         // Test with multiple limbs
         let words = [
@@ -899,7 +887,7 @@ mod tests {
             0xF0F0F0F0F0F0F0F0,
         ];
         let b = Uint4::from_words(words);
-        let b_words = b.into_inner().to_words();
+        let b_words = b.as_words();
         for i in 0..4 {
             assert_eq!(b_words[i], words[i]);
         }
@@ -992,7 +980,13 @@ mod tests {
 
         // Shift left by almost the bit limit
         let shifted = x << (Uint4::BITS - 1);
-        assert_eq!(shifted, Uint4::from_words([0, 0, 0, 0x8000000000000000]));
+        let expected = {
+            let mut expected_words = [0; { 4 * WORD_FACTOR }];
+            let len = expected_words.len();
+            expected_words[len - 1] = (1 as Word) << (Word::BITS - 1);
+            Uint4::from_words(expected_words)
+        };
+        assert_eq!(shifted, expected);
 
         // Test with large powers that don't overflow
         let two = Uint4::from(2_u64);

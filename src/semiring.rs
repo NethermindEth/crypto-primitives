@@ -1,4 +1,8 @@
+#[cfg(feature = "ark_ff")]
+pub mod ark_ff_bigint;
 pub mod boolean;
+#[cfg(feature = "crypto_bigint")]
+pub mod crypto_bigint_boxed_uint;
 #[cfg(feature = "crypto_bigint")]
 pub mod crypto_bigint_uint;
 

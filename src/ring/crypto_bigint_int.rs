@@ -1113,7 +1113,13 @@ mod tests {
 
         // Shift left by almost the bit limit
         let shifted = x << (Int4::BITS - 1);
-        assert_eq!(shifted, Int4::from_words([0, 0, 0, 0x8000000000000000]));
+        let expected = {
+            let mut expected_words = [0; { 4 * WORD_FACTOR }];
+            let len = expected_words.len();
+            expected_words[len - 1] = (1 as Word) << (Word::BITS - 1);
+            Int4::from_words(expected_words)
+        };
+        assert_eq!(shifted, expected);
 
         // Test with large powers that don't overflow
         let two = Int4::from(2_i64);

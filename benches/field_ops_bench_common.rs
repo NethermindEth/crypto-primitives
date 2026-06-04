@@ -33,7 +33,7 @@ fn bench_random_field<F>(
                     )
                 },
                 |(lhs, rhs)| {
-                    for (lhs, rhs) in lhs.into_iter().zip(rhs.into_iter()) {
+                    for (lhs, rhs) in lhs.into_iter().zip(rhs) {
                         let _ = black_box(lhs * rhs);
                     }
                 },
@@ -54,7 +54,7 @@ fn bench_random_field<F>(
                     )
                 },
                 |(lhs, rhs)| {
-                    for (lhs, rhs) in lhs.into_iter().zip(rhs.into_iter()) {
+                    for (lhs, rhs) in lhs.into_iter().zip(rhs) {
                         let _ = black_box(lhs * &rhs);
                     }
                 },
@@ -87,7 +87,7 @@ fn bench_random_field<F>(
                     )
                 },
                 |(lhs, rhs)| {
-                    for (lhs, rhs) in lhs.into_iter().zip(rhs.into_iter()) {
+                    for (lhs, rhs) in lhs.into_iter().zip(rhs) {
                         let _ = black_box(lhs + rhs);
                     }
                 },
@@ -108,7 +108,7 @@ fn bench_random_field<F>(
                     )
                 },
                 |(lhs, rhs)| {
-                    for (lhs, rhs) in lhs.into_iter().zip(rhs.into_iter()) {
+                    for (lhs, rhs) in lhs.into_iter().zip(rhs) {
                         let _ = black_box(lhs + &rhs);
                     }
                 },
@@ -141,7 +141,7 @@ fn bench_random_field<F>(
                     )
                 },
                 |(lhs, rhs)| {
-                    for (lhs, rhs) in lhs.into_iter().zip(rhs.into_iter()) {
+                    for (lhs, rhs) in lhs.into_iter().zip(rhs) {
                         let _ = black_box(lhs / rhs);
                     }
                 },
@@ -162,7 +162,7 @@ fn bench_random_field<F>(
                     )
                 },
                 |(lhs, rhs)| {
-                    for (lhs, rhs) in lhs.into_iter().zip(rhs.into_iter()) {
+                    for (lhs, rhs) in lhs.into_iter().zip(rhs) {
                         let _ = black_box(lhs / &rhs);
                     }
                 },
