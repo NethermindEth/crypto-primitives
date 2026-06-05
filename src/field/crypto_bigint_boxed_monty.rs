@@ -433,7 +433,7 @@ impl Field for BoxedMontyField {
     }
 
     #[inline(always)]
-    fn lift_to_integer(self) -> Self::Integer {
+    fn lift_to_integer(&self) -> Self::Integer {
         BoxedUint::new(self.0.retrieve())
     }
 }

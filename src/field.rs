@@ -55,7 +55,7 @@ pub trait Field:
     /// Lift the field element to integer semiring using a natural approach.
     ///
     /// Can be projected back to the field using [`FromWithConfig::from_with_cfg`] to get the same field element.
-    fn lift_to_integer(self) -> Self::Integer;
+    fn lift_to_integer(&self) -> Self::Integer;
 }
 
 /// A helper supertrait for prime fields, allows decoupling of

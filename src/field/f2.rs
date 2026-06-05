@@ -400,7 +400,7 @@ impl Field for F2 {
     }
 
     #[inline(always)]
-    fn lift_to_integer(self) -> Self::Integer {
+    fn lift_to_integer(&self) -> Self::Integer {
         u8::from(self.0)
     }
 }

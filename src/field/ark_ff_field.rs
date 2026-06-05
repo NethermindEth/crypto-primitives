@@ -436,7 +436,7 @@ where
     }
 
     #[inline(always)]
-    fn lift_to_integer(self) -> Self::Integer {
+    fn lift_to_integer(&self) -> Self::Integer {
         BigInt::new(self.0.into_bigint())
     }
 }

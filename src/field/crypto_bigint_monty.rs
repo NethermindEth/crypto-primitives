@@ -507,7 +507,7 @@ impl<const LIMBS: usize> Field for MontyField<LIMBS> {
     }
 
     #[inline(always)]
-    fn lift_to_integer(self) -> Self::Integer {
+    fn lift_to_integer(&self) -> Self::Integer {
         Uint::new(self.0.retrieve())
     }
 }

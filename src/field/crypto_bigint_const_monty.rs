@@ -571,7 +571,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Field for ConstMontyField<Mod, LIMB
     }
 
     #[inline(always)]
-    fn lift_to_integer(self) -> Self::Integer {
+    fn lift_to_integer(&self) -> Self::Integer {
         Uint::new(self.0.retrieve())
     }
 }
