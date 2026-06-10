@@ -73,7 +73,7 @@ pub trait HasPrimeFieldConfig {
 /// Prime modulus might be dynamic and can be determined at runtime.
 ///
 /// When performing arithmetic operations, the modulus of both operands must be
-/// the same, otherwise operations should panic.
+/// the same, otherwise operations should panic in debug mode.
 ///
 /// Constant prime fields are considered a special case of dynamic prime fields.
 pub trait PrimeField: Field + HasPrimeFieldConfig + FromWithConfig<Self::Integer> {

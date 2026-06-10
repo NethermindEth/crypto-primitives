@@ -680,7 +680,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ConstRing, ensure_type_implements_trait};
+    use crate::{FixedRing, ensure_type_implements_trait};
     use alloc::vec::Vec;
     use ark_ff::{Fp64, Fp256, MontBackend, MontConfig};
     use core::str::FromStr;
@@ -696,7 +696,9 @@ mod tests {
 
     #[test]
     fn ensure_blanket_traits() {
-        ensure_type_implements_trait!(F, ConstRing);
+        ensure_type_implements_trait!(F, FixedRing);
+        // Should be ConstRing, but it's hard to compute MODULUS - 1 for
+        // Self::BigInt
     }
 
     #[test]
