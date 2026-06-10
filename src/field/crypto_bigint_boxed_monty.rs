@@ -495,7 +495,11 @@ impl zeroize::Zeroize for BoxedMontyField {
     }
 }
 
-#[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
+#[allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_lossless,
+    clippy::redundant_clone
+)]
 #[cfg(test)]
 mod tests {
     use super::*;

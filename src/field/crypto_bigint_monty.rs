@@ -600,7 +600,11 @@ pub type F8192 = MontyField<{ 128 * WORD_FACTOR }>;
 pub type F16384 = MontyField<{ 256 * WORD_FACTOR }>;
 pub type F32768 = MontyField<{ 512 * WORD_FACTOR }>;
 
-#[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
+#[allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_lossless,
+    clippy::redundant_clone
+)]
 #[cfg(test)]
 mod tests {
     use super::*;
