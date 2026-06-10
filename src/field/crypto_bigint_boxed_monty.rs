@@ -547,15 +547,29 @@ mod tests {
 
     #[test]
     fn new_with_cfg_correct() {
+        let cfg = test_config();
+
+        // `modulus + 1` should reduce to one.
         let x = BoxedUint::from_be_hex(
             "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30",
             256,
         )
         .unwrap();
+        assert_eq!(F::from_with_cfg(x, &cfg), F::one_with_cfg(&cfg));
 
-        let y = F::from_with_cfg(x, &test_config());
+        // `modulus` itself should reduce to zero.
+        let modulus = F::one_with_cfg(&cfg).modulus();
+        assert_eq!(F::from_with_cfg(modulus, &cfg), F::zero_with_cfg(&cfg));
 
-        assert_eq!(y, F::one_with_cfg(&test_config()));
+        // Lifting to integer and projecting back yields the original element.
+        for x in [
+            F::zero_with_cfg(&cfg),
+            F::one_with_cfg(&cfg),
+            F::from_with_cfg(2_u64, &cfg),
+            F::from_with_cfg(123456789_u64, &cfg),
+        ] {
+            assert_eq!(F::from_with_cfg(x.lift_to_integer(), &cfg), x);
+        }
     }
 
     #[test]

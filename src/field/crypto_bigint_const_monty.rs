@@ -760,13 +760,18 @@ mod tests {
 
     #[test]
     fn new_with_cfg_correct() {
+        // `modulus + 1` should reduce to one.
         let x = Uint::new(U256::from_be_hex(
             "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30",
         ));
+        assert_eq!(F::new(x), F::one());
 
-        let y = F::new(x);
+        assert_eq!(F::from(<F as PrimeField>::modulus(&F::one())), F::zero());
 
-        assert_eq!(y, F::one());
+        // Lifting to integer and projecting back yields the original element.
+        for x in [F::zero(), F::one(), F::from(2_u64), F::from(123456789_u64)] {
+            assert_eq!(F::from(x.lift_to_integer()), x);
+        }
     }
 
     #[test]

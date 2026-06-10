@@ -419,7 +419,9 @@ impl<P: FpConfig<N>, const N: usize> From<&Boolean> for Fp<P, N> {
 
 impl<P: FpConfig<N>, const N: usize> From<BigInt<N>> for Fp<P, N> {
     fn from(value: BigInt<N>) -> Self {
-        Self(ArkWrappedFp::from(value.into_inner()))
+        // Route through `BigUint` so values >= modulus are reduced rather than
+        // triggering a panic in ark-ff's `Fp::from_bigint`.
+        Self(ArkWrappedFp::from(BigUint::from(value.into_inner())))
     }
 }
 
@@ -780,6 +782,13 @@ mod tests {
         let o = F::one();
         assert!(!o.is_zero());
         assert_ne!(z, o);
+
+        assert_eq!(F::from(<F as PrimeField>::modulus(&o)), z);
+
+        // Lifting to integer and projecting back yields the original element.
+        for x in [z, o, F::from(2_u64), F::from(123456789_u64)] {
+            assert_eq!(F::from(x.lift_to_integer()), x);
+        }
     }
 
     #[test]

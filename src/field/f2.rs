@@ -476,6 +476,13 @@ mod tests {
         assert!(!V1.is_zero());
         assert!(!PrimeField::is_zero(&V1));
         assert_ne!(V0, V1);
+
+        assert_eq!(F2::from(V1.modulus()), V0);
+
+        // Lifting to integer and projecting back yields the original element.
+        for x in [V0, V1] {
+            assert_eq!(F2::from(x.lift_to_integer()), x);
+        }
     }
 
     #[test]
