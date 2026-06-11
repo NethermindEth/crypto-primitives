@@ -407,7 +407,7 @@ impl Field for F2 {
 
 impl ConstPrimeField for F2 {
     const MODULUS: Self::Integer = 2;
-    const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner = false;
+    const MODULUS_MINUS_ONE_DIV_TWO: Self::Integer = 0;
 
     #[inline(always)]
     fn new_unchecked(inner: Self::Inner) -> Self {
@@ -705,7 +705,7 @@ mod tests {
     #[test]
     fn const_prime_field() {
         assert_eq!(<F2 as ConstPrimeField>::MODULUS, 2_u8);
-        assert_eq!(<F2 as ConstPrimeField>::MODULUS_MINUS_ONE_DIV_TWO, false);
+        assert_eq!(<F2 as ConstPrimeField>::MODULUS_MINUS_ONE_DIV_TWO, 0_u8);
 
         assert_eq!(F2::new(true), V1);
         assert_eq!(F2::new(false), V0);
@@ -716,7 +716,7 @@ mod tests {
     #[test]
     fn prime_field_methods() {
         assert_eq!(V1.modulus(), 2_u8);
-        assert_eq!(V1.modulus_minus_one_div_two(), false);
+        assert_eq!(V1.modulus_minus_one_div_two(), 0_u8);
         assert_eq!(F2::make_cfg(&2_u8), Ok(()));
         assert!(F2::make_cfg(&0_u8).is_err());
         assert!(F2::make_cfg(&3_u8).is_err());

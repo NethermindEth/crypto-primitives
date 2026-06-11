@@ -82,7 +82,7 @@ pub trait PrimeField: Field + HasPrimeFieldConfig + FromWithConfig<Self::Integer
 
     fn modulus(&self) -> Self::Integer;
 
-    fn modulus_minus_one_div_two(&self) -> Self::Inner;
+    fn modulus_minus_one_div_two(&self) -> Self::Integer;
 
     fn make_cfg(modulus: &Self::Integer) -> Result<Self::Config, FieldError>;
 
@@ -109,7 +109,7 @@ pub trait ConstPrimeField:
     + From<Self::Integer>
 {
     const MODULUS: Self::Integer;
-    const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner;
+    const MODULUS_MINUS_ONE_DIV_TWO: Self::Integer;
 
     /// Creates a new instance of the prime field element from a representation
     /// known to be valid - should consume exactly the value returned by
@@ -140,7 +140,7 @@ impl<T: ConstPrimeField> PrimeField for T {
     }
 
     #[inline(always)]
-    fn modulus_minus_one_div_two(&self) -> T::Inner {
+    fn modulus_minus_one_div_two(&self) -> Self::Integer {
         Self::MODULUS_MINUS_ONE_DIV_TWO
     }
 

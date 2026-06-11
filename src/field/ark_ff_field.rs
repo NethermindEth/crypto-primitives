@@ -369,9 +369,19 @@ impl<F: ArkWrappedPrimeField> From<&Boolean> for ArkField<F> {
     }
 }
 
+impl<F: ArkWrappedPrimeField + From<ark_ff::BigInt<N>>, const N: usize> From<BigInt<N>>
+for ArkField<F>
+{
+    #[inline(always)]
+    fn from(value: BigInt<N>) -> Self {
+        Self::from(value.into_inner())
+    }
+}
+
 impl<F: ArkWrappedPrimeField + From<ark_ff::BigInt<N>>, const N: usize> From<ark_ff::BigInt<N>>
     for ArkField<F>
 {
+    #[inline(always)]
     fn from(value: ark_ff::BigInt<N>) -> Self {
         Self(F::from(value))
     }
@@ -380,6 +390,7 @@ impl<F: ArkWrappedPrimeField + From<ark_ff::BigInt<N>>, const N: usize> From<ark
 impl<F: ArkWrappedPrimeField + From<num_bigint::BigUint>> From<num_bigint::BigUint>
     for ArkField<F>
 {
+    #[inline(always)]
     fn from(value: num_bigint::BigUint) -> Self {
         Self(F::from(value))
     }
@@ -438,6 +449,50 @@ where
     #[inline(always)]
     fn lift_to_integer(&self) -> Self::Integer {
         BigInt::new(self.0.into_bigint())
+    }
+}
+
+
+impl<F: ArkWrappedPrimeField> HasPrimeFieldConfig for ArkField<F> {
+    type Config = ();
+
+    fn cfg(&self) -> &Self::Config {
+        &()
+    }
+}
+
+// TODO: Can be made into ConstPrimeField, but it's hard to compute MODULUS - 1
+impl<F, const N: usize> PrimeField for ArkField<F>
+where
+    F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
+{
+    fn is_zero(value: &Self) -> bool {
+        Zero::is_zero(value)
+    }
+
+    fn modulus(&self) -> Self::Integer {
+        BigInt::new(Self::MODULUS)
+    }
+
+    fn modulus_minus_one_div_two(&self) -> Self::Integer {
+        BigInt::new(Self::MODULUS_MINUS_ONE_DIV_TWO)
+    }
+
+    fn make_cfg(modulus: &Self::Integer) -> Result<Self::Config, FieldError> {
+        debug_assert_eq!(*modulus.inner(), Self::MODULUS);
+        Ok(())
+    }
+
+    fn new_unchecked_with_cfg(inner: Self::Inner, _cfg: &Self::Config) -> Self {
+        Self(inner)
+    }
+
+    fn zero_with_cfg(_cfg: &Self::Config) -> Self {
+        Zero::zero()
+    }
+
+    fn one_with_cfg(_cfg: &Self::Config) -> Self {
+        todo!()
     }
 }
 
@@ -696,9 +751,10 @@ mod tests {
 
     #[test]
     fn ensure_blanket_traits() {
-        ensure_type_implements_trait!(F, FixedRing);
         // Should be ConstRing, but it's hard to compute MODULUS - 1 for
         // Self::BigInt
+        ensure_type_implements_trait!(F, FixedRing);
+        ensure_type_implements_trait!(F, PrimeField);
     }
 
     #[test]
