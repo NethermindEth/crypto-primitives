@@ -766,7 +766,7 @@ mod tests {
         ));
         assert_eq!(F::new(x), F::one());
 
-        assert_eq!(F::from(<F as PrimeField>::modulus(&F::one())), F::zero());
+        assert_eq!(F::from(<F as PrimeField>::modulus(&())), F::zero());
 
         // Lifting to integer and projecting back yields the original element.
         for x in [F::zero(), F::one(), F::from(2_u64), F::from(123456789_u64)] {

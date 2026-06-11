@@ -77,12 +77,9 @@ pub trait HasPrimeFieldConfig {
 ///
 /// Constant prime fields are considered a special case of dynamic prime fields.
 pub trait PrimeField: Field + HasPrimeFieldConfig + FromWithConfig<Self::Integer> {
-    // Note: Not using `&self` to avoid conflicts with `Zero` trait.
-    fn is_zero(value: &Self) -> bool;
+    fn modulus(cfg: &Self::Config) -> Self::Integer;
 
-    fn modulus(&self) -> Self::Integer;
-
-    fn modulus_minus_one_div_two(&self) -> Self::Integer;
+    fn modulus_minus_one_div_two(cfg: &Self::Config) -> Self::Integer;
 
     fn make_cfg(modulus: &Self::Integer) -> Result<Self::Config, FieldError>;
 
@@ -92,6 +89,9 @@ pub trait PrimeField: Field + HasPrimeFieldConfig + FromWithConfig<Self::Integer
     /// element, but it's acceptable to perform a check if it can't be
     /// avoided.
     fn new_unchecked_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self;
+
+    // Note: Not using `&self` to avoid conflicts with `Zero` trait.
+    fn is_zero(value: &Self) -> bool;
 
     fn zero_with_cfg(cfg: &Self::Config) -> Self;
 
@@ -130,17 +130,12 @@ impl<T: ConstPrimeField> HasPrimeFieldConfig for T {
 
 impl<T: ConstPrimeField> PrimeField for T {
     #[inline(always)]
-    fn is_zero(value: &Self) -> bool {
-        Zero::is_zero(value)
-    }
-
-    #[inline(always)]
-    fn modulus(&self) -> Self::Integer {
+    fn modulus(_cfg: &Self::Config) -> Self::Integer {
         Self::MODULUS
     }
 
     #[inline(always)]
-    fn modulus_minus_one_div_two(&self) -> Self::Integer {
+    fn modulus_minus_one_div_two(_cfg: &Self::Config) -> Self::Integer {
         Self::MODULUS_MINUS_ONE_DIV_TWO
     }
 
@@ -155,6 +150,11 @@ impl<T: ConstPrimeField> PrimeField for T {
     #[inline(always)]
     fn new_unchecked_with_cfg(inner: Self::Inner, _cfg: &Self::Config) -> Self {
         ConstPrimeField::new_unchecked(inner)
+    }
+
+    #[inline(always)]
+    fn is_zero(value: &Self) -> bool {
+        Zero::is_zero(value)
     }
 
     #[inline(always)]

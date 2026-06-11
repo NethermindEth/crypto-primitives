@@ -115,7 +115,7 @@ impl<const LIMBS: usize> Display for MontyField<LIMBS> {
 
 impl<const LIMBS: usize> PartialOrd for MontyField<LIMBS> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self.modulus() != other.modulus() {
+        if self.cfg().modulus() != other.cfg().modulus() {
             return None;
         }
         Some(Ord::cmp(self.0.as_montgomery(), other.0.as_montgomery()))
@@ -521,17 +521,13 @@ impl<const LIMBS: usize> HasPrimeFieldConfig for MontyField<LIMBS> {
 }
 
 impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
-    fn is_zero(value: &Self) -> bool {
-        value.0.as_montgomery().is_zero()
-    }
-
-    fn modulus(&self) -> Self::Integer {
-        Uint::new(self.0.params().modulus().get())
+    fn modulus(cfg: &Self::Config) -> Self::Integer {
+        Uint::new(cfg.modulus().get())
     }
 
     #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn modulus_minus_one_div_two(&self) -> Self::Inner {
-        let value = self.0.params().modulus().get();
+    fn modulus_minus_one_div_two(cfg: &Self::Config) -> Self::Inner {
+        let value = cfg.modulus().get();
         Uint::new(
             (value - crypto_bigint::Uint::one())
                 / NonZero::new(crypto_bigint::Uint::<LIMBS>::from(2_u8)).unwrap(),
@@ -547,6 +543,10 @@ impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
 
     fn new_unchecked_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self {
         Self(MontyForm::from_montgomery(inner.into_inner(), *cfg))
+    }
+
+    fn is_zero(value: &Self) -> bool {
+        value.0.as_montgomery().is_zero()
     }
 
     fn zero_with_cfg(cfg: &Self::Config) -> Self {
@@ -639,7 +639,7 @@ mod tests {
         assert_eq!(F::from_with_cfg(x, &cfg), F::one_with_cfg(&cfg));
 
         // `modulus` itself should reduce to zero.
-        let modulus = F::one_with_cfg(&cfg).modulus();
+        let modulus = F::modulus(&cfg);
         assert_eq!(F::from_with_cfg(modulus, &cfg), F::zero_with_cfg(&cfg));
 
         // Lifting to integer and projecting back yields the original element.
@@ -1237,7 +1237,7 @@ mod tests {
         let cfg = a.cfg();
 
         // Test that we can get modulus
-        let modulus = a.modulus();
+        let modulus = F::modulus(cfg);
         assert_eq!(
             modulus,
             Uint::new(crypto_bigint::Uint::<LIMBS>::from_be_hex(
@@ -1246,7 +1246,7 @@ mod tests {
         );
 
         // Test modulus_minus_one_div_two
-        let m_minus_1_div_2 = a.modulus_minus_one_div_two();
+        let m_minus_1_div_2 = F::modulus_minus_one_div_two(cfg);
         assert_eq!(
             m_minus_1_div_2,
             Uint::new(
