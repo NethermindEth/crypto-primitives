@@ -325,6 +325,7 @@ impl<'a, F: ArkWrappedPrimeField> Product<&'a Self> for ArkField<F> {
 //
 
 impl<F: ArkWrappedPrimeField> From<&ArkField<F>> for ArkField<F> {
+    #[inline(always)]
     fn from(value: &Self) -> Self {
         *value
     }
@@ -334,12 +335,14 @@ macro_rules! impl_from_delegate {
     ($($t:ty),* $(,)?) => {
         $(
             impl<F: ArkWrappedPrimeField> From<$t> for ArkField<F> {
+                #[inline(always)]
                 fn from(value: $t) -> Self {
                     Self(F::from(value))
                 }
             }
 
             impl<F: ArkWrappedPrimeField> From<&$t> for ArkField<F> {
+                #[inline(always)]
                 fn from(value: &$t) -> Self {
                     Self::from(*value)
                 }
@@ -352,25 +355,28 @@ impl_from_delegate!(u8, u16, u32, u64, u128);
 impl_from_delegate!(i8, i16, i32, i64, i128);
 
 impl<F: ArkWrappedPrimeField> From<bool> for ArkField<F> {
+    #[inline(always)]
     fn from(value: bool) -> Self {
         if value { Self::one() } else { Self::zero() }
     }
 }
 
 impl<F: ArkWrappedPrimeField> From<Boolean> for ArkField<F> {
+    #[inline(always)]
     fn from(value: Boolean) -> Self {
         Self::from(*value)
     }
 }
 
 impl<F: ArkWrappedPrimeField> From<&Boolean> for ArkField<F> {
+    #[inline(always)]
     fn from(value: &Boolean) -> Self {
         Self::from(**value)
     }
 }
 
-impl<F: ArkWrappedPrimeField + From<ark_ff::BigInt<N>>, const N: usize> From<BigInt<N>>
-for ArkField<F>
+impl<F: ArkWrappedPrimeField + From<num_bigint::BigUint>, const N: usize> From<BigInt<N>>
+    for ArkField<F>
 {
     #[inline(always)]
     fn from(value: BigInt<N>) -> Self {
@@ -378,12 +384,14 @@ for ArkField<F>
     }
 }
 
-impl<F: ArkWrappedPrimeField + From<ark_ff::BigInt<N>>, const N: usize> From<ark_ff::BigInt<N>>
+impl<F: ArkWrappedPrimeField + From<num_bigint::BigUint>, const N: usize> From<ark_ff::BigInt<N>>
     for ArkField<F>
 {
     #[inline(always)]
     fn from(value: ark_ff::BigInt<N>) -> Self {
-        Self(F::from(value))
+        // Route through `BigUint` so values >= modulus are reduced rather than
+        // triggering a panic in ark-ff's `Fp::from_bigint`.
+        Self::from(num_bigint::BigUint::from(value))
     }
 }
 
@@ -403,6 +411,7 @@ impl<F: ArkWrappedPrimeField + From<num_bigint::BigUint>> From<num_bigint::BigUi
 impl<F: ArkWrappedPrimeField + Into<ark_ff::BigInt<N>>, const N: usize> From<ArkField<F>>
     for ark_ff::BigInt<N>
 {
+    #[inline(always)]
     fn from(value: ArkField<F>) -> Self {
         value.0.into()
     }
@@ -411,6 +420,7 @@ impl<F: ArkWrappedPrimeField + Into<ark_ff::BigInt<N>>, const N: usize> From<Ark
 impl<F: ArkWrappedPrimeField + Into<num_bigint::BigUint>> From<ArkField<F>>
     for num_bigint::BigUint
 {
+    #[inline(always)]
     fn from(value: ArkField<F>) -> Self {
         value.0.into()
     }
@@ -451,7 +461,6 @@ where
         BigInt::new(self.0.into_bigint())
     }
 }
-
 
 impl<F: ArkWrappedPrimeField> HasPrimeFieldConfig for ArkField<F> {
     type Config = ();
@@ -764,6 +773,13 @@ mod tests {
         let o = F::one();
         assert!(!o.is_zero());
         assert_ne!(z, o);
+
+        assert_eq!(F::from(<F as PrimeField>::modulus(&o)), z);
+
+        // Lifting to integer and projecting back yields the original element.
+        for x in [z, o, F::from(2_u64), F::from(123456789_u64)] {
+            assert_eq!(F::from(x.lift_to_integer()), x);
+        }
     }
 
     #[test]

@@ -18,7 +18,6 @@ use core::{
     str::FromStr,
 };
 use crypto_primitives_proc_macros::InfallibleCheckedOp;
-use num_bigint::BigUint;
 use num_traits::{
     CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Pow, Zero,
 };
@@ -369,6 +368,7 @@ impl<'a, P: FpConfig<N>, const N: usize> Product<&'a Self> for Fp<P, N> {
 //
 
 impl<P: FpConfig<N>, const N: usize> From<&Fp<P, N>> for Fp<P, N> {
+    #[inline(always)]
     fn from(value: &Self) -> Self {
         *value
     }
@@ -378,12 +378,14 @@ macro_rules! impl_from_delegate {
     ($($t:ty),* $(,)?) => {
         $(
             impl<P: FpConfig<N>, const N: usize> From<$t> for Fp<P, N> {
+                #[inline(always)]
                 fn from(value: $t) -> Self {
                     Self(ArkWrappedFp::from(value))
                 }
             }
 
             impl<P: FpConfig<N>, const N: usize> From<&$t> for Fp<P, N> {
+                #[inline(always)]
                 fn from(value: &$t) -> Self {
                     Self::from(*value)
                 }
@@ -396,6 +398,7 @@ impl_from_delegate!(u8, u16, u32, u64, u128);
 impl_from_delegate!(i8, i16, i32, i64, i128);
 
 impl<P: FpConfig<N>, const N: usize> From<bool> for Fp<P, N> {
+    #[inline(always)]
     fn from(value: bool) -> Self {
         if value {
             <Self as ConstOne>::ONE
@@ -406,38 +409,44 @@ impl<P: FpConfig<N>, const N: usize> From<bool> for Fp<P, N> {
 }
 
 impl<P: FpConfig<N>, const N: usize> From<Boolean> for Fp<P, N> {
+    #[inline(always)]
     fn from(value: Boolean) -> Self {
         Self::from(*value)
     }
 }
 
 impl<P: FpConfig<N>, const N: usize> From<&Boolean> for Fp<P, N> {
+    #[inline(always)]
     fn from(value: &Boolean) -> Self {
         Self::from(**value)
     }
 }
 
 impl<P: FpConfig<N>, const N: usize> From<BigInt<N>> for Fp<P, N> {
+    #[inline(always)]
     fn from(value: BigInt<N>) -> Self {
         // Route through `BigUint` so values >= modulus are reduced rather than
         // triggering a panic in ark-ff's `Fp::from_bigint`.
-        Self(ArkWrappedFp::from(BigUint::from(value.into_inner())))
+        Self::from(num_bigint::BigUint::from(value.into_inner()))
     }
 }
 
 impl<P: FpConfig<N>, const N: usize> From<Fp<P, N>> for BigInt<N> {
+    #[inline(always)]
     fn from(value: Fp<P, N>) -> Self {
         BigInt::new(value.0.into())
     }
 }
 
-impl<P: FpConfig<N>, const N: usize> From<BigUint> for Fp<P, N> {
-    fn from(value: BigUint) -> Self {
+impl<P: FpConfig<N>, const N: usize> From<num_bigint::BigUint> for Fp<P, N> {
+    #[inline(always)]
+    fn from(value: num_bigint::BigUint) -> Self {
         Self(ArkWrappedFp::from(value))
     }
 }
 
-impl<P: FpConfig<N>, const N: usize> From<Fp<P, N>> for BigUint {
+impl<P: FpConfig<N>, const N: usize> From<Fp<P, N>> for num_bigint::BigUint {
+    #[inline(always)]
     fn from(value: Fp<P, N>) -> Self {
         value.0.into()
     }
