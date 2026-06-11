@@ -58,6 +58,12 @@ impl<const N: usize> BigInt<N> {
         &self.0
     }
 
+    /// Get the mutable reference to the wrapped value
+    #[inline(always)]
+    pub const fn inner_mut(&mut self) -> &mut ArkBigInt<N> {
+        &mut self.0
+    }
+
     /// Get the wrapped value, consuming self
     #[inline(always)]
     pub const fn into_inner(self) -> ArkBigInt<N> {

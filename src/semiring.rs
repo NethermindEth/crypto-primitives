@@ -50,9 +50,17 @@ pub trait Semiring:
     + for<'a> MulAssign<&'a Self>
     {}
 
-/// Ring whose zero and one elements can be constructed from the type alone.
+/// Semiring whose zero and one elements can be constructed from the type alone.
 pub trait FixedSemiring:
-    Semiring + Sum + Product + for<'a> Sum<&'a Self> + for<'a> Product<&'a Self> + Default + Zero + One
+    Semiring
+    + Sum
+    + Product
+    + for<'a> Sum<&'a Self>
+    + for<'a> Product<&'a Self>
+    + Default
+    + Zero
+    + One
+    + From<bool>
 {
 }
 impl<T> FixedSemiring for T where
@@ -64,10 +72,12 @@ impl<T> FixedSemiring for T where
         + Default
         + Zero
         + One
+        + From<bool>
 {
 }
 
-pub trait ConstSemiring: FixedSemiring + ConstZero + ConstOne + From<bool> {
+/// Semiring with a bunch of values known at compile time.
+pub trait ConstSemiring: FixedSemiring + ConstZero + ConstOne {
     /// Minimum value of the semiring. For fields, this is the smallest
     /// representable value.
     const MIN: Self;

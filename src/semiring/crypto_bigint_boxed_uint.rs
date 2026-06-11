@@ -624,7 +624,8 @@ impl crypto_bigint::subtle::ConstantTimeLess for BoxedUint {
 #[allow(
     clippy::arithmetic_side_effects,
     clippy::cast_lossless,
-    clippy::identity_op
+    clippy::identity_op,
+    clippy::redundant_clone
 )]
 #[cfg(test)]
 mod tests {

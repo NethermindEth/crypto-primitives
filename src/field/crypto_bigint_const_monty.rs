@@ -553,7 +553,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Ring for ConstMontyField<Mod, LIMBS
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Field for ConstMontyField<Mod, LIMBS> {
     type Inner = Uint<LIMBS>;
-    type Modulus = Self::Inner;
+    type Integer = Uint<LIMBS>;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -569,10 +569,15 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Field for ConstMontyField<Mod, LIMB
     fn into_inner(self) -> Self::Inner {
         Uint::new(self.0.to_montgomery())
     }
+
+    #[inline(always)]
+    fn lift_to_integer(&self) -> Self::Integer {
+        Uint::new(self.0.retrieve())
+    }
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstPrimeField for ConstMontyField<Mod, LIMBS> {
-    const MODULUS: Self::Modulus = *Uint::new_ref(Mod::PARAMS.modulus().as_ref());
+    const MODULUS: Self::Integer = *Uint::new_ref(Mod::PARAMS.modulus().as_ref());
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner = {
         let m_minus_one = CBUint::wrapping_sub(Self::MODULUS.inner(), &CBUint::ONE);
         let two = CBUint::<LIMBS>::wrapping_add(&CBUint::ONE, &CBUint::ONE);
@@ -581,11 +586,6 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstPrimeField for ConstMontyField
             &NonZeroUint::new_unwrap(two),
         ))
     };
-
-    #[inline(always)]
-    fn new(inner: Self::Inner) -> Self {
-        Self(ConstMontyForm::new(inner.inner()))
-    }
 
     #[inline(always)]
     fn new_unchecked(inner: Self::Inner) -> Self {
@@ -760,13 +760,18 @@ mod tests {
 
     #[test]
     fn new_with_cfg_correct() {
+        // `modulus + 1` should reduce to one.
         let x = Uint::new(U256::from_be_hex(
             "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30",
         ));
+        assert_eq!(F::new(x), F::one());
 
-        let y = F::new(x);
+        assert_eq!(F::from(<F as PrimeField>::modulus(&F::one())), F::zero());
 
-        assert_eq!(y, F::one());
+        // Lifting to integer and projecting back yields the original element.
+        for x in [F::zero(), F::one(), F::from(2_u64), F::from(123456789_u64)] {
+            assert_eq!(F::from(x.lift_to_integer()), x);
+        }
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use super::*;
 use crate::{IntRing, IntSemiring, Semiring, boolean::Boolean};
 use ark_ff::{
-    AdditiveGroup, BigInt, BigInteger, FftField, FpConfig, LegendreSymbol, MontBackend, MontConfig,
+    AdditiveGroup, BigInteger, FftField, FpConfig, LegendreSymbol, MontBackend, MontConfig,
     SqrtPrecomputation,
     fields::{Field as ArkWrappedField, Fp as ArkWrappedFp, PrimeField as ArkPrimeField},
 };
@@ -18,11 +18,11 @@ use core::{
     str::FromStr,
 };
 use crypto_primitives_proc_macros::InfallibleCheckedOp;
-use num_bigint::BigUint;
 use num_traits::{
     CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Pow, Zero,
 };
 
+use crate::ark_ff_bigint::BigInt;
 #[cfg(feature = "rand")]
 use ark_std::{UniformRand, rand::prelude::*};
 #[cfg(feature = "rand")]
@@ -59,13 +59,15 @@ impl<T: MontConfig<N>, const N: usize> Fp<MontBackend<T, N>, N> {
     #[doc(hidden)]
     pub const INV: u64 = T::INV;
     #[doc(hidden)]
-    pub const R: BigInt<N> = T::R;
+    pub const R: BigInt<N> = BigInt::new(T::R);
     #[doc(hidden)]
-    pub const R2: BigInt<N> = T::R2;
+    pub const R2: BigInt<N> = BigInt::new(T::R2);
 
     #[inline(always)]
     pub const fn new_from_bigint(element: BigInt<N>) -> Self {
-        Self(ArkWrappedFp::<MontBackend<T, N>, N>::new(element))
+        Self(ArkWrappedFp::<MontBackend<T, N>, N>::new(
+            element.into_inner(),
+        ))
     }
 }
 
@@ -366,6 +368,7 @@ impl<'a, P: FpConfig<N>, const N: usize> Product<&'a Self> for Fp<P, N> {
 //
 
 impl<P: FpConfig<N>, const N: usize> From<&Fp<P, N>> for Fp<P, N> {
+    #[inline(always)]
     fn from(value: &Self) -> Self {
         *value
     }
@@ -375,12 +378,14 @@ macro_rules! impl_from_delegate {
     ($($t:ty),* $(,)?) => {
         $(
             impl<P: FpConfig<N>, const N: usize> From<$t> for Fp<P, N> {
+                #[inline(always)]
                 fn from(value: $t) -> Self {
                     Self(ArkWrappedFp::from(value))
                 }
             }
 
             impl<P: FpConfig<N>, const N: usize> From<&$t> for Fp<P, N> {
+                #[inline(always)]
                 fn from(value: &$t) -> Self {
                     Self::from(*value)
                 }
@@ -393,6 +398,7 @@ impl_from_delegate!(u8, u16, u32, u64, u128);
 impl_from_delegate!(i8, i16, i32, i64, i128);
 
 impl<P: FpConfig<N>, const N: usize> From<bool> for Fp<P, N> {
+    #[inline(always)]
     fn from(value: bool) -> Self {
         if value {
             <Self as ConstOne>::ONE
@@ -403,36 +409,44 @@ impl<P: FpConfig<N>, const N: usize> From<bool> for Fp<P, N> {
 }
 
 impl<P: FpConfig<N>, const N: usize> From<Boolean> for Fp<P, N> {
+    #[inline(always)]
     fn from(value: Boolean) -> Self {
         Self::from(*value)
     }
 }
 
 impl<P: FpConfig<N>, const N: usize> From<&Boolean> for Fp<P, N> {
+    #[inline(always)]
     fn from(value: &Boolean) -> Self {
         Self::from(**value)
     }
 }
 
 impl<P: FpConfig<N>, const N: usize> From<BigInt<N>> for Fp<P, N> {
+    #[inline(always)]
     fn from(value: BigInt<N>) -> Self {
-        Self(ArkWrappedFp::from(value))
+        // Route through `BigUint` so values >= modulus are reduced rather than
+        // triggering a panic in ark-ff's `Fp::from_bigint`.
+        Self::from(num_bigint::BigUint::from(value.into_inner()))
     }
 }
 
 impl<P: FpConfig<N>, const N: usize> From<Fp<P, N>> for BigInt<N> {
+    #[inline(always)]
     fn from(value: Fp<P, N>) -> Self {
-        value.0.into()
+        BigInt::new(value.0.into())
     }
 }
 
-impl<P: FpConfig<N>, const N: usize> From<BigUint> for Fp<P, N> {
-    fn from(value: BigUint) -> Self {
+impl<P: FpConfig<N>, const N: usize> From<num_bigint::BigUint> for Fp<P, N> {
+    #[inline(always)]
+    fn from(value: num_bigint::BigUint) -> Self {
         Self(ArkWrappedFp::from(value))
     }
 }
 
-impl<P: FpConfig<N>, const N: usize> From<Fp<P, N>> for BigUint {
+impl<P: FpConfig<N>, const N: usize> From<Fp<P, N>> for num_bigint::BigUint {
+    #[inline(always)]
     fn from(value: Fp<P, N>) -> Self {
         value.0.into()
     }
@@ -491,36 +505,38 @@ impl<P: FpConfig<N>, const N: usize> IntRing for Fp<P, N> {
 
 impl<P: FpConfig<N>, const N: usize> Field for Fp<P, N> {
     type Inner = BigInt<N>;
-    type Modulus = Self::Inner;
+    type Integer = BigInt<N>;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
-        &self.0.0
+        BigInt::new_ref(&self.0.0)
     }
 
     #[inline(always)]
     fn inner_mut(&mut self) -> &mut Self::Inner {
-        &mut self.0.0
+        BigInt::new_ref_mut(&mut self.0.0)
     }
 
     #[inline(always)]
     fn into_inner(self) -> Self::Inner {
-        self.0.0
+        BigInt::new(self.0.0)
+    }
+
+    #[inline(always)]
+    fn lift_to_integer(&self) -> Self::Integer {
+        BigInt::new(self.0.into_bigint())
     }
 }
 
 /// ConstPrimeField is only implemented for MontConfig and MontBackend
 impl<M: MontConfig<N>, const N: usize> ConstPrimeField for Fp<MontBackend<M, N>, N> {
-    const MODULUS: Self::Modulus = M::MODULUS;
-    const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner =
-        <ArkWrappedFp<MontBackend<M, N>, N> as ArkPrimeField>::MODULUS_MINUS_ONE_DIV_TWO;
-
-    fn new(inner: Self::Inner) -> Self {
-        Self(ArkWrappedFp::new(inner))
-    }
+    const MODULUS: Self::Integer = BigInt::new(M::MODULUS);
+    const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner = BigInt::new(
+        <ArkWrappedFp<MontBackend<M, N>, N> as ArkPrimeField>::MODULUS_MINUS_ONE_DIV_TWO,
+    );
 
     fn new_unchecked(inner: Self::Inner) -> Self {
-        Self(ArkWrappedFp::new_unchecked(inner))
+        Self(ArkWrappedFp::new_unchecked(inner.into_inner()))
     }
 }
 
@@ -704,22 +720,22 @@ impl<P: FpConfig<N>, const N: usize> FftField for Fp<P, N> {
 }
 
 impl<P: FpConfig<N>, const N: usize> ArkPrimeField for Fp<P, N> {
-    type BigInt = <ArkWrappedFp<P, N> as ArkPrimeField>::BigInt;
+    type BigInt = BigInt<N>;
 
-    const MODULUS: Self::BigInt = P::MODULUS;
+    const MODULUS: Self::BigInt = BigInt::new(P::MODULUS);
     const MODULUS_BIT_SIZE: u32 = <ArkWrappedFp<P, N> as ArkPrimeField>::MODULUS_BIT_SIZE;
     const MODULUS_MINUS_ONE_DIV_TWO: Self::BigInt =
-        <ArkWrappedFp<P, N> as ArkPrimeField>::MODULUS_MINUS_ONE_DIV_TWO;
-    const TRACE: Self::BigInt = <ArkWrappedFp<P, N> as ArkPrimeField>::TRACE;
+        BigInt::new(<ArkWrappedFp<P, N> as ArkPrimeField>::MODULUS_MINUS_ONE_DIV_TWO);
+    const TRACE: Self::BigInt = BigInt::new(<ArkWrappedFp<P, N> as ArkPrimeField>::TRACE);
     const TRACE_MINUS_ONE_DIV_TWO: Self::BigInt =
-        <ArkWrappedFp<P, N> as ArkPrimeField>::TRACE_MINUS_ONE_DIV_TWO;
+        BigInt::new(<ArkWrappedFp<P, N> as ArkPrimeField>::TRACE_MINUS_ONE_DIV_TWO);
 
     fn from_bigint(repr: Self::BigInt) -> Option<Self> {
-        ArkWrappedFp::<P, N>::from_bigint(repr).map(Self)
+        ArkWrappedFp::<P, N>::from_bigint(repr.into_inner()).map(Self)
     }
 
     fn into_bigint(self) -> Self::BigInt {
-        self.0.into_bigint()
+        self.lift_to_integer()
     }
 }
 
@@ -775,6 +791,13 @@ mod tests {
         let o = F::one();
         assert!(!o.is_zero());
         assert_ne!(z, o);
+
+        assert_eq!(F::from(<F as PrimeField>::modulus(&o)), z);
+
+        // Lifting to integer and projecting back yields the original element.
+        for x in [z, o, F::from(2_u64), F::from(123456789_u64)] {
+            assert_eq!(F::from(x.lift_to_integer()), x);
+        }
     }
 
     #[test]

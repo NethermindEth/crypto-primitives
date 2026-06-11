@@ -23,6 +23,8 @@ use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, Pow
 pub struct MontyField<const LIMBS: usize>(MontyForm<LIMBS>);
 
 impl<const LIMBS: usize> MontyField<LIMBS> {
+    pub const LIMBS: usize = LIMBS;
+
     /// Creates a new `MontyField` from a `MontyForm`.
     #[inline(always)]
     pub const fn new(form: MontyForm<LIMBS>) -> Self {
@@ -487,7 +489,7 @@ impl<const LIMBS: usize> Ring for MontyField<LIMBS> {}
 
 impl<const LIMBS: usize> Field for MontyField<LIMBS> {
     type Inner = Uint<LIMBS>;
-    type Modulus = Self::Inner;
+    type Integer = Uint<LIMBS>;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -503,20 +505,27 @@ impl<const LIMBS: usize> Field for MontyField<LIMBS> {
     fn into_inner(self) -> Self::Inner {
         Uint::new(self.0.to_montgomery())
     }
+
+    #[inline(always)]
+    fn lift_to_integer(&self) -> Self::Integer {
+        Uint::new(self.0.retrieve())
+    }
 }
 
-impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
+impl<const LIMBS: usize> HasPrimeFieldConfig for MontyField<LIMBS> {
     type Config = MontyParams<LIMBS>;
 
     fn cfg(&self) -> &Self::Config {
         self.0.params()
     }
+}
 
+impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
     fn is_zero(value: &Self) -> bool {
         value.0.as_montgomery().is_zero()
     }
 
-    fn modulus(&self) -> Self::Modulus {
+    fn modulus(&self) -> Self::Integer {
         Uint::new(self.0.params().modulus().get())
     }
 
@@ -529,15 +538,11 @@ impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
         )
     }
 
-    fn make_cfg(modulus: &Self::Modulus) -> Result<Self::Config, FieldError> {
+    fn make_cfg(modulus: &Self::Integer) -> Result<Self::Config, FieldError> {
         let Some(modulus) = Odd::new(*modulus.inner()).into_option() else {
             return Err(FieldError::InvalidModulus);
         };
         Ok(MontyParams::new(modulus))
-    }
-
-    fn new_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self {
-        Self(MontyForm::new(inner.inner(), *cfg))
     }
 
     fn new_unchecked_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self {
@@ -595,7 +600,11 @@ pub type F8192 = MontyField<{ 128 * WORD_FACTOR }>;
 pub type F16384 = MontyField<{ 256 * WORD_FACTOR }>;
 pub type F32768 = MontyField<{ 512 * WORD_FACTOR }>;
 
-#[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
+#[allow(
+    clippy::arithmetic_side_effects,
+    clippy::cast_lossless,
+    clippy::redundant_clone
+)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -621,12 +630,27 @@ mod tests {
 
     #[test]
     fn new_with_cfg_correct() {
-        let x =
-            Uint::from_be_hex("fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30");
+        let cfg = test_config();
 
-        let y = F::new_with_cfg(x, &test_config());
+        // `modulus + 1` should reduce to one.
+        let x = Uint::<{ F256::LIMBS }>::from_be_hex(
+            "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30",
+        );
+        assert_eq!(F::from_with_cfg(x, &cfg), F::one_with_cfg(&cfg));
 
-        assert_eq!(y, F::one_with_cfg(&test_config()));
+        // `modulus` itself should reduce to zero.
+        let modulus = F::one_with_cfg(&cfg).modulus();
+        assert_eq!(F::from_with_cfg(modulus, &cfg), F::zero_with_cfg(&cfg));
+
+        // Lifting to integer and projecting back yields the original element.
+        for x in [
+            F::zero_with_cfg(&cfg),
+            F::one_with_cfg(&cfg),
+            F::from_with_cfg(2_u64, &cfg),
+            F::from_with_cfg(123456789_u64, &cfg),
+        ] {
+            assert_eq!(F::from_with_cfg(x.lift_to_integer(), &cfg), x);
+        }
     }
 
     fn from_u64(value: u64) -> F {

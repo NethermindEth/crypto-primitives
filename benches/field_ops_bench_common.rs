@@ -8,7 +8,7 @@ use std::{
 };
 
 use criterion::{AxisScale, BatchSize, BenchmarkId, Criterion, PlotConfiguration};
-use crypto_primitives::FromPrimitiveWithConfig;
+use crypto_primitives::{FromPrimitiveWithConfig, PrimeField};
 
 fn bench_random_field<F>(
     group: &mut criterion::BenchmarkGroup<criterion::measurement::WallTime>,
@@ -16,7 +16,7 @@ fn bench_random_field<F>(
     config: &F::Config,
 ) where
     for<'a> &'a F: Add<&'a F> + Mul<&'a F> + Div<&'a F>,
-    F: FromPrimitiveWithConfig + for<'a> Sum<&'a F> + for<'a> Product<&'a F>,
+    F: PrimeField + FromPrimitiveWithConfig + for<'a> Sum<&'a F> + for<'a> Product<&'a F>,
 {
     let field_elem = F::from_with_cfg(num, config);
     let param = format!("Param = {}", num);
@@ -221,7 +221,7 @@ fn bench_random_field<F>(
 pub fn field_benchmarks<F>(c: &mut Criterion, name: &str, config: &F::Config)
 where
     for<'a> &'a F: Add<&'a F> + Mul<&'a F> + Div<&'a F>,
-    F: FromPrimitiveWithConfig + for<'a> Sum<&'a F> + for<'a> Product<&'a F>,
+    F: PrimeField + FromPrimitiveWithConfig + for<'a> Sum<&'a F> + for<'a> Product<&'a F>,
 {
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
 
