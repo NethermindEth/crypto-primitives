@@ -103,8 +103,8 @@ impl<T> IntSemiringWithShifts for T where
 {
 }
 
-pub trait ConstIntSemiring: IntSemiring + ConstSemiring + FromStr {}
-impl<T> ConstIntSemiring for T where T: IntSemiring + ConstSemiring + FromStr {}
+pub trait ConstIntSemiring: IntSemiring + ConstSemiring + Ord + FromStr {}
+impl<T> ConstIntSemiring for T where T: IntSemiring + ConstSemiring + Ord + FromStr {}
 
 macro_rules! primitive_int_semiring {
     ($t:ident) => {

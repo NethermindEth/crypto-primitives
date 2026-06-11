@@ -9,7 +9,6 @@ use ark_serialize::{
     CanonicalSerializeWithFlags, Compress, Flags, Read, SerializationError, Valid, Validate, Write,
 };
 use core::{
-    cmp::Ordering,
     fmt::{Display, Formatter, Result as FmtResult},
     hash::{Hash, Hasher},
     iter::{Product, Sum},
@@ -26,7 +25,7 @@ use ark_std::{UniformRand, rand::prelude::*};
 #[cfg(feature = "rand")]
 use rand::distr::StandardUniform;
 
-#[derive(Clone, Copy, PartialEq, Eq, InfallibleCheckedOp)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, InfallibleCheckedOp)]
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
 #[repr(transparent)]
@@ -73,20 +72,6 @@ impl<F: ArkWrappedPrimeField> Default for ArkField<F> {
     #[inline(always)]
     fn default() -> Self {
         Self::zero()
-    }
-}
-
-impl<F: ArkWrappedPrimeField> PartialOrd for ArkField<F> {
-    #[inline(always)]
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<F: ArkWrappedPrimeField> Ord for ArkField<F> {
-    #[inline(always)]
-    fn cmp(&self, other: &Self) -> Ordering {
-        Ord::cmp(&self.0, &other.0)
     }
 }
 
