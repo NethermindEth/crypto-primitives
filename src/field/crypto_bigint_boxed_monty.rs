@@ -53,7 +53,7 @@ impl Display for BoxedMontyField {
 
 impl PartialOrd for BoxedMontyField {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self.modulus() != other.modulus() {
+        if self.cfg().modulus() != other.cfg().modulus() {
             return None;
         }
         Some(Ord::cmp(self.0.as_montgomery(), other.0.as_montgomery()))
@@ -447,17 +447,13 @@ impl HasPrimeFieldConfig for BoxedMontyField {
 }
 
 impl PrimeField for BoxedMontyField {
-    fn is_zero(value: &Self) -> bool {
-        value.0.is_zero().into()
-    }
-
-    fn modulus(&self) -> Self::Integer {
-        BoxedUint::new(self.0.params().modulus().clone().get())
+    fn modulus(cfg: &Self::Config) -> Self::Integer {
+        BoxedUint::new(cfg.modulus().clone().get())
     }
 
     #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn modulus_minus_one_div_two(&self) -> Self::Inner {
-        let value = BoxedUint::new(self.0.params().modulus().clone().get());
+    fn modulus_minus_one_div_two(cfg: &Self::Config) -> Self::Inner {
+        let value = BoxedUint::new(cfg.modulus().clone().get());
         (value - BoxedUint::one()) / BoxedUint::from(2_u8)
     }
 
@@ -473,6 +469,10 @@ impl PrimeField for BoxedMontyField {
             inner.into_inner(),
             cfg.clone(),
         ))
+    }
+
+    fn is_zero(value: &Self) -> bool {
+        value.0.is_zero().into()
     }
 
     fn zero_with_cfg(cfg: &Self::Config) -> Self {
@@ -558,7 +558,7 @@ mod tests {
         assert_eq!(F::from_with_cfg(x, &cfg), F::one_with_cfg(&cfg));
 
         // `modulus` itself should reduce to zero.
-        let modulus = F::one_with_cfg(&cfg).modulus();
+        let modulus = F::modulus(&cfg);
         assert_eq!(F::from_with_cfg(modulus, &cfg), F::zero_with_cfg(&cfg));
 
         // Lifting to integer and projecting back yields the original element.
@@ -1094,11 +1094,11 @@ mod tests {
         let cfg = a.cfg();
 
         // Test that we can get modulus
-        let modulus = a.modulus();
+        let modulus = F::modulus(cfg);
         assert!(modulus.bits_precision() > 0);
 
         // Test modulus_minus_one_div_two
-        let m_minus_1_div_2 = a.modulus_minus_one_div_two();
+        let m_minus_1_div_2 = F::modulus_minus_one_div_two(cfg);
         assert!(m_minus_1_div_2.bits_precision() > 0);
 
         // Test zero_with_cfg and one_with_cfg

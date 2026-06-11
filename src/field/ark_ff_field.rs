@@ -475,15 +475,11 @@ impl<F, const N: usize> PrimeField for ArkField<F>
 where
     F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
 {
-    fn is_zero(value: &Self) -> bool {
-        Zero::is_zero(value)
-    }
-
-    fn modulus(&self) -> Self::Integer {
+    fn modulus(_cfg: &Self::Config) -> Self::Integer {
         BigInt::new(Self::MODULUS)
     }
 
-    fn modulus_minus_one_div_two(&self) -> Self::Integer {
+    fn modulus_minus_one_div_two(_cfg: &Self::Config) -> Self::Integer {
         BigInt::new(Self::MODULUS_MINUS_ONE_DIV_TWO)
     }
 
@@ -494,6 +490,10 @@ where
 
     fn new_unchecked_with_cfg(inner: Self::Inner, _cfg: &Self::Config) -> Self {
         Self(inner)
+    }
+
+    fn is_zero(value: &Self) -> bool {
+        Zero::is_zero(value)
     }
 
     fn zero_with_cfg(_cfg: &Self::Config) -> Self {
@@ -774,7 +774,7 @@ mod tests {
         assert!(!o.is_zero());
         assert_ne!(z, o);
 
-        assert_eq!(F::from(<F as PrimeField>::modulus(&o)), z);
+        assert_eq!(F::from(<F as PrimeField>::modulus(&())), z);
 
         // Lifting to integer and projecting back yields the original element.
         for x in [z, o, F::from(2_u64), F::from(123456789_u64)] {

@@ -477,7 +477,7 @@ mod tests {
         assert!(!PrimeField::is_zero(&V1));
         assert_ne!(V0, V1);
 
-        assert_eq!(F2::from(V1.modulus()), V0);
+        assert_eq!(F2::from(F2::modulus(&())), V0);
 
         // Lifting to integer and projecting back yields the original element.
         for x in [V0, V1] {
@@ -715,8 +715,8 @@ mod tests {
 
     #[test]
     fn prime_field_methods() {
-        assert_eq!(V1.modulus(), 2_u8);
-        assert_eq!(V1.modulus_minus_one_div_two(), 0_u8);
+        assert_eq!(F2::modulus(&()), 2_u8);
+        assert_eq!(F2::modulus_minus_one_div_two(&()), 0_u8);
         assert_eq!(F2::make_cfg(&2_u8), Ok(()));
         assert!(F2::make_cfg(&0_u8).is_err());
         assert!(F2::make_cfg(&3_u8).is_err());
