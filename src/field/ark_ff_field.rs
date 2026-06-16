@@ -369,6 +369,15 @@ impl<F: ArkWrappedPrimeField + From<num_bigint::BigUint>, const N: usize> From<B
     }
 }
 
+impl<'a, F: ArkWrappedPrimeField + From<num_bigint::BigUint>, const N: usize> From<&'a BigInt<N>>
+    for ArkField<F>
+{
+    #[inline(always)]
+    fn from(value: &'a BigInt<N>) -> Self {
+        Self::from(*value)
+    }
+}
+
 impl<F: ArkWrappedPrimeField + From<num_bigint::BigUint>, const N: usize> From<ark_ff::BigInt<N>>
     for ArkField<F>
 {

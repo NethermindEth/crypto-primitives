@@ -431,6 +431,13 @@ impl<P: FpConfig<N>, const N: usize> From<BigInt<N>> for Fp<P, N> {
     }
 }
 
+impl<'a, P: FpConfig<N>, const N: usize> From<&'a BigInt<N>> for Fp<P, N> {
+    #[inline(always)]
+    fn from(value: &'a BigInt<N>) -> Self {
+        Self::from(*value)
+    }
+}
+
 impl<P: FpConfig<N>, const N: usize> From<Fp<P, N>> for BigInt<N> {
     #[inline(always)]
     fn from(value: Fp<P, N>) -> Self {

@@ -76,7 +76,12 @@ pub trait HasPrimeFieldConfig {
 /// the same, otherwise operations should panic in debug mode.
 ///
 /// Constant prime fields are considered a special case of dynamic prime fields.
-pub trait PrimeField: Field + HasPrimeFieldConfig + FromWithConfig<Self::Integer> {
+pub trait PrimeField:
+    Field
+    + HasPrimeFieldConfig
+    + FromWithConfig<Self::Integer>
+    + for<'a> FromWithConfig<&'a Self::Integer>
+{
     fn modulus(cfg: &Self::Config) -> Self::Integer;
 
     fn modulus_minus_one_div_two(cfg: &Self::Config) -> Self::Integer;
@@ -107,6 +112,7 @@ pub trait ConstPrimeField:
     + From<u128>
     + From<Self::Inner>
     + From<Self::Integer>
+    + for<'a> From<&'a Self::Integer>
 {
     const MODULUS: Self::Integer;
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Integer;
