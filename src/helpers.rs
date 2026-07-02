@@ -4,13 +4,13 @@
 /// Implement exponentiation using repeated squaring
 #[macro_export]
 macro_rules! pow_via_repeated_squaring {
-    ($self:expr, $rhs:expr, $one_expr:expr) => {{
+    ($self:expr, $rhs:expr, $one:expr) => {{
         if $rhs == 0 {
-            return $one_expr;
+            return $one;
         }
 
         let mut base = $self;
-        let mut result = $one_expr;
+        let mut result = $one;
         let mut exp = $rhs;
 
         while exp > 0 {
