@@ -11,7 +11,6 @@ use core::{
 use crypto_bigint::{
     Limb, NonZeroUint, Uint as CBUint,
     modular::{ConstMontyForm, ConstMontyParams as Params, Retrieve},
-    subtle::{Choice, ConditionallySelectable, ConstantTimeEq},
 };
 use crypto_primitives_proc_macros::InfallibleCheckedOp;
 use num_traits::{
@@ -19,7 +18,7 @@ use num_traits::{
 };
 
 #[cfg(feature = "rand")]
-use rand::{distr::StandardUniform, prelude::*, rand_core::TryRngCore};
+use rand::{distr::StandardUniform, prelude::*, rand_core::TryRng};
 
 #[derive(Clone, Copy, PartialEq, Eq, InfallibleCheckedOp)]
 #[infallible_checked_unary_op((CheckedNeg, neg))]
@@ -160,7 +159,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Zero for ConstMontyField<Mod, LIMBS
 
     #[inline(always)]
     fn is_zero(&self) -> bool {
-        self == &Self::ZERO
+        self.0.is_zero()
     }
 }
 
@@ -602,14 +601,14 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Distribution<ConstMontyField<Mod, L
     for StandardUniform
 {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> ConstMontyField<Mod, LIMBS> {
-        crypto_bigint::Random::random(rng)
+        crypto_bigint::Random::random_from_rng(rng)
     }
 }
 
 #[cfg(feature = "rand")]
 impl<Mod: Params<LIMBS>, const LIMBS: usize> crypto_bigint::Random for ConstMontyField<Mod, LIMBS> {
-    fn try_random<R: TryRngCore + ?Sized>(rng: &mut R) -> Result<Self, R::Error> {
-        ConstMontyForm::try_random(rng).map(Self)
+    fn try_random_from_rng<R: TryRng + ?Sized>(rng: &mut R) -> Result<Self, R::Error> {
+        ConstMontyForm::try_random_from_rng(rng).map(Self)
     }
 }
 
@@ -662,18 +661,18 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> zeroize::Zeroize for ConstMontyFiel
 // Traits from crypto_bigint
 //
 
-impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstantTimeEq for ConstMontyField<Mod, LIMBS> {
-    fn ct_eq(&self, other: &Self) -> Choice {
-        self.0.ct_eq(&other.0)
+impl<Mod: Params<LIMBS>, const LIMBS: usize> crypto_bigint::CtEq for ConstMontyField<Mod, LIMBS> {
+    fn ct_eq(&self, other: &Self) -> crypto_bigint::Choice {
+        crypto_bigint::CtEq::ct_eq(&self.0, &other.0)
     }
 }
 
-impl<Mod: Params<LIMBS>, const LIMBS: usize> ConditionallySelectable
+impl<Mod: Params<LIMBS>, const LIMBS: usize> crypto_bigint::CtSelect
     for ConstMontyField<Mod, LIMBS>
 {
     #[inline(always)]
-    fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
-        Self(ConstMontyForm::conditional_select(&a.0, &b.0, choice))
+    fn ct_select(&self, other: &Self, choice: crypto_bigint::Choice) -> Self {
+        crypto_bigint::CtSelect::ct_select(&self.0, &other.0, choice).into()
     }
 }
 
@@ -1112,11 +1111,13 @@ mod tests {
 
     #[test]
     fn const_time_eq_and_order() {
+        use crypto_bigint::CtEq;
+
         let a: F = 10_u64.into();
         let b: F = 10_u64.into();
         let c: F = 11_u64.into();
-        assert_eq!(a.ct_eq(&b).unwrap_u8(), 1);
-        assert_eq!(a.ct_eq(&c).unwrap_u8(), 0);
+        assert_eq!(a.ct_eq(&c).to_u8(), 0);
+        assert_eq!(a.ct_eq(&b).to_u8(), 1);
         assert!(a.partial_cmp(&c).is_some());
     }
 
@@ -1317,16 +1318,16 @@ mod tests {
 
     #[test]
     fn constant_time_selectable() {
-        use crypto_bigint::subtle::Choice;
+        use crypto_bigint::{Choice, CtSelect};
 
         let a: F = 10_u64.into();
         let b: F = 20_u64.into();
 
-        // Test ConditionallySelectable
-        let selected_a = F::conditional_select(&a, &b, Choice::from(0));
+        // Test CtSelect
+        let selected_a = a.ct_select(&b, Choice::from(0));
         assert_eq!(selected_a, a);
 
-        let selected_b = F::conditional_select(&a, &b, Choice::from(1));
+        let selected_b = a.ct_select(&b, Choice::from(1));
         assert_eq!(selected_b, b);
     }
 
@@ -1391,8 +1392,8 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(1);
 
         // Test crypto_bigint::Random trait
-        let random1: F = crypto_bigint::Random::random(&mut rng);
-        let random2: F = crypto_bigint::Random::random(&mut rng);
+        let random1: F = <F as crypto_bigint::Random>::random_from_rng(&mut rng);
+        let random2: F = <F as crypto_bigint::Random>::random_from_rng(&mut rng);
 
         // Random values should be different
         assert_ne!(random1, random2);

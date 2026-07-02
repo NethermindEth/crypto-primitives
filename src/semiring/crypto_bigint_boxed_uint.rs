@@ -1,5 +1,5 @@
 use super::*;
-use crate::{boolean::Boolean, impl_pow_via_repeated_squaring};
+use crate::{boolean::Boolean, pow_via_repeated_squaring};
 use alloc::boxed::Box;
 use core::{
     cmp::Ordering,
@@ -20,7 +20,7 @@ use num_traits::{
 use pastey::paste;
 
 #[cfg(feature = "rand")]
-use rand::rand_core::TryRngCore;
+use rand::rand_core::TryRng;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
@@ -140,6 +140,20 @@ impl BoxedUint {
     pub fn nlimbs(&self) -> usize {
         self.0.nlimbs()
     }
+
+    /// See [`crypto_bigint::BoxedUint::zero_with_precision`]
+    pub fn zero_with_precision(at_least_bits_precision: u32) -> Self {
+        Self(crypto_bigint::BoxedUint::zero_with_precision(
+            at_least_bits_precision,
+        ))
+    }
+
+    /// See [`crypto_bigint::BoxedUint::one_with_precision`]
+    pub fn one_with_precision(at_least_bits_precision: u32) -> Self {
+        Self(crypto_bigint::BoxedUint::one_with_precision(
+            at_least_bits_precision,
+        ))
+    }
 }
 
 //
@@ -179,7 +193,7 @@ impl UpperHex for BoxedUint {
 
 impl Hash for BoxedUint {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state)
+        self.0.as_limbs().hash(state)
     }
 }
 
@@ -209,7 +223,7 @@ impl Zero for BoxedUint {
 
     #[inline(always)]
     fn is_zero(&self) -> bool {
-        self.0.is_zero().into()
+        self.0.is_zero().to_bool_vartime()
     }
 }
 
@@ -322,7 +336,10 @@ impl Shr<u32> for BoxedUint {
 impl Pow<u32> for BoxedUint {
     type Output = Self;
 
-    impl_pow_via_repeated_squaring!();
+    fn pow(self, rhs: u32) -> Self::Output {
+        let precision = self.bits_precision();
+        pow_via_repeated_squaring!(self, rhs, Self::one_with_precision(precision))
+    }
 }
 
 //
@@ -544,14 +561,14 @@ impl IntSemiring for BoxedUint {
 
 #[cfg(feature = "rand")]
 impl crypto_bigint::RandomBits for BoxedUint {
-    fn try_random_bits<R: TryRngCore + ?Sized>(
+    fn try_random_bits<R: TryRng + ?Sized>(
         rng: &mut R,
         bit_length: u32,
     ) -> Result<Self, RandomBitsError<R::Error>> {
         crypto_bigint::BoxedUint::try_random_bits(rng, bit_length).map(Self)
     }
 
-    fn try_random_bits_with_precision<R: TryRngCore + ?Sized>(
+    fn try_random_bits_with_precision<R: TryRng + ?Sized>(
         rng: &mut R,
         bit_length: u32,
         bits_precision: u32,
@@ -600,24 +617,30 @@ impl zeroize::Zeroize for BoxedUint {
 // Traits from crypto_bigint
 //
 
-impl crypto_bigint::subtle::ConstantTimeEq for BoxedUint {
+impl crypto_bigint::CtEq for BoxedUint {
     #[inline]
-    fn ct_eq(&self, other: &Self) -> crypto_bigint::subtle::Choice {
-        crypto_bigint::subtle::ConstantTimeEq::ct_eq(&self.0, &other.0)
+    fn ct_eq(&self, other: &Self) -> crypto_bigint::Choice {
+        crypto_bigint::CtEq::ct_eq(&self.0, &other.0)
     }
 }
 
-impl crypto_bigint::subtle::ConstantTimeGreater for BoxedUint {
+impl crypto_bigint::CtGt for BoxedUint {
     #[inline]
-    fn ct_gt(&self, other: &Self) -> crypto_bigint::subtle::Choice {
-        crypto_bigint::subtle::ConstantTimeGreater::ct_gt(&self.0, &other.0)
+    fn ct_gt(&self, other: &Self) -> crypto_bigint::Choice {
+        crypto_bigint::CtGt::ct_gt(&self.0, &other.0)
     }
 }
 
-impl crypto_bigint::subtle::ConstantTimeLess for BoxedUint {
+impl crypto_bigint::CtLt for BoxedUint {
     #[inline]
-    fn ct_lt(&self, other: &Self) -> crypto_bigint::subtle::Choice {
-        crypto_bigint::subtle::ConstantTimeLess::ct_lt(&self.0, &other.0)
+    fn ct_lt(&self, other: &Self) -> crypto_bigint::Choice {
+        crypto_bigint::CtLt::ct_lt(&self.0, &other.0)
+    }
+}
+
+impl crypto_bigint::CtSelect for BoxedUint {
+    fn ct_select(&self, other: &Self, choice: crypto_bigint::Choice) -> Self {
+        crypto_bigint::CtSelect::ct_select(&self.0, &other.0, choice).into()
     }
 }
 
@@ -1071,23 +1094,30 @@ mod tests {
 
     #[test]
     fn constant_time_traits() {
-        use crypto_bigint::subtle::{ConstantTimeEq, ConstantTimeGreater, ConstantTimeLess};
+        use crypto_bigint::{Choice, CtEq, CtGt, CtLt, CtSelect};
 
         let a = BoxedUint::from(10_u64);
         let b = BoxedUint::from(20_u64);
         let c = BoxedUint::from(10_u64);
 
-        // Test ConstantTimeEq
-        assert_eq!(a.ct_eq(&c).unwrap_u8(), 1);
-        assert_eq!(a.ct_eq(&b).unwrap_u8(), 0);
+        // Test CtEq
+        assert_eq!(a.ct_eq(&c).to_u8(), 1);
+        assert_eq!(a.ct_eq(&b).to_u8(), 0);
 
-        // Test ConstantTimeGreater
-        assert_eq!(b.ct_gt(&a).unwrap_u8(), 1);
-        assert_eq!(a.ct_gt(&b).unwrap_u8(), 0);
+        // Test CtGt
+        assert_eq!(b.ct_gt(&a).to_u8(), 1);
+        assert_eq!(a.ct_gt(&b).to_u8(), 0);
 
-        // Test ConstantTimeLess
-        assert_eq!(a.ct_lt(&b).unwrap_u8(), 1);
-        assert_eq!(b.ct_lt(&a).unwrap_u8(), 0);
+        // Test CtLt
+        assert_eq!(a.ct_lt(&b).to_u8(), 1);
+        assert_eq!(b.ct_lt(&a).to_u8(), 0);
+
+        // Test CtSelect
+        let selected_true = a.ct_select(&b, Choice::from(0));
+        assert_eq!(selected_true, a);
+
+        let selected_false = a.ct_select(&b, Choice::from(1));
+        assert_eq!(selected_false, b);
     }
 
     #[test]

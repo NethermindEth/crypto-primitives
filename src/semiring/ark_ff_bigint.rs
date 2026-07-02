@@ -1,5 +1,5 @@
 use super::*;
-use crate::{boolean::Boolean, impl_pow_via_repeated_squaring};
+use crate::{boolean::Boolean, pow_via_repeated_squaring};
 use alloc::{format, vec::Vec};
 use ark_ff::{BigInt as ArkBigInt, BigInteger as ArkBigInteger};
 use ark_serialize::{
@@ -273,7 +273,9 @@ impl<const N: usize> Shr<u32> for BigInt<N> {
 impl<const N: usize> Pow<u32> for BigInt<N> {
     type Output = Self;
 
-    impl_pow_via_repeated_squaring!();
+    fn pow(self, rhs: u32) -> Self::Output {
+        pow_via_repeated_squaring!(self, rhs, Self::ONE)
+    }
 }
 
 //
