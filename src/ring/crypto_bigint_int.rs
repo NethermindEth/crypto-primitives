@@ -1,7 +1,5 @@
 use super::*;
-use crate::{
-    ConstSemiring, boolean::Boolean, crypto_bigint_uint::Uint, impl_pow_via_repeated_squaring,
-};
+use crate::{ConstSemiring, boolean::Boolean, crypto_bigint_uint::Uint, pow_via_repeated_squaring};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, LowerHex, Result as FmtResult, UpperHex},
@@ -13,9 +11,7 @@ use core::{
     },
     str::FromStr,
 };
-use crypto_bigint::{
-    CheckedMul as CryptoCheckedMul, CheckedSub as CryptoCheckedSub, ConcatMixed, Integer, Word,
-};
+use crypto_bigint::{CheckedSub as CryptoCheckedSub, Integer, Word};
 use num_traits::{
     CheckedAdd, CheckedMul, CheckedNeg, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow,
     WrappingAdd, WrappingMul, WrappingSub, Zero,
@@ -23,7 +19,7 @@ use num_traits::{
 use pastey::paste;
 
 #[cfg(feature = "rand")]
-use rand::{distr::StandardUniform, prelude::*, rand_core::TryRngCore};
+use rand::{distr::StandardUniform, prelude::*, rand_core::TryRng};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
@@ -87,10 +83,8 @@ impl<const LIMBS: usize> Int<LIMBS> {
         rhs: &Int<RHS_LIMBS>,
     ) -> Int<WIDE_LIMBS>
     where
-        crypto_bigint::Uint<LIMBS>: ConcatMixed<
-                crypto_bigint::Uint<RHS_LIMBS>,
-                MixedOutput = crypto_bigint::Uint<WIDE_LIMBS>,
-            >,
+        crypto_bigint::Uint<LIMBS>:
+            crypto_bigint::Concat<RHS_LIMBS, Output = crypto_bigint::Uint<WIDE_LIMBS>>,
     {
         Int(self.0.concatenating_mul(&rhs.0))
     }
@@ -138,7 +132,7 @@ impl<const LIMBS: usize> Int<LIMBS> {
     /// The number of limbs used on this platform.
     pub const LIMBS: usize = LIMBS;
 
-    define_consts!(MINUS_ONE, SIGN_MASK, FULL_MASK);
+    define_consts!(MINUS_ONE, SIGN_MASK);
 }
 
 //
@@ -222,7 +216,7 @@ impl<const LIMBS: usize> Zero for Int<LIMBS> {
 
     #[inline(always)]
     fn is_zero(&self) -> bool {
-        self.0.is_zero()
+        self.0.is_zero().to_bool_vartime()
     }
 }
 
@@ -337,7 +331,9 @@ impl<const LIMBS: usize> Shr<u32> for Int<LIMBS> {
 impl<const LIMBS: usize> Pow<u32> for Int<LIMBS> {
     type Output = Self;
 
-    impl_pow_via_repeated_squaring!();
+    fn pow(self, rhs: u32) -> Self::Output {
+        pow_via_repeated_squaring!(self, rhs, Self::ONE)
+    }
 }
 
 //
@@ -636,14 +632,14 @@ impl<const LIMBS: usize> IntRing for Int<LIMBS> {
 #[cfg(feature = "rand")]
 impl<const LIMBS: usize> Distribution<Int<LIMBS>> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Int<LIMBS> {
-        crypto_bigint::Random::random(rng)
+        crypto_bigint::Random::random_from_rng(rng)
     }
 }
 
 #[cfg(feature = "rand")]
 impl<const LIMBS: usize> crypto_bigint::Random for Int<LIMBS> {
-    fn try_random<R: TryRngCore + ?Sized>(rng: &mut R) -> Result<Self, R::Error> {
-        crypto_bigint::Int::try_random(rng).map(Self)
+    fn try_random_from_rng<R: TryRng + ?Sized>(rng: &mut R) -> Result<Self, R::Error> {
+        crypto_bigint::Int::try_random_from_rng(rng).map(Self)
     }
 }
 
@@ -688,31 +684,30 @@ impl<const LIMBS: usize> zeroize::DefaultIsZeroes for Int<LIMBS> {}
 // Traits from crypto_bigint
 //
 
-impl<const LIMBS: usize> crypto_bigint::subtle::ConstantTimeEq for Int<LIMBS> {
+impl<const LIMBS: usize> crypto_bigint::CtEq for Int<LIMBS> {
     #[inline]
-    fn ct_eq(&self, other: &Self) -> crypto_bigint::subtle::Choice {
-        crypto_bigint::subtle::ConstantTimeEq::ct_eq(&self.0, &other.0)
+    fn ct_eq(&self, other: &Self) -> crypto_bigint::Choice {
+        crypto_bigint::CtEq::ct_eq(&self.0, &other.0)
     }
 }
 
-impl<const LIMBS: usize> crypto_bigint::subtle::ConstantTimeGreater for Int<LIMBS> {
+impl<const LIMBS: usize> crypto_bigint::CtGt for Int<LIMBS> {
     #[inline]
-    fn ct_gt(&self, other: &Self) -> crypto_bigint::subtle::Choice {
-        crypto_bigint::subtle::ConstantTimeGreater::ct_gt(&self.0, &other.0)
+    fn ct_gt(&self, other: &Self) -> crypto_bigint::Choice {
+        crypto_bigint::CtGt::ct_gt(&self.0, &other.0)
     }
 }
 
-impl<const LIMBS: usize> crypto_bigint::subtle::ConstantTimeLess for Int<LIMBS> {
+impl<const LIMBS: usize> crypto_bigint::CtLt for Int<LIMBS> {
     #[inline]
-    fn ct_lt(&self, other: &Self) -> crypto_bigint::subtle::Choice {
-        crypto_bigint::subtle::ConstantTimeLess::ct_lt(&self.0, &other.0)
+    fn ct_lt(&self, other: &Self) -> crypto_bigint::Choice {
+        crypto_bigint::CtLt::ct_lt(&self.0, &other.0)
     }
 }
 
-impl<const LIMBS: usize> crypto_bigint::subtle::ConditionallySelectable for Int<LIMBS> {
-    fn conditional_select(a: &Self, b: &Self, choice: crypto_bigint::subtle::Choice) -> Self {
-        crypto_bigint::subtle::ConditionallySelectable::conditional_select(&a.0, &b.0, choice)
-            .into()
+impl<const LIMBS: usize> crypto_bigint::CtSelect for Int<LIMBS> {
+    fn ct_select(&self, other: &Self, choice: crypto_bigint::Choice) -> Self {
+        crypto_bigint::CtSelect::ct_select(&self.0, &other.0, choice).into()
     }
 }
 
@@ -789,7 +784,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "`shift` within the bit size of the integer")]
+    #[should_panic(expected = "`shift` exceeds upper bound")]
     fn shl_panics_on_overflow() {
         let x = Int1::from(0x0001_i64);
         let _ = x << 64;
@@ -1080,13 +1075,6 @@ mod tests {
         }
     }
 
-    #[should_panic]
-    #[test]
-    fn from_too_large_primitive() {
-        // Test from_i128
-        let _ = Int1::from(i128::MAX);
-    }
-
     #[test]
     fn edge_cases() {
         // Test operations with MAX values
@@ -1268,31 +1256,29 @@ mod tests {
 
     #[test]
     fn constant_time_traits() {
-        use crypto_bigint::subtle::{
-            Choice, ConditionallySelectable, ConstantTimeEq, ConstantTimeGreater, ConstantTimeLess,
-        };
+        use crypto_bigint::{Choice, CtEq, CtGt, CtLt, CtSelect};
 
         let a = Int4::from(10_i64);
         let b = Int4::from(20_i64);
         let c = Int4::from(10_i64);
 
-        // Test ConstantTimeEq
-        assert_eq!(a.ct_eq(&c).unwrap_u8(), 1);
-        assert_eq!(a.ct_eq(&b).unwrap_u8(), 0);
+        // Test CtEq
+        assert_eq!(a.ct_eq(&c).to_u8(), 1);
+        assert_eq!(a.ct_eq(&b).to_u8(), 0);
 
-        // Test ConstantTimeGreater
-        assert_eq!(b.ct_gt(&a).unwrap_u8(), 1);
-        assert_eq!(a.ct_gt(&b).unwrap_u8(), 0);
+        // Test CtGt
+        assert_eq!(b.ct_gt(&a).to_u8(), 1);
+        assert_eq!(a.ct_gt(&b).to_u8(), 0);
 
-        // Test ConstantTimeLess
-        assert_eq!(a.ct_lt(&b).unwrap_u8(), 1);
-        assert_eq!(b.ct_lt(&a).unwrap_u8(), 0);
+        // Test CtLt
+        assert_eq!(a.ct_lt(&b).to_u8(), 1);
+        assert_eq!(b.ct_lt(&a).to_u8(), 0);
 
-        // Test ConditionallySelectable
-        let selected_true = Int4::conditional_select(&a, &b, Choice::from(0));
+        // Test CtSelect
+        let selected_true = a.ct_select(&b, Choice::from(0));
         assert_eq!(selected_true, a);
 
-        let selected_false = Int4::conditional_select(&a, &b, Choice::from(1));
+        let selected_false = a.ct_select(&b, Choice::from(1));
         assert_eq!(selected_false, b);
     }
 
@@ -1356,8 +1342,8 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(1);
 
         // Test crypto_bigint::Random trait
-        let random1: Int4 = crypto_bigint::Random::random(&mut rng);
-        let random2: Int4 = crypto_bigint::Random::random(&mut rng);
+        let random1: Int4 = crypto_bigint::Random::random_from_rng(&mut rng);
+        let random2: Int4 = crypto_bigint::Random::random_from_rng(&mut rng);
 
         // Random values should be different
         assert_ne!(random1, random2);

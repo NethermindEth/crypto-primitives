@@ -11,7 +11,7 @@ use core::{
 };
 use crypto_bigint::{
     NonZero, Odd, One,
-    modular::{MontyForm, MontyParams},
+    modular::{FixedMontyForm, FixedMontyParams},
 };
 use crypto_primitives_proc_macros::InfallibleCheckedOp;
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, Pow};
@@ -20,20 +20,20 @@ use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, Pow
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
 #[repr(transparent)]
-pub struct MontyField<const LIMBS: usize>(MontyForm<LIMBS>);
+pub struct MontyField<const LIMBS: usize>(FixedMontyForm<LIMBS>);
 
 impl<const LIMBS: usize> MontyField<LIMBS> {
     pub const LIMBS: usize = LIMBS;
 
     /// Creates a new `MontyField` from a `MontyForm`.
     #[inline(always)]
-    pub const fn new(form: MontyForm<LIMBS>) -> Self {
+    pub const fn new(form: FixedMontyForm<LIMBS>) -> Self {
         Self(form)
     }
 
     #[inline(always)]
-    pub const fn new_unchecked(inner: Uint<LIMBS>, config: &MontyParams<LIMBS>) -> Self {
-        Self(MontyForm::from_montgomery(inner.into_inner(), *config))
+    pub const fn new_unchecked(inner: Uint<LIMBS>, config: &FixedMontyParams<LIMBS>) -> Self {
+        Self(FixedMontyForm::from_montgomery(inner.into_inner(), config))
     }
 
     #[inline(always)]
@@ -63,8 +63,11 @@ impl<const LIMBS: usize> MontyField<LIMBS> {
     }
 
     /// Create a `MontyField` from a value in Montgomery form.
-    pub const fn from_montgomery(integer: Uint<LIMBS>, config: &MontyParams<LIMBS>) -> Self {
-        Self(MontyForm::from_montgomery(integer.into_inner(), *config))
+    pub const fn from_montgomery(integer: Uint<LIMBS>, config: &FixedMontyParams<LIMBS>) -> Self {
+        Self(FixedMontyForm::from_montgomery(
+            integer.into_inner(),
+            config,
+        ))
     }
 
     /// Extract the value from the `MontyForm` in Montgomery form.
@@ -293,7 +296,7 @@ impl<const LIMBS: usize> Sum for MontyField<LIMBS> {
         let Some(MontyField(first)) = iter.next() else {
             panic!("Sum of an empty iterator is not defined for MontyField");
         };
-        Self(iter.fold(first, |acc, x| MontyForm::add(&acc, &x.0)))
+        Self(iter.fold(first, |acc, x| FixedMontyForm::add(&acc, &x.0)))
     }
 }
 
@@ -302,7 +305,7 @@ impl<'a, const LIMBS: usize> Sum<&'a Self> for MontyField<LIMBS> {
         let Some(MontyField(first)) = iter.next() else {
             panic!("Sum of an empty iterator is not defined for MontyField");
         };
-        Self(iter.fold(*first, |acc, x| MontyForm::add(&acc, &x.0)))
+        Self(iter.fold(*first, |acc, x| FixedMontyForm::add(&acc, &x.0)))
     }
 }
 
@@ -330,14 +333,14 @@ impl<'a, const LIMBS: usize> Product<&'a Self> for MontyField<LIMBS> {
 // Conversions
 //
 
-impl<const LIMBS: usize> From<MontyForm<LIMBS>> for MontyField<LIMBS> {
+impl<const LIMBS: usize> From<FixedMontyForm<LIMBS>> for MontyField<LIMBS> {
     #[inline(always)]
-    fn from(value: MontyForm<LIMBS>) -> Self {
+    fn from(value: FixedMontyForm<LIMBS>) -> Self {
         Self(value)
     }
 }
 
-impl<const LIMBS: usize> From<MontyField<LIMBS>> for MontyForm<LIMBS> {
+impl<const LIMBS: usize> From<MontyField<LIMBS>> for FixedMontyForm<LIMBS> {
     #[inline(always)]
     fn from(value: MontyField<LIMBS>) -> Self {
         value.0
@@ -361,7 +364,7 @@ macro_rules! impl_from_unsigned {
                         cfg.r2(),
                         cfg.modulus(),
                     );
-                    MontyField(MontyForm::from_montgomery(monty_mul, *cfg))
+                    MontyField(FixedMontyForm::from_montgomery(monty_mul, cfg))
                 }
             }
 
@@ -386,7 +389,7 @@ macro_rules! impl_from_signed {
                         cfg.r2(),
                         cfg.modulus(),
                     );
-                    let result = MontyField(MontyForm::from_montgomery(monty_mul, *cfg));
+                    let result = MontyField(FixedMontyForm::from_montgomery(monty_mul, cfg));
                     if value.is_negative() { -result } else { result }
                 }
             }
@@ -410,7 +413,7 @@ impl<const LIMBS: usize> FromWithConfig<bool> for MontyField<LIMBS> {
         } else {
             Zero::zero()
         };
-        Self(MontyForm::new(&value, *cfg))
+        Self(FixedMontyForm::new(&value, cfg))
     }
 }
 
@@ -448,7 +451,7 @@ impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<&Int<LIMBS2>> for M
         let abs = abs.resize();
 
         let monty_mul = crypto_bigint_helpers::mul::monty_mul(&abs, cfg.r2(), cfg.modulus());
-        let result = MontyField(MontyForm::from_montgomery(monty_mul, *cfg));
+        let result = MontyField(FixedMontyForm::from_montgomery(monty_mul, cfg));
 
         if value.is_negative() { -result } else { result }
     }
@@ -475,7 +478,7 @@ impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<&Uint<LIMBS2>> for 
         };
 
         let monty_mul = crypto_bigint_helpers::mul::monty_mul(&value, cfg.r2(), cfg.modulus());
-        MontyField(MontyForm::from_montgomery(monty_mul, *cfg))
+        MontyField(FixedMontyForm::from_montgomery(monty_mul, cfg))
     }
 }
 
@@ -513,7 +516,7 @@ impl<const LIMBS: usize> Field for MontyField<LIMBS> {
 }
 
 impl<const LIMBS: usize> HasPrimeFieldConfig for MontyField<LIMBS> {
-    type Config = MontyParams<LIMBS>;
+    type Config = FixedMontyParams<LIMBS>;
 
     fn cfg(&self) -> &Self::Config {
         self.0.params()
@@ -538,23 +541,23 @@ impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
         let Some(modulus) = Odd::new(*modulus.inner()).into_option() else {
             return Err(FieldError::InvalidModulus);
         };
-        Ok(MontyParams::new(modulus))
+        Ok(FixedMontyParams::new(modulus))
     }
 
     fn new_unchecked_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self {
-        Self(MontyForm::from_montgomery(inner.into_inner(), *cfg))
+        Self(FixedMontyForm::from_montgomery(inner.into_inner(), cfg))
     }
 
     fn is_zero(value: &Self) -> bool {
-        value.0.as_montgomery().is_zero()
+        value.0.as_montgomery().is_zero_vartime()
     }
 
     fn zero_with_cfg(cfg: &Self::Config) -> Self {
-        Self(MontyForm::zero(*cfg))
+        Self(FixedMontyForm::zero(cfg))
     }
 
     fn one_with_cfg(cfg: &Self::Config) -> Self {
-        Self(MontyForm::one(*cfg))
+        Self(FixedMontyForm::one(cfg))
     }
 }
 
@@ -619,13 +622,13 @@ mod tests {
     //
     // Test helpers
     //
-    fn test_config() -> MontyParams<LIMBS> {
+    fn test_config() -> FixedMontyParams<LIMBS> {
         // Using a 256-bit prime 2^256 - 2^32 - 977 (secp256k1 field prime)
         let modulus = crypto_bigint::Uint::<LIMBS>::from_be_hex(
             "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
         );
         let modulus = Odd::new(modulus).expect("modulus should be odd");
-        MontyParams::new(modulus)
+        FixedMontyParams::new(modulus)
     }
 
     #[test]

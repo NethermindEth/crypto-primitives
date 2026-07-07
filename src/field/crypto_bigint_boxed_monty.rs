@@ -62,7 +62,7 @@ impl PartialOrd for BoxedMontyField {
 
 impl Hash for BoxedMontyField {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.as_montgomery().hash(state)
+        self.0.as_montgomery().as_limbs().hash(state)
     }
 }
 
@@ -286,7 +286,7 @@ macro_rules! impl_from_unsigned {
                 fn from_with_cfg(value: $t, cfg: &Self::Config) -> Self {
                     let abs: BoxedUint = value.into();
                     let abs = abs.resize(cfg.modulus().bits_precision());
-                    Self(BoxedMontyForm::new(abs.into_inner(), cfg.clone()))
+                    Self(BoxedMontyForm::new(abs.into_inner(), cfg))
                 }
             }
 
@@ -306,7 +306,7 @@ macro_rules! impl_from_signed {
             impl FromWithConfig<$t> for BoxedMontyField {
                 fn from_with_cfg(value: $t, cfg: &Self::Config) -> Self {
                     let magnitude = BoxedUint::from(value.abs_diff(0)).resize(cfg.modulus().bits_precision());
-                    let form = BoxedMontyForm::new(magnitude.into_inner(), cfg.clone());
+                    let form = BoxedMontyForm::new(magnitude.into_inner(), cfg);
                     Self(if value.is_negative() { -form } else { form })
                 }
             }
@@ -331,7 +331,7 @@ impl FromWithConfig<bool> for BoxedMontyField {
             BoxedUint::zero()
         };
         let magnitude = magnitude.resize(cfg.modulus().bits_precision());
-        Self(BoxedMontyForm::new(magnitude.into_inner(), cfg.clone()))
+        Self(BoxedMontyForm::new(magnitude.into_inner(), cfg))
     }
 }
 
@@ -365,7 +365,7 @@ impl<const LIMBS: usize> FromWithConfig<&Int<LIMBS>> for BoxedMontyField {
         let abs: BoxedUint = value.inner().abs().into();
         let abs = abs.resize(cfg.modulus().bits_precision());
 
-        let result = Self(BoxedMontyForm::new(abs.into_inner(), cfg.clone()));
+        let result = Self(BoxedMontyForm::new(abs.into_inner(), cfg));
 
         if value.is_negative() { -result } else { result }
     }
@@ -380,7 +380,7 @@ impl FromWithConfig<BoxedUint> for BoxedMontyField {
 impl FromWithConfig<&BoxedUint> for BoxedMontyField {
     fn from_with_cfg(value: &BoxedUint, cfg: &Self::Config) -> Self {
         let value = value.resize(cfg.modulus().bits_precision());
-        Self(BoxedMontyForm::new(value.into_inner(), cfg.clone()))
+        Self(BoxedMontyForm::new(value.into_inner(), cfg))
     }
 }
 
@@ -395,7 +395,7 @@ impl<const LIMBS: usize> FromWithConfig<&crypto_bigint::Uint<LIMBS>> for BoxedMo
     fn from_with_cfg(value: &crypto_bigint::Uint<LIMBS>, cfg: &Self::Config) -> Self {
         let value: BoxedUint = value.into();
         let value = value.resize(cfg.modulus().bits_precision());
-        Self(BoxedMontyForm::new(value.into_inner(), cfg.clone()))
+        Self(BoxedMontyForm::new(value.into_inner(), cfg))
     }
 }
 
@@ -465,10 +465,7 @@ impl PrimeField for BoxedMontyField {
     }
 
     fn new_unchecked_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self {
-        Self(BoxedMontyForm::from_montgomery(
-            inner.into_inner(),
-            cfg.clone(),
-        ))
+        Self(BoxedMontyForm::from_montgomery(inner.into_inner(), cfg))
     }
 
     fn is_zero(value: &Self) -> bool {
@@ -476,11 +473,11 @@ impl PrimeField for BoxedMontyField {
     }
 
     fn zero_with_cfg(cfg: &Self::Config) -> Self {
-        Self(BoxedMontyForm::zero(cfg.clone()))
+        Self(BoxedMontyForm::zero(cfg))
     }
 
     fn one_with_cfg(cfg: &Self::Config) -> Self {
-        Self(BoxedMontyForm::one(cfg.clone()))
+        Self(BoxedMontyForm::one(cfg))
     }
 }
 
