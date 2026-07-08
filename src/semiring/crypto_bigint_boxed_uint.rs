@@ -192,8 +192,13 @@ impl UpperHex for BoxedUint {
 }
 
 impl Hash for BoxedUint {
+    #[allow(clippy::arithmetic_side_effects)]
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.as_limbs().hash(state)
+        // Equality is by numeric value and ignores high zero limbs, so we must
+        // hash only the significant limbs to keep `Hash` consistent with `Eq`.
+        let limbs = self.0.as_limbs();
+        let significant = limbs.iter().rposition(|l| l.0 != 0).map_or(0, |i| i + 1);
+        limbs[..significant].hash(state)
     }
 }
 
@@ -670,6 +675,25 @@ mod tests {
         BoxedUint::from_words(vec![Word::MAX; num_u64_words * WORD_FACTOR])
     }
 
+    #[derive(Default)]
+    struct ByteHasher(Vec<u8>);
+
+    impl Hasher for ByteHasher {
+        fn finish(&self) -> u64 {
+            0
+        }
+
+        fn write(&mut self, bytes: &[u8]) {
+            self.0.extend_from_slice(bytes);
+        }
+    }
+
+    fn hash_of(x: &BoxedUint) -> Vec<u8> {
+        let mut hasher = ByteHasher::default();
+        x.hash(&mut hasher);
+        hasher.0
+    }
+
     #[test]
     fn ensure_blanket_traits() {
         ensure_type_implements_trait!(BoxedUint, FixedSemiring);
@@ -1053,6 +1077,23 @@ mod tests {
         let default_val: BoxedUint = Default::default();
         assert_eq!(default_val, BoxedUint::zero());
         assert!(default_val.is_zero());
+    }
+
+    #[test]
+    fn hash_agrees_with_eq() {
+        let a = BoxedUint::one();
+        let b = BoxedUint::one_with_precision(4 * WORD_BITS_FACTOR);
+        assert_eq!(a, b);
+        assert_eq!(hash_of(&a), hash_of(&b));
+
+        let c = BoxedUint::from(12345_u64);
+        let d = c.resize(4 * WORD_BITS_FACTOR);
+        assert_eq!(c, d);
+        assert_eq!(hash_of(&c), hash_of(&d));
+
+        let e = BoxedUint::from(2_u64).resize(4 * WORD_BITS_FACTOR).pow(0);
+        assert_eq!(e, BoxedUint::one());
+        assert_eq!(hash_of(&e), hash_of(&BoxedUint::one()));
     }
 
     #[test]
