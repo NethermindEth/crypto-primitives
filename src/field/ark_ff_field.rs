@@ -428,12 +428,11 @@ impl<F: ArkWrappedPrimeField> Semiring for ArkField<F> {}
 
 impl<F: ArkWrappedPrimeField> Ring for ArkField<F> {}
 
-impl<F, const N: usize> Field for ArkField<F>
+impl<F, const N: usize> FixedField for ArkField<F>
 where
     F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
 {
     type Inner = F;
-    type Integer = BigInt<N>;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -450,52 +449,39 @@ where
         self.0
     }
 
-    #[inline(always)]
-    fn lift_to_integer(&self) -> Self::Integer {
-        BigInt::new(self.0.into_bigint())
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(inner)
     }
 }
 
-impl<F: ArkWrappedPrimeField> HasPrimeFieldConfig for ArkField<F> {
-    type Config = ();
-
-    fn cfg(&self) -> &Self::Config {
-        &()
-    }
-}
-
-// TODO: Can be made into ConstPrimeField, but it's hard to compute MODULUS - 1
-impl<F, const N: usize> PrimeField for ArkField<F>
+// TODO: Can be made into ConstField, but it's hard to compute MODULUS - 1
+impl<F, const N: usize> FixedBaseField for ArkField<F>
 where
     F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
 {
-    fn modulus(_cfg: &Self::Config) -> Self::Integer {
+    fn modulus() -> Self::Integer {
         BigInt::new(Self::MODULUS)
     }
 
-    fn modulus_minus_one_div_two(_cfg: &Self::Config) -> Self::Integer {
+    fn modulus_minus_one_div_two() -> Self::Integer {
         BigInt::new(Self::MODULUS_MINUS_ONE_DIV_TWO)
     }
+}
 
-    fn make_cfg(modulus: &Self::Integer) -> Result<Self::Config, FieldError> {
-        debug_assert_eq!(*modulus.inner(), Self::MODULUS);
-        Ok(())
-    }
+impl<F, const N: usize> WithAssociatedInteger for ArkField<F>
+where
+    F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
+{
+    type Integer = BigInt<N>;
+}
 
-    fn new_unchecked_with_cfg(inner: Self::Inner, _cfg: &Self::Config) -> Self {
-        Self(inner)
-    }
-
-    fn is_zero(value: &Self) -> bool {
-        Zero::is_zero(value)
-    }
-
-    fn zero_with_cfg(_cfg: &Self::Config) -> Self {
-        Zero::zero()
-    }
-
-    fn one_with_cfg(_cfg: &Self::Config) -> Self {
-        todo!()
+impl<F, const N: usize> LiftToIntegerStatic for ArkField<F>
+where
+    F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
+{
+    #[inline(always)]
+    fn lift_to_integer(&self) -> Self::Integer {
+        BigInt::new(self.0.into_bigint())
     }
 }
 
@@ -738,7 +724,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{FixedRing, ensure_type_implements_trait};
+    use crate::{FixedBaseField, FixedRing, ensure_type_implements_trait};
     use alloc::vec::Vec;
     use ark_ff::{Fp64, Fp256, MontBackend, MontConfig};
     use core::str::FromStr;
@@ -753,11 +739,11 @@ mod tests {
     type F = ArkField<ArkFp>;
 
     #[test]
-    fn ensure_blanket_traits() {
+    fn ensure_traits() {
         // Should be ConstRing, but it's hard to compute MODULUS - 1 for
         // Self::BigInt
         ensure_type_implements_trait!(F, FixedRing);
-        ensure_type_implements_trait!(F, PrimeField);
+        ensure_type_implements_trait!(F, FixedBaseField);
     }
 
     #[test]
@@ -768,7 +754,7 @@ mod tests {
         assert!(!o.is_zero());
         assert_ne!(z, o);
 
-        assert_eq!(F::from(<F as PrimeField>::modulus(&())), z);
+        assert_eq!(F::from(F::modulus()), z);
 
         // Lifting to integer and projecting back yields the original element.
         for x in [z, o, F::from(2_u64), F::from(123456789_u64)] {

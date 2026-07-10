@@ -12,12 +12,16 @@ pub(crate) mod crypto_bigint_helpers;
 pub mod crypto_bigint_monty;
 pub mod f2;
 
-use crate::{ConstSemiring, Semiring, ring::Ring};
+use crate::{
+    ConstRing, ConstSemiring, FixedRing, FixedSemiring, IntRing, IntSemiring, Semiring, ring::Ring,
+};
 use core::{
     fmt::Debug,
+    marker::PhantomData,
     ops::{Div, DivAssign, Neg},
 };
 use num_traits::{Inv, Pow, Zero};
+use pastey::paste;
 use thiserror::Error;
 
 #[cfg(target_pointer_width = "64")]
@@ -25,48 +29,239 @@ pub const WORD_FACTOR: usize = 1;
 #[cfg(target_pointer_width = "32")]
 pub const WORD_FACTOR: usize = 2;
 
+//
+// FixedField (static and const)
+//
+
 /// Element of a field (F) - a group where addition and multiplication are
 /// defined with their respective inverse operations.
-pub trait Field:
-    Ring
-    + Neg<Output=Self>
+pub trait FixedField:
+    FixedRing
+    + WithAssociatedInteger
     + Pow<u32, Output=Self>
+    + Inv<Output = Option<Self>>
     // Arithmetic operations consuming rhs
+    //+ Pow<Self::Integer, Output=Self>
     + Div<Output=Self>
     + DivAssign
     // Arithmetic operations with rhs reference
+    //+ for<'a> Pow<&'a Self::Integer, Output=Self>
     + for<'a> Div<&'a Self, Output=Self>
     + for<'a> DivAssign<&'a Self>
+    // Conversion
+    + From<u64>
+    + From<u128>
+    + From<Self::Integer>
+    + for<'a> From<&'a Self::Integer>
+    + 'static
 {
-    /// A semiring integer type that's used to represent the value of this field when lifted to integers.
-    /// Also used to represent modulus in prime fields.
-    type Integer: Semiring;
-
-    /// Type of the underlying representation of this field element. This type might differ from [`Self::Integer`],
-    /// and is *NOT* guaranteed to be normalized.
-    /// Should only be used to reconstruct the field using [`ConstPrimeField::new_unchecked`] and
-    /// [`PrimeField::new_unchecked_with_cfg`] (with the same config supplied!).
+    /// Type of the underlying representation of this structure.
     type Inner: Debug + Eq + Clone + Sync + Send;
 
+    /// Get a reference to the wrapped value.
     fn inner(&self) -> &Self::Inner;
+
+    /// Get a mutable reference to the wrapped value.
     fn inner_mut(&mut self) -> &mut Self::Inner;
+
+    /// Get the wrapped value, consuming self.
     fn into_inner(self) -> Self::Inner;
 
-    /// Lift the field element to integer semiring using a natural approach.
-    ///
-    /// Can be projected back to the field using [`FromWithConfig::from_with_cfg`] to get the same field element.
-    fn lift_to_integer(&self) -> Self::Integer;
+    /// Creates a new instance of this structure from a representation
+    /// known to be valid - should consume exactly the value returned by
+    /// `inner()`. Ideally, this should not check the validity of the
+    /// element, but it's acceptable to perform a check if it can't be
+    /// avoided.
+    fn new_unchecked(inner: Self::Inner) -> Self;
 }
 
-/// A helper supertrait for prime fields, allows decoupling of
-/// [`FromWithConfig`].
-pub trait HasPrimeFieldConfig {
-    /// Runtime configuration for the prime field, empty for constant prime
-    /// fields. For dynamic prime fields, it could be just modulus or more
-    /// complex structure.
-    type Config: Debug + Clone + Send + Sync + 'static;
+/// Base (non-extension) prime field with elements being self-sufficient, but
+/// whose metadata like modulus is not necessarily known at compile-time.
+pub trait FixedBaseField: FixedField {
+    fn modulus() -> Self::Integer;
 
-    fn cfg(&self) -> &Self::Config;
+    fn modulus_minus_one_div_two() -> Self::Integer;
+}
+
+/// Base (non-extension) prime field whose modulus and other metadata are
+/// constant values known at compile time.
+pub trait ConstBaseField: FixedField + ConstRing {
+    const MODULUS: Self::Integer;
+    const MODULUS_MINUS_ONE_DIV_TWO: Self::Integer;
+}
+
+impl<T: ConstBaseField> FixedBaseField for T {
+    fn modulus() -> Self::Integer {
+        Self::MODULUS
+    }
+
+    fn modulus_minus_one_div_two() -> Self::Integer {
+        Self::MODULUS_MINUS_ONE_DIV_TWO
+    }
+}
+
+impl<F: FixedField + IntSemiring> IntRing for F {
+    #[inline(always)]
+    fn checked_abs(&self) -> Option<Self> {
+        Some(self.clone())
+    }
+
+    #[inline(always)]
+    fn is_positive(&self) -> bool {
+        !self.is_zero()
+    }
+
+    #[inline(always)]
+    fn is_negative(&self) -> bool {
+        false
+    }
+}
+
+macro_rules! delegate_to_ref_binary {
+    ($(#[$attr:meta])* $op:ident) => {
+        delegate_to_ref_binary!($(#[$attr])* $op(&Self::Element));
+    };
+    ($(#[$attr:meta])* $op:ident($rhs_type:ty)) => {
+        paste! {
+            $(#[$attr])*
+            fn [<$op _assign>](&self, x: &mut Self::Element, y: $rhs_type) {
+                *x = self.$op(x, y);
+            }
+        }
+    };
+}
+
+//
+// FieldConfig (both static and dynamic)
+//
+
+pub trait FieldConfigOps {
+    type Element: Debug + Eq + Clone + Send + Sync + 'static;
+
+    fn is_zero(&self, value: &Self::Element) -> bool;
+
+    fn zero(&self) -> Self::Element;
+
+    fn one(&self) -> Self::Element;
+
+    //
+    // Operations on refs
+    //
+
+    /// -x
+    fn neg(&self, x: &Self::Element) -> Self::Element;
+
+    /// x + y
+    fn add(&self, x: &Self::Element, y: &Self::Element) -> Self::Element;
+
+    /// x - y
+    fn sub(&self, x: &Self::Element, y: &Self::Element) -> Self::Element;
+
+    /// 1/x
+    fn inv(&self, x: &Self::Element) -> Option<Self::Element>;
+
+    /// x * y
+    fn mul(&self, x: &Self::Element, y: &Self::Element) -> Self::Element;
+
+    /// x / y
+    fn div(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
+        self.checked_div(x, y).expect("Division by zero")
+    }
+
+    /// x / y
+    ///
+    /// (Note: Field operations do not overflow)
+    #[inline(always)]
+    fn checked_div(&self, x: &Self::Element, y: &Self::Element) -> Option<Self::Element> {
+        Some(self.mul(x, &self.inv(y)?))
+    }
+
+    /// x ** y
+    fn pow(&self, x: &Self::Element, y: &Self::Element) -> Self::Element { todo!() }
+
+    /// x ** y
+    fn pow_u32(&self, x: &Self::Element, y: u32) -> Self::Element;
+
+    //
+    // Operations on mutable refs
+    //
+
+    // x = -x;
+    fn neg_assign(&self, x: &mut Self::Element) {
+        *x = self.neg(x);
+    }
+
+    delegate_to_ref_binary! {
+        /// x += y
+        add
+    }
+
+    delegate_to_ref_binary! {
+        /// x -= y
+        sub
+    }
+
+    delegate_to_ref_binary! {
+        /// x *= y
+        mul
+    }
+
+    delegate_to_ref_binary! {
+        /// x /= y
+        div
+    }
+
+    delegate_to_ref_binary! {
+        /// x **= y
+        pow
+    }
+
+    delegate_to_ref_binary! {
+        /// x **= y
+        pow_u32(u32)
+    }
+
+    //
+    // Aggregate operations
+    //
+
+    fn sum<I: Iterator<Item = Self::Element>>(&self, mut iter: I) -> Self::Element {
+        let mut acc = iter.next().unwrap_or(self.zero());
+        for x in iter {
+            self.add_assign(&mut acc, &x)
+        }
+        acc
+    }
+
+    fn sum_refs<'a, I: Iterator<Item = &'a Self::Element> + 'a>(
+        &self,
+        mut iter: I,
+    ) -> Self::Element {
+        let mut acc = iter.next().cloned().unwrap_or(self.zero());
+        for x in iter {
+            self.add_assign(&mut acc, x)
+        }
+        acc
+    }
+
+    fn product<I: Iterator<Item = Self::Element>>(&self, mut iter: I) -> Self::Element {
+        let mut acc = iter.next().unwrap_or(self.one());
+        for x in iter {
+            self.mul_assign(&mut acc, &x)
+        }
+        acc
+    }
+
+    fn product_refs<'a, I: Iterator<Item = &'a Self::Element>>(
+        &self,
+        mut iter: I,
+    ) -> Self::Element {
+        let mut acc = iter.next().cloned().unwrap_or(self.one());
+        for x in iter {
+            self.mul_assign(&mut acc, x)
+        }
+        acc
+    }
 }
 
 /// Element of an integer field modulo prime number (F_p).
@@ -76,176 +271,192 @@ pub trait HasPrimeFieldConfig {
 /// the same, otherwise operations should panic in debug mode.
 ///
 /// Constant prime fields are considered a special case of dynamic prime fields.
-pub trait PrimeField:
-    Field
-    + HasPrimeFieldConfig
-    + FromWithConfig<Self::Integer>
-    + for<'a> FromWithConfig<&'a Self::Integer>
+pub trait FieldConfig:
+    Sized + FieldConfigOps + WithAssociatedInteger + ProjectElement<Self::Integer>
 {
-    fn modulus(cfg: &Self::Config) -> Self::Integer;
+    fn new(modulus: &Self::Integer) -> Result<Self, FieldError>;
 
-    fn modulus_minus_one_div_two(cfg: &Self::Config) -> Self::Integer;
+    fn modulus(&self) -> Self::Integer;
 
-    fn make_cfg(modulus: &Self::Integer) -> Result<Self::Config, FieldError>;
-
-    /// Creates a new instance of the prime field element from a representation
-    /// known to be valid - should consume exactly the value returned by
-    /// [`Self::inner()`]. Ideally, this should not check the validity of the
-    /// element, but it's acceptable to perform a check if it can't be
-    /// avoided.
-    fn new_unchecked_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self;
-
-    // Note: Not using `&self` to avoid conflicts with `Zero` trait.
-    fn is_zero(value: &Self) -> bool;
-
-    fn zero_with_cfg(cfg: &Self::Config) -> Self;
-
-    fn one_with_cfg(cfg: &Self::Config) -> Self;
+    fn modulus_minus_one_div_two(&self) -> Self::Integer;
 }
 
-/// Prime field whose modulus is a constant value known at compile time.
-pub trait ConstPrimeField:
-    Field
-    + ConstSemiring
-    + Inv<Output = Option<Self>>
-    + From<u64>
-    + From<u128>
-    + From<Self::Inner>
-    + From<Self::Integer>
-    + for<'a> From<&'a Self::Integer>
-{
-    const MODULUS: Self::Integer;
-    const MODULUS_MINUS_ONE_DIV_TWO: Self::Integer;
+/// [`FieldConfig`] implementation for fixed fields.
+/// It delegates operations to the field, and `new` checks if the modulus
+/// matches the static one.
+#[derive(Clone, Copy, Default, Debug)]
+pub struct FixedFieldConfig<F: FixedBaseField>(PhantomData<F>);
 
-    /// Creates a new instance of the prime field element from a representation
-    /// known to be valid - should consume exactly the value returned by
-    /// `inner()`. Ideally, this should not check the validity of the
-    /// element, but it's acceptable to perform a check if it can't be
-    /// avoided.
-    fn new_unchecked(inner: Self::Inner) -> Self;
-}
+impl<F: FixedBaseField> FieldConfigOps for FixedFieldConfig<F> {
+    type Element = F;
 
-impl<T: ConstPrimeField> HasPrimeFieldConfig for T {
-    /// For constant prime fields, the configuration is empty.
-    type Config = ();
-
-    fn cfg(&self) -> &Self::Config {
-        &()
-    }
-}
-
-impl<T: ConstPrimeField> PrimeField for T {
     #[inline(always)]
-    fn modulus(_cfg: &Self::Config) -> Self::Integer {
-        Self::MODULUS
+    fn is_zero(&self, value: &Self::Element) -> bool {
+        value.is_zero()
     }
 
     #[inline(always)]
-    fn modulus_minus_one_div_two(_cfg: &Self::Config) -> Self::Integer {
-        Self::MODULUS_MINUS_ONE_DIV_TWO
+    fn zero(&self) -> Self::Element {
+        F::zero()
     }
 
-    fn make_cfg(modulus: &Self::Integer) -> Result<Self::Config, FieldError> {
-        if *modulus == Self::MODULUS {
-            Ok(())
+    #[inline(always)]
+    fn one(&self) -> Self::Element {
+        F::one()
+    }
+
+    #[inline(always)]
+    fn neg(&self, x: &Self::Element) -> Self::Element {
+        x.clone().neg()
+    }
+
+    #[inline(always)]
+    fn add(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
+        x.clone() + y
+    }
+
+    fn sub(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
+        x.clone() - y
+    }
+
+    fn inv(&self, x: &Self::Element) -> Option<Self::Element> {
+        x.clone().inv()
+    }
+
+    #[inline(always)]
+    fn mul(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
+        x.clone() * y
+    }
+
+    fn pow(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
+        todo!() //x.clone().pow(y)
+    }
+
+    fn pow_u32(&self, x: &Self::Element, y: u32) -> Self::Element {
+        x.clone().pow(y)
+    }
+}
+
+impl<F: FixedBaseField> FieldConfig for FixedFieldConfig<F> {
+    fn new(modulus: &Self::Integer) -> Result<Self, FieldError> {
+        if *modulus == F::modulus() {
+            Ok(Self::default())
         } else {
             Err(FieldError::InvalidModulus)
         }
     }
 
     #[inline(always)]
-    fn new_unchecked_with_cfg(inner: Self::Inner, _cfg: &Self::Config) -> Self {
-        ConstPrimeField::new_unchecked(inner)
+    fn modulus(&self) -> Self::Integer {
+        F::modulus()
     }
 
     #[inline(always)]
-    fn is_zero(value: &Self) -> bool {
-        Zero::is_zero(value)
+    fn modulus_minus_one_div_two(&self) -> Self::Integer {
+        F::modulus_minus_one_div_two()
     }
+}
 
+impl<F: FixedBaseField> WithAssociatedInteger for FixedFieldConfig<F> {
+    type Integer = F::Integer;
+}
+
+impl<F: FixedBaseField + LiftToIntegerStatic> LiftToIntegerDynamic for FixedFieldConfig<F> {
     #[inline(always)]
-    fn zero_with_cfg(_cfg: &Self::Config) -> Self {
-        Self::ZERO
-    }
-
-    #[inline(always)]
-    fn one_with_cfg(_cfg: &Self::Config) -> Self {
-        Self::ONE
+    fn lift_to_integer(&self, value: &Self::Element) -> Self::Integer {
+        LiftToIntegerStatic::lift_to_integer(value)
     }
 }
 
-/// Element of a prime field in its Montgomery representation of - encoded in a
-/// way so that modular multiplication can be done without performing an
-/// explicit division by pp after each product.
-pub trait MontgomeryField: PrimeField {
-    // FIXME
-
-    /// INV = -MODULUS^{-1} mod R
-    const INV: Self::Inner;
+impl<F: FixedBaseField> ProjectElement<F::Integer> for FixedFieldConfig<F> {
+    fn project(&self, value: &F::Integer) -> Self::Element {
+        F::from(value)
+    }
 }
 
-/// Analogous to `From` trait, but with a prime field configuration parameter.
-pub trait FromWithConfig<T>: HasPrimeFieldConfig {
-    fn from_with_cfg(value: T, cfg: &Self::Config) -> Self;
+//
+// LiftToInteger
+//
+
+pub trait WithAssociatedInteger {
+    /// A semiring integer type that's used to represent the value of this field
+    /// when lifted to integers. Also used to represent modulus in prime
+    /// fields.
+    type Integer: Semiring;
 }
 
-/// Trivial implementation for types that implement `From<T>`.
-impl<F, T> FromWithConfig<T> for F
+pub trait LiftToIntegerStatic: WithAssociatedInteger {
+    /// Lift the field element to integer semiring using a natural approach.
+    ///
+    /// Can be projected back to the field using
+    /// [`ProjectElement::encode`] to get the same field element.
+    fn lift_to_integer(&self) -> Self::Integer;
+}
+
+pub trait LiftToIntegerDynamic: WithAssociatedInteger + FieldConfigOps {
+    /// Lift the field element to integer semiring using a natural approach.
+    ///
+    /// Can be projected back to the field using
+    /// [`FromWithConfig::from_with_cfg`] to get the same field element.
+    fn lift_to_integer(&self, value: &Self::Element) -> Self::Integer;
+}
+
+//
+// ProjectElement
+//
+
+/// Converts a given value to a field element of a current field.
+pub trait ProjectElement<T>: FieldConfigOps {
+    fn project(&self, value: &T) -> Self::Element;
+}
+
+/// Trivial implementation for fixed fields and types that implement `From<T>`.
+impl<F, T> ProjectElement<T> for F
 where
-    F: PrimeField + From<T>,
+    F: FieldConfigOps + FixedBaseField,
+    F::Element: for<'a> From<&'a T>,
 {
-    fn from_with_cfg(value: T, _cfg: &Self::Config) -> Self {
-        Self::from(value)
+    fn project(&self, value: &T) -> F::Element {
+        F::Element::from(value)
     }
 }
 
-/// The trait combines all `FromWithConfig<u*>` and `FromWithConfig<i*>` into
+/// The trait combines all `ProjectElement<u*>` and `ProjectElement<i*>` into
 /// one umbrella trait. Handy when one needs conversion functions for different
 /// primitive int types.
-pub trait FromPrimitiveWithConfig:
-    FromWithConfig<u8>
-    + FromWithConfig<u16>
-    + FromWithConfig<u32>
-    + FromWithConfig<u64>
-    + FromWithConfig<u128>
-    + FromWithConfig<i8>
-    + FromWithConfig<i16>
-    + FromWithConfig<i32>
-    + FromWithConfig<i64>
-    + FromWithConfig<i128>
+pub trait ProjectPrimitiveIntegers:
+    ProjectElement<u8>
+    + ProjectElement<u16>
+    + ProjectElement<u32>
+    + ProjectElement<u64>
+    + ProjectElement<u128>
+    + ProjectElement<i8>
+    + ProjectElement<i16>
+    + ProjectElement<i32>
+    + ProjectElement<i64>
+    + ProjectElement<i128>
 {
 }
 
 /// Blanket implementation.
 impl<
-    T: FromWithConfig<u8>
-        + FromWithConfig<u16>
-        + FromWithConfig<u32>
-        + FromWithConfig<u64>
-        + FromWithConfig<u128>
-        + FromWithConfig<i8>
-        + FromWithConfig<i16>
-        + FromWithConfig<i32>
-        + FromWithConfig<i64>
-        + FromWithConfig<i128>,
-> FromPrimitiveWithConfig for T
+    T: ProjectElement<u8>
+        + ProjectElement<u16>
+        + ProjectElement<u32>
+        + ProjectElement<u64>
+        + ProjectElement<u128>
+        + ProjectElement<i8>
+        + ProjectElement<i16>
+        + ProjectElement<i32>
+        + ProjectElement<i64>
+        + ProjectElement<i128>,
+> ProjectPrimitiveIntegers for T
 {
 }
 
-/// Analogous to `Into` trait, but with a prime field configuration parameter.
-/// Preferably should not be implemented directly.
-pub trait IntoWithConfig<F: PrimeField> {
-    fn into_with_cfg(self, cfg: &F::Config) -> F;
-}
-
-impl<F, T> IntoWithConfig<F> for T
-where
-    F: PrimeField + FromWithConfig<T>,
-{
-    fn into_with_cfg(self, cfg: &F::Config) -> F {
-        F::from_with_cfg(self, cfg)
-    }
-}
+//
+// Errors
+//
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum FieldError {

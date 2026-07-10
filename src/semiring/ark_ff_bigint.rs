@@ -525,10 +525,12 @@ impl<const N: usize> ConstSemiring for BigInt<N> {
 }
 
 impl<const N: usize> IntSemiring for BigInt<N> {
+    #[inline(always)]
     fn is_odd(&self) -> bool {
         self.0.is_odd()
     }
 
+    #[inline(always)]
     fn is_even(&self) -> bool {
         self.0.is_even()
     }
@@ -755,7 +757,7 @@ mod tests {
     type BigInt4 = BigInt<4>;
 
     #[test]
-    fn ensure_blanket_traits() {
+    fn ensure_traits() {
         ensure_type_implements_trait!(BigInt4, ConstIntSemiring);
         ensure_type_implements_trait!(BigInt4, IntSemiringWithShifts);
     }

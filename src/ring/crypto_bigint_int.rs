@@ -1,5 +1,8 @@
 use super::*;
-use crate::{ConstSemiring, boolean::Boolean, crypto_bigint_uint::Uint, pow_via_repeated_squaring};
+use crate::{
+    ConstSemiring, WORD_FACTOR, boolean::Boolean, crypto_bigint_uint::Uint,
+    pow_via_repeated_squaring,
+};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, LowerHex, Result as FmtResult, UpperHex},
@@ -21,7 +24,7 @@ use pastey::paste;
 #[cfg(feature = "rand")]
 use rand::{distr::StandardUniform, prelude::*, rand_core::TryRng};
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Int<const LIMBS: usize>(crypto_bigint::Int<LIMBS>);
 
@@ -46,10 +49,16 @@ impl<const LIMBS: usize> Int<LIMBS> {
         unsafe { &mut *(value as *mut crypto_bigint::Int<LIMBS> as *mut Self) }
     }
 
-    /// Get the reference to the wrapped value
+    /// Get a reference to the wrapped value
     #[inline(always)]
     pub const fn inner(&self) -> &crypto_bigint::Int<LIMBS> {
         &self.0
+    }
+
+    /// Get a mutable reference to the wrapped value
+    #[inline(always)]
+    pub const fn inner_mut(&mut self) -> &mut crypto_bigint::Int<LIMBS> {
+        &mut self.0
     }
 
     /// Get the wrapped value, consuming self
@@ -77,7 +86,8 @@ impl<const LIMBS: usize> Int<LIMBS> {
         }
     }
 
-    /// Multiply `self` by `rhs`, returning a concatenated "wide" result.
+    /// See [crypto_bigint::Int::concatenating_mul]
+    #[inline(always)]
     pub const fn concatenating_mul<const RHS_LIMBS: usize, const WIDE_LIMBS: usize>(
         &self,
         rhs: &Int<RHS_LIMBS>,
@@ -89,13 +99,14 @@ impl<const LIMBS: usize> Int<LIMBS> {
         Int(self.0.concatenating_mul(&rhs.0))
     }
 
-    /// See [crypto_bigint::Int::cmp_vartime]
-    pub const fn cmp_vartime(&self, rhs: &Self) -> Ordering {
-        self.0.cmp_vartime(&rhs.0)
-    }
-
     pub const fn as_uint(&self) -> &Uint<LIMBS> {
         Uint::new_ref(self.0.as_uint())
+    }
+
+    /// See [crypto_bigint::Int::abs_sign]
+    pub fn abs_sign(&self) -> (Uint<LIMBS>, bool) {
+        let (abs, _) = self.0.abs_sign();
+        (Uint::new(abs), self.is_negative())
     }
 }
 
@@ -155,6 +166,19 @@ impl<const LIMBS: usize> Default for Int<LIMBS> {
     #[inline(always)]
     fn default() -> Self {
         Self::ZERO
+    }
+}
+
+impl<const LIMBS: usize> PartialOrd for Int<LIMBS> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Implemented manually to use `cmp_vartime`
+impl<const LIMBS: usize> Ord for Int<LIMBS> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp_vartime(&other.0)
     }
 }
 
@@ -483,6 +507,20 @@ impl<const LIMBS: usize> From<Int<LIMBS>> for crypto_bigint::Int<LIMBS> {
     }
 }
 
+impl<'a, const LIMBS: usize> From<&'a crypto_bigint::Int<LIMBS>> for &'a Int<LIMBS> {
+    #[inline(always)]
+    fn from(value: &'a crypto_bigint::Int<LIMBS>) -> Self {
+        Int::new_ref(value)
+    }
+}
+
+impl<'a, const LIMBS: usize> From<&'a Int<LIMBS>> for &'a crypto_bigint::Int<LIMBS> {
+    #[inline(always)]
+    fn from(value: &'a Int<LIMBS>) -> Self {
+        &value.0
+    }
+}
+
 impl<const LIMBS: usize> From<bool> for Int<LIMBS> {
     #[inline(always)]
     fn from(value: bool) -> Self {
@@ -601,25 +639,30 @@ impl<const LIMBS: usize> ConstSemiring for Int<LIMBS> {
 impl<const LIMBS: usize> Ring for Int<LIMBS> {}
 
 impl<const LIMBS: usize> IntSemiring for Int<LIMBS> {
+    #[inline(always)]
     fn is_odd(&self) -> bool {
         self.0.is_odd().into()
     }
 
+    #[inline(always)]
     fn is_even(&self) -> bool {
         self.0.is_even().into()
     }
 }
 
 impl<const LIMBS: usize> IntRing for Int<LIMBS> {
+    #[inline(always)]
     fn is_positive(&self) -> bool {
         self.0.is_positive().into()
     }
 
+    #[inline(always)]
     fn checked_abs(&self) -> Option<Self> {
         let result: Option<_> = self.0.abs().try_into_int().into();
         result.map(Self)
     }
 
+    #[inline(always)]
     fn is_negative(&self) -> bool {
         self.0.is_negative().into()
     }
@@ -720,6 +763,40 @@ impl<const LIMBS: usize> crypto_bigint::Constants for Int<LIMBS> {
     const MAX: Self = ConstSemiring::MAX;
 }
 
+//
+// Predefined ints of various sizes for convenience
+//
+
+pub type I64 = Int<{ 1 * WORD_FACTOR }>;
+pub type I128 = Int<{ 2 * WORD_FACTOR }>;
+pub type I192 = Int<{ 3 * WORD_FACTOR }>;
+pub type I256 = Int<{ 4 * WORD_FACTOR }>;
+pub type I320 = Int<{ 5 * WORD_FACTOR }>;
+pub type I384 = Int<{ 6 * WORD_FACTOR }>;
+pub type I448 = Int<{ 7 * WORD_FACTOR }>;
+pub type I512 = Int<{ 8 * WORD_FACTOR }>;
+pub type I576 = Int<{ 9 * WORD_FACTOR }>;
+pub type I640 = Int<{ 10 * WORD_FACTOR }>;
+pub type I704 = Int<{ 11 * WORD_FACTOR }>;
+pub type I768 = Int<{ 12 * WORD_FACTOR }>;
+pub type I832 = Int<{ 13 * WORD_FACTOR }>;
+pub type I896 = Int<{ 14 * WORD_FACTOR }>;
+pub type I960 = Int<{ 15 * WORD_FACTOR }>;
+pub type I1024 = Int<{ 16 * WORD_FACTOR }>;
+pub type I1280 = Int<{ 20 * WORD_FACTOR }>;
+pub type I1536 = Int<{ 24 * WORD_FACTOR }>;
+pub type I1792 = Int<{ 28 * WORD_FACTOR }>;
+pub type I2048 = Int<{ 32 * WORD_FACTOR }>;
+pub type I3072 = Int<{ 48 * WORD_FACTOR }>;
+pub type I3584 = Int<{ 56 * WORD_FACTOR }>;
+pub type I4096 = Int<{ 64 * WORD_FACTOR }>;
+pub type I4224 = Int<{ 66 * WORD_FACTOR }>;
+pub type I4352 = Int<{ 68 * WORD_FACTOR }>;
+pub type I6144 = Int<{ 96 * WORD_FACTOR }>;
+pub type I8192 = Int<{ 128 * WORD_FACTOR }>;
+pub type I16384 = Int<{ 256 * WORD_FACTOR }>;
+pub type I32768 = Int<{ 512 * WORD_FACTOR }>;
+
 #[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
 #[cfg(test)]
 mod tests {
@@ -737,7 +814,7 @@ mod tests {
     type Int4 = Int<{ WORD_FACTOR * 4 }>;
 
     #[test]
-    fn ensure_blanket_traits() {
+    fn ensure_traits() {
         ensure_type_implements_trait!(Int4, ConstIntRing);
         ensure_type_implements_trait!(Int4, IntRingWithRem);
         ensure_type_implements_trait!(Int4, IntRingWithShifts);
@@ -1218,14 +1295,14 @@ mod tests {
     }
 
     #[test]
-    fn cmp_vartime() {
+    fn cmp() {
         let a = Int4::from(10_i64);
         let b = Int4::from(20_i64);
         let c = Int4::from(10_i64);
 
-        assert_eq!(a.cmp_vartime(&b), Ordering::Less);
-        assert_eq!(b.cmp_vartime(&a), Ordering::Greater);
-        assert_eq!(a.cmp_vartime(&c), Ordering::Equal);
+        assert_eq!(a.cmp(&b), Ordering::Less);
+        assert_eq!(b.cmp(&a), Ordering::Greater);
+        assert_eq!(a.cmp(&c), Ordering::Equal);
     }
 
     #[test]

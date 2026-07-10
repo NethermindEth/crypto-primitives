@@ -1,3 +1,33 @@
+use crypto_bigint::Limb;
+
+/// Copy-paste from `crypto-bigint`
+#[inline(always)]
+pub const fn monty_retrieve_inner(
+    x: &[Limb],
+    out: &mut [Limb],
+    modulus: &[Limb],
+    mod_neg_inv: Limb,
+) {
+    let nlimbs = modulus.len();
+    assert!(nlimbs == x.len() && nlimbs == out.len());
+
+    let mut i = 0;
+    while i < nlimbs {
+        let xi = x[i];
+        let u = out[0].wrapping_add(xi).wrapping_mul(mod_neg_inv);
+
+        out[0] = u.carrying_mul_add(modulus[0], xi, out[0]).1;
+
+        let mut j = 1;
+        while j < nlimbs {
+            (out[j - 1], out[j]) = u.carrying_mul_add(modulus[j], out[j], out[j - 1]);
+            j += 1;
+        }
+
+        i += 1;
+    }
+}
+
 /// Optimized Montgomery multiplication.
 ///
 /// Uses CIOS (Coarsely Integrated Operand Scanning) method which is more
@@ -6,7 +36,7 @@
 /// "Analyzing and comparing Montgomery multiplication algorithms" with some
 /// slight tweaks: https://www.microsoft.com/en-us/research/wp-content/uploads/1996/01/j37acmon.pdf
 pub mod mul {
-    use crypto_bigint::{Uint, WideWord, Word};
+    use crypto_bigint::{Limb, Uint, WideWord, Word};
     use num_traits::ConstZero;
 
     const LOG2_WORD_BITS: u32 = Word::BITS.trailing_zeros();
@@ -44,8 +74,7 @@ pub mod mul {
         let mod_neg_inv = compute_mod_neg_inv(mod_words[0]);
 
         let mut result = [0; LIMBS];
-        let carry =
-            montgomery_mul_cios::<LIMBS>(a_words, b_words, mod_words, mod_neg_inv, &mut result);
+        let carry = monty_mul_cios::<LIMBS>(a_words, b_words, mod_words, mod_neg_inv, &mut result);
 
         // Conditional subtraction: subtract modulus if carry != 0 OR result >= modulus
         // First compute result - modulus
@@ -78,7 +107,7 @@ pub mod mul {
     /// Expects `out` to be initialized to zero.
     #[inline(always)]
     #[allow(clippy::arithmetic_side_effects)]
-    fn montgomery_mul_cios<const LIMBS: usize>(
+    pub fn monty_mul_cios<const LIMBS: usize>(
         a: &[Word; LIMBS],
         b: &[Word; LIMBS],
         modulus: &[Word; LIMBS],
@@ -127,5 +156,301 @@ pub mod mul {
     fn mul_add_carry(a: Word, b: Word, c: Word, d: Word) -> (Word, Word) {
         let wide = WideWord::from(a) * WideWord::from(b) + WideWord::from(c) + WideWord::from(d);
         (wide as Word, (wide >> Word::BITS) as Word)
+    }
+
+    /// Copy-paste from `crypto-bigint`
+    #[inline(always)]
+    #[allow(clippy::cast_possible_truncation)]
+    pub const fn monty_mul_limbs(
+        x: &[Limb],
+        y: &[Limb],
+        out: &mut [Limb],
+        modulus: &[Limb],
+        mod_neg_inv: Limb,
+    ) -> Limb {
+        let nlimbs = modulus.len();
+        assert!(nlimbs == x.len() && nlimbs == y.len() && nlimbs == out.len());
+
+        let mut meta_carry = 0;
+
+        let mut i = 0;
+        while i < nlimbs {
+            let xi = x[i];
+            // A[0] + x[i]y[0] <= (2^64 - 1)^2 + (2^64 - 1) = 2^128 - 2^64
+            let axy = (xi.0 as WideWord) * (y[0].0 as WideWord) + out[0].0 as WideWord;
+            let u = (axy as Word).wrapping_mul(mod_neg_inv.0);
+
+            let mut carry;
+            // A[0] + x[i]y[0] + um[0] <= (2^128 - 1) + (2^128 - 2^64) = 2^129 - 2^64 - 1
+            let (a, c) = ((u as WideWord) * (modulus[0].0 as WideWord)).overflowing_add(axy);
+            // carry <= (2^129 - 2^64 - 1) / 2^64 <= 2^65 - 2
+            carry = ((c as WideWord) << Word::BITS) | (a >> Word::BITS);
+
+            let mut j = 1;
+            while j < nlimbs {
+                // A[j] + x[i]y[j] <= (2^64 - 1)^2 + (2^64 - 1) = 2^128 - 2^64
+                let axy = (xi.0 as WideWord) * (y[j].0 as WideWord) + out[j].0 as WideWord;
+                // um[j] + carry <= (2^64 - 1)^2 + (2^65 - 2) = 2^128 - 1
+                let umc = (u as WideWord) * (modulus[j].0 as WideWord) + carry;
+                let (ab, c) = axy.overflowing_add(umc);
+                out[j - 1] = Limb(ab as Word);
+                // carry <= (2^129 - 2^64 - 1) / 2^64 <= 2^65 - 2
+                carry = ((c as WideWord) << Word::BITS) | (ab >> Word::BITS);
+                j += 1;
+            }
+
+            carry += meta_carry;
+            (out[nlimbs - 1], meta_carry) = (Limb(carry as Word), carry >> Word::BITS);
+
+            i += 1;
+        }
+
+        Limb(meta_carry as Word)
+    }
+}
+
+pub mod pow {
+    use crate::IntSemiring;
+    use core::{array, mem};
+    use crypto_bigint::{Limb, UintRef, Word};
+
+    const WINDOW: u32 = 4;
+    const WINDOW_COUNT: usize = 1 << WINDOW;
+    const WINDOW_MASK: Word = (1 << WINDOW) - 1;
+    const BITS_PER_WINDOW: u32 = Limb::BITS / WINDOW;
+
+    /// Performs modular exponentiation using "Almost Montgomery
+    /// Multiplication".
+    ///
+    /// Returns a result which has been fully reduced by the modulus specified
+    /// in `params`.
+    ///
+    /// `exponent_bits` represents the length of the exponent in bits.
+    ///
+    /// NOTE: `exponent_bits` is leaked in the time pattern.
+    pub fn pow_montgomery_form_amm<'a, U>(
+        x: &U,
+        exponent: &[Limb],
+        exponent_bits: u32,
+        one: U,
+        modulus: &U,
+        mut mul_amm_assign: impl FnMut(&mut U, &U),
+        mut square_amm_assign: impl FnMut(&mut U),
+    ) -> U
+    where
+        U: AsRef<UintRef> + AsMut<UintRef> + Clone,
+    {
+        if exponent_bits == 0 {
+            return one; // 1 in Montgomery form
+        }
+
+        let mut power = x.clone();
+
+        // powers[i] contains x^i
+        let powers: [U; WINDOW_COUNT] = array::from_fn(|n| {
+            if n == 0 {
+                one.clone()
+            } else if n == WINDOW_COUNT - 1 {
+                power.clone()
+            } else {
+                let mut new_power = power.clone();
+                mul_amm_assign(&mut new_power, x);
+
+                mem::swap(&mut power, &mut new_power);
+                new_power
+            }
+        });
+
+        let (starting_limb, starting_window, starting_window_mask) = pow_init(exponent_bits);
+
+        let mut z = one; // 1 in Montgomery form
+        let mut power = powers[0].clone();
+
+        for limb_num in (0..=starting_limb).rev() {
+            let w = exponent[limb_num].0;
+
+            let mut window_num = if limb_num == starting_limb {
+                starting_window + 1
+            } else {
+                BITS_PER_WINDOW
+            };
+
+            while window_num > 0 {
+                window_num -= 1;
+
+                let mut idx = (w >> (window_num * WINDOW)) & WINDOW_MASK;
+
+                if limb_num == starting_limb && window_num == starting_window {
+                    idx &= starting_window_mask;
+                } else {
+                    for _ in 1..=WINDOW {
+                        square_amm_assign(&mut z);
+                    }
+                }
+
+                power
+                    .as_mut()
+                    .as_mut_limbs()
+                    .copy_from_slice(powers[0].as_ref().as_limbs());
+                for i in 1..WINDOW_COUNT {
+                    if (i as Word) == idx {
+                        power = powers[i].clone();
+                    }
+                }
+
+                mul_amm_assign(&mut z, &power);
+            }
+        }
+
+        almost_montgomery_reduce(z.as_mut(), modulus.as_ref());
+        z
+    }
+
+    /// Raise `x` (in Montgomery form) to a `u32` exponent, returning a fully
+    /// reduced result in Montgomery form.
+    ///
+    /// Wraps [`pow_montgomery_form_amm`] with the AMM closures and the scratch
+    /// buffers they need (mirroring `BoxedMontyMultiplier`'s reusable product
+    /// buffer; one per closure so the mutable borrows stay disjoint).
+    pub fn pow_u32<U>(x: &U, exponent: u32, one: U, modulus: &U, mod_neg_inv: Limb) -> U
+    where
+        U: AsRef<UintRef> + AsMut<UintRef> + Clone,
+    {
+        let exponent = [Limb(Word::from(exponent)); 1];
+        // Only the size matters: `almost_montgomery_mul` zeroes its output
+        // buffer on every use.
+        let mut mul_product = modulus.clone();
+        let mut square_product = modulus.clone();
+
+        pow_montgomery_form_amm(
+            x,
+            &exponent,
+            u32::BITS,
+            one,
+            modulus,
+            |a, b| mul_amm_assign(a, b, &mut mul_product, modulus, mod_neg_inv),
+            |a| square_amm_assign(a, &mut square_product, modulus, mod_neg_inv),
+        )
+    }
+
+    /// Raise `x` (in Montgomery form) to an exponent, returning a fully
+    /// reduced result in Montgomery form.
+    ///
+    /// Wraps [`pow_montgomery_form_amm`] with the AMM closures and the scratch
+    /// buffers they need (mirroring `BoxedMontyMultiplier`'s reusable product
+    /// buffer; one per closure so the mutable borrows stay disjoint).
+    pub fn pow<U>(x: &U, exponent: &[Limb], one: U, modulus: &U, mod_neg_inv: Limb) -> U
+    where
+        U: AsRef<UintRef> + AsMut<UintRef> + Clone,
+    {
+        todo!();
+        // Only the size matters: `almost_montgomery_mul` zeroes its output
+        // buffer on every use.
+        let mut mul_product = modulus.clone();
+        let mut square_product = modulus.clone();
+
+        pow_montgomery_form_amm(
+            x,
+            &exponent,
+            u32::BITS,
+            one,
+            modulus,
+            |a, b| mul_amm_assign(a, b, &mut mul_product, modulus, mod_neg_inv),
+            |a| square_amm_assign(a, &mut square_product, modulus, mod_neg_inv),
+        )
+    }
+
+    /// Mirrors `BoxedMontyMultiplier::mul_amm_assign` from `crypto-bigint`:
+    /// perform an "Almost Montgomery Multiplication", assigning the product to
+    /// `a`.
+    ///
+    /// `product` is a reusable scratch buffer of the same precision as
+    /// `modulus`.
+    ///
+    /// NOTE: the result is reduced to the *bit length* of the modulus, but may
+    /// still exceed the modulus; a final [`almost_montgomery_reduce`] is
+    /// required for a fully reduced result.
+    fn mul_amm_assign<U: AsRef<UintRef> + AsMut<UintRef>>(
+        a: &mut U,
+        b: &U,
+        product: &mut U,
+        modulus: &U,
+        mod_neg_inv: Limb,
+    ) {
+        almost_montgomery_mul(
+            a.as_ref().as_limbs(),
+            b.as_ref().as_limbs(),
+            product.as_mut(),
+            modulus.as_ref(),
+            mod_neg_inv,
+        );
+        a.as_mut()
+            .as_mut_limbs()
+            .copy_from_slice(product.as_ref().as_limbs());
+    }
+
+    /// Mirrors `BoxedMontyMultiplier::square_amm_assign` from `crypto-bigint`;
+    /// see [`mul_amm_assign`].
+    fn square_amm_assign<U: AsRef<UintRef> + AsMut<UintRef>>(
+        a: &mut U,
+        product: &mut U,
+        modulus: &U,
+        mod_neg_inv: Limb,
+    ) {
+        let a_limbs = a.as_ref().as_limbs();
+        almost_montgomery_mul(
+            a_limbs,
+            a_limbs,
+            product.as_mut(),
+            modulus.as_ref(),
+            mod_neg_inv,
+        );
+        a.as_mut()
+            .as_mut_limbs()
+            .copy_from_slice(product.as_ref().as_limbs());
+    }
+
+    /// Mirrors `almost_montgomery_mul` from `crypto-bigint`, delegating the
+    /// inner multiplication to [`super::mul::monty_mul_limbs`].
+    fn almost_montgomery_mul(
+        x: &[Limb],
+        y: &[Limb],
+        out: &mut UintRef,
+        modulus: &UintRef,
+        mod_neg_inv: Limb,
+    ) {
+        out.as_mut_limbs().fill(Limb::ZERO);
+        let overflow =
+            super::mul::monty_mul_limbs(x, y, out.as_mut_limbs(), modulus.as_limbs(), mod_neg_inv);
+        conditional_borrowing_sub_assign(out, modulus, overflow.0.is_odd());
+    }
+
+    fn pow_init(exponent_bits: u32) -> (usize, u32, Word) {
+        let starting_limb = ((exponent_bits - 1) / Limb::BITS) as usize;
+        let starting_bit_in_limb = (exponent_bits - 1) % Limb::BITS;
+        let starting_window = starting_bit_in_limb / WINDOW;
+        let starting_window_mask = (1 << (starting_bit_in_limb % WINDOW + 1)) - 1;
+        (starting_limb, starting_window, starting_window_mask)
+    }
+
+    fn almost_montgomery_reduce(z: &mut UintRef, modulus: &UintRef) {
+        let choice = UintRef::cmp_vartime(z, modulus).is_ge();
+        conditional_borrowing_sub_assign(z, modulus, choice);
+        conditional_borrowing_sub_assign(z, modulus, choice);
+    }
+
+    fn conditional_borrowing_sub_assign(lhs: &mut UintRef, rhs: &UintRef, choice: bool) -> bool {
+        debug_assert!(lhs.bits_precision() <= rhs.bits_precision());
+        let mask = if choice { Limb::MAX } else { Limb::ZERO };
+        let mut borrow = Limb::ZERO;
+
+        for i in 0..lhs.nlimbs() {
+            let masked_rhs = *rhs.as_limbs().get(i).unwrap_or(&Limb::ZERO) & mask;
+            let (limb, b) = lhs.as_limbs()[i].borrowing_sub(masked_rhs, borrow);
+            lhs.as_mut_limbs()[i] = limb;
+            borrow = b;
+        }
+
+        borrow.0.is_odd()
     }
 }

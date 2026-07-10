@@ -1,97 +1,61 @@
 use super::*;
-use crate::{
-    IntRing, Semiring, boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint,
-};
-use core::{
-    cmp::Ordering,
-    fmt::{Debug, Display, Formatter, Result as FmtResult},
-    hash::{Hash, Hasher},
-    iter::{Product, Sum},
-    ops::{Add, AddAssign, DivAssign, Mul, MulAssign, Rem, Sub, SubAssign},
-};
+use crate::{IntRing, boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint};
+use core::fmt::{Display, Formatter, Result as FmtResult};
 use crypto_bigint::{
     NonZero, Odd, One,
     modular::{FixedMontyForm, FixedMontyParams},
 };
-use crypto_primitives_proc_macros::InfallibleCheckedOp;
-use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, Pow};
 
-#[derive(Clone, PartialEq, Eq, InfallibleCheckedOp)]
-#[infallible_checked_unary_op((CheckedNeg, neg))]
-#[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct MontyField<const LIMBS: usize>(FixedMontyForm<LIMBS>);
+pub struct MontyField<const LIMBS: usize> {
+    pub params: FixedMontyParams<LIMBS>,
+}
 
 impl<const LIMBS: usize> MontyField<LIMBS> {
     pub const LIMBS: usize = LIMBS;
 
-    /// Creates a new `MontyField` from a `MontyForm`.
+    /// Creates a new [`MontyField`] from [`FixedMontyParams`].
     #[inline(always)]
-    pub const fn new(form: FixedMontyForm<LIMBS>) -> Self {
-        Self(form)
+    pub const fn wrap(params: FixedMontyParams<LIMBS>) -> Self {
+        Self { params }
     }
 
+    /// Unwrap the [`FixedMontyForm`] into a field config and a field element.
+    pub const fn unwrap_monty(el: FixedMontyForm<LIMBS>) -> (Self, Uint<LIMBS>) {
+        (
+            Self {
+                params: *el.params(),
+            },
+            Uint::new(el.to_montgomery()),
+        )
+    }
+
+    /// Reassemble the `crypto-bigint`'s [`FixedMontyForm`] from a raw
+    /// Montgomery value.
     #[inline(always)]
-    pub const fn new_unchecked(inner: Uint<LIMBS>, config: &FixedMontyParams<LIMBS>) -> Self {
-        Self(FixedMontyForm::from_montgomery(inner.into_inner(), config))
+    pub const fn form(&self, el: &MontyFieldElement<LIMBS>) -> FixedMontyForm<LIMBS> {
+        FixedMontyForm::from_montgomery(*el.0.inner(), &self.params)
     }
+}
 
+/// A wrapper around [`Uint`] to prevent accidentally calling math operations
+/// on it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct MontyFieldElement<const LIMBS: usize>(pub Uint<LIMBS>);
+
+impl<const LIMBS: usize> From<Uint<LIMBS>> for MontyFieldElement<LIMBS> {
     #[inline(always)]
-    pub const fn inner(&self) -> &Uint<LIMBS> {
-        Uint::new_ref(self.0.as_montgomery())
+    fn from(value: Uint<LIMBS>) -> Self {
+        Self(value)
     }
+}
 
+impl<const LIMBS: usize> From<crypto_bigint::Uint<LIMBS>> for MontyFieldElement<LIMBS> {
     #[inline(always)]
-    pub const fn into_inner(self) -> Uint<LIMBS> {
-        Uint::new(self.0.to_montgomery())
-    }
-
-    /// Retrieves the integer currently encoded in this [`MontyForm`],
-    /// guaranteed to be reduced.
-    pub const fn retrieve(&self) -> Uint<LIMBS> {
-        Uint::new(self.0.retrieve())
-    }
-
-    /// Access the value in Montgomery form.
-    pub const fn as_montgomery(&self) -> &Uint<LIMBS> {
-        Uint::new_ref(self.0.as_montgomery())
-    }
-
-    /// Mutably access the value in Montgomery form.
-    pub fn as_montgomery_mut(&mut self) -> &mut Uint<LIMBS> {
-        Uint::new_ref_mut(self.0.as_montgomery_mut())
-    }
-
-    /// Create a `MontyField` from a value in Montgomery form.
-    pub const fn from_montgomery(integer: Uint<LIMBS>, config: &FixedMontyParams<LIMBS>) -> Self {
-        Self(FixedMontyForm::from_montgomery(
-            integer.into_inner(),
-            config,
-        ))
-    }
-
-    /// Extract the value from the `MontyForm` in Montgomery form.
-    pub const fn to_montgomery(&self) -> Uint<LIMBS> {
-        Uint::new(self.0.to_montgomery())
-    }
-
-    /// Performs division by 2, that is returns `x` such that `x + x = self`.
-    pub const fn div_by_2(&self) -> Self {
-        Self(self.0.div_by_2())
-    }
-
-    /// Double `self`.
-    pub const fn double(&self) -> Self {
-        Self(self.0.double())
-    }
-
-    /// See [MontyForm::pow_bounded_exp].
-    pub const fn pow_bounded_exp<const RHS_LIMBS: usize>(
-        &self,
-        exponent: &Uint<RHS_LIMBS>,
-        exponent_bits: u32,
-    ) -> Self {
-        Self(self.0.pow_bounded_exp(exponent.inner(), exponent_bits))
+    fn from(value: crypto_bigint::Uint<LIMBS>) -> Self {
+        Self(Uint::new(value))
     }
 }
 
@@ -99,278 +63,100 @@ impl<const LIMBS: usize> MontyField<LIMBS> {
 // Core traits
 //
 
-impl<const LIMBS: usize> Debug for MontyField<LIMBS> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        Debug::fmt(&self.0, f)
-    }
-}
-
 impl<const LIMBS: usize> Display for MontyField<LIMBS> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(
-            f,
-            "{} (mod {})",
-            self.0.retrieve(),
-            self.0.params().modulus()
+        write!(f, "F_{}", self.params.modulus())
+    }
+}
+
+//
+// Field operations
+//
+
+impl<const LIMBS: usize> FieldConfigOps for MontyField<LIMBS> {
+    type Element = MontyFieldElement<LIMBS>;
+
+    fn is_zero(&self, value: &Self::Element) -> bool {
+        value.0.inner().is_zero_vartime()
+    }
+
+    fn zero(&self) -> Self::Element {
+        crypto_bigint::Uint::ZERO.into()
+    }
+
+    fn one(&self) -> Self::Element {
+        (*self.params.one()).into()
+    }
+
+    fn neg(&self, x: &Self::Element) -> Self::Element {
+        x.0.inner()
+            .neg_mod(self.params.modulus().as_nz_ref())
+            .into()
+    }
+
+    fn add(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
+        x.0.inner()
+            .add_mod(y.0.inner(), self.params.modulus().as_nz_ref())
+            .into()
+    }
+
+    fn sub(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
+        x.0.inner()
+            .sub_mod(y.0.inner(), self.params.modulus().as_nz_ref())
+            .into()
+    }
+
+    fn inv(&self, x: &Self::Element) -> Option<Self::Element> {
+        // Follows FixedMontyForm::invert_vartime, but avoids the params copies
+        // of assembling forms: invert the Montgomery representation directly,
+        // then bring the plain inverse back into the Montgomery domain.
+        // (xR)⁻¹ = x⁻¹R⁻¹, and two Montgomery multiplications by R² yield the
+        // Montgomery form x⁻¹R.
+        let modulus = self.params.modulus();
+        let inverted: Option<crypto_bigint::Uint<LIMBS>> =
+            x.0.inner().invert_odd_mod_vartime(modulus).into();
+        let inverted = inverted?;
+
+        let r2 = self.params.r2();
+        let x_inv = crypto_bigint_helpers::mul::monty_mul(&inverted, r2, modulus.as_ref());
+        Some(crypto_bigint_helpers::mul::monty_mul(&x_inv, r2, modulus.as_ref()).into())
+    }
+
+    fn mul(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
+        crypto_bigint_helpers::mul::monty_mul(
+            x.0.inner(),
+            y.0.inner(),
+            self.params.modulus().as_ref(),
         )
+        .into()
     }
-}
 
-impl<const LIMBS: usize> PartialOrd for MontyField<LIMBS> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self.cfg().modulus() != other.cfg().modulus() {
-            return None;
-        }
-        Some(Ord::cmp(self.0.as_montgomery(), other.0.as_montgomery()))
+    fn pow_u32(&self, x: &Self::Element, y: u32) -> Self::Element {
+        crypto_bigint_helpers::pow::pow_u32(
+            x.0.inner(),
+            y,
+            *self.params.one(),
+            self.params.modulus().as_ref(),
+            self.params.mod_neg_inv(),
+        )
+        .into()
     }
-}
 
-impl<const LIMBS: usize> Hash for MontyField<LIMBS> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.as_montgomery().hash(state)
-    }
-}
-
-//
-// Basic arithmetic operations
-//
-
-impl<const LIMBS: usize> Neg for MontyField<LIMBS> {
-    type Output = Self;
-
-    fn neg(mut self) -> Self::Output {
-        *self.0.as_montgomery_mut() = self
-            .0
-            .as_montgomery()
-            .neg_mod(self.0.params().modulus().as_nz_ref());
-        self
-    }
-}
-
-macro_rules! impl_basic_op_forward_to_assign {
-    ($trait:ident, $method:ident, $assign_method:ident) => {
-        impl<const LIMBS: usize> $trait for MontyField<LIMBS> {
-            type Output = MontyField<LIMBS>;
-
-            #[inline(always)]
-            fn $method(self, rhs: MontyField<LIMBS>) -> Self::Output {
-                self.$method(&rhs)
-            }
-        }
-
-        impl<const LIMBS: usize> $trait<&Self> for MontyField<LIMBS> {
-            type Output = MontyField<LIMBS>;
-
-            #[inline(always)]
-            fn $method(mut self, rhs: &MontyField<LIMBS>) -> Self::Output {
-                self.$assign_method(rhs);
-                self
-            }
-        }
-
-        impl<const LIMBS: usize> $trait for &MontyField<LIMBS> {
-            type Output = MontyField<LIMBS>;
-
-            #[inline(always)]
-            fn $method(self, rhs: &MontyField<LIMBS>) -> Self::Output {
-                self.clone().$method(rhs)
-            }
-        }
-
-        impl<const LIMBS: usize> $trait<MontyField<LIMBS>> for &MontyField<LIMBS> {
-            type Output = MontyField<LIMBS>;
-
-            #[inline(always)]
-            fn $method(self, rhs: MontyField<LIMBS>) -> Self::Output {
-                self.clone().$method(&rhs)
-            }
-        }
-    };
-}
-
-impl_basic_op_forward_to_assign!(Add, add, add_assign);
-impl_basic_op_forward_to_assign!(Sub, sub, sub_assign);
-impl_basic_op_forward_to_assign!(Mul, mul, mul_assign);
-impl_basic_op_forward_to_assign!(Div, div, div_assign);
-
-impl<const LIMBS: usize> Pow<u32> for MontyField<LIMBS> {
-    type Output = Self;
-
-    fn pow(self, rhs: u32) -> Self::Output {
-        Self(self.0.pow(&crypto_bigint::Uint::<1>::from(rhs)))
-    }
-}
-
-impl<const LIMBS: usize> Inv for MontyField<LIMBS> {
-    type Output = Option<Self>;
-
-    fn inv(self) -> Self::Output {
-        Some(Self(Option::from(self.0.invert_vartime())?))
-    }
-}
-
-impl<const LIMBS: usize> Inv for &MontyField<LIMBS> {
-    type Output = Option<MontyField<LIMBS>>;
-
-    fn inv(self) -> Self::Output {
-        Some(MontyField(Option::from(self.0.invert_vartime())?))
-    }
-}
-
-//
-// Checked arithmetic operations
-// (Note: Field operations do not overflow)
-//
-
-impl<const LIMBS: usize> CheckedDiv for MontyField<LIMBS> {
-    #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn checked_div(&self, rhs: &Self) -> Option<Self> {
-        Some(self * rhs.inv()?)
-    }
-}
-
-//
-// Arithmetic assign operations
-//
-
-macro_rules! impl_op_assign_boilerplate {
-    ($trait:ident, $method:ident) => {
-        impl<const LIMBS: usize> $trait for MontyField<LIMBS> {
-            #[inline(always)]
-            fn $method(&mut self, rhs: Self) {
-                self.$method(&rhs);
-            }
-        }
-    };
-}
-
-impl_op_assign_boilerplate!(AddAssign, add_assign);
-impl_op_assign_boilerplate!(SubAssign, sub_assign);
-impl_op_assign_boilerplate!(MulAssign, mul_assign);
-impl_op_assign_boilerplate!(DivAssign, div_assign);
-
-impl<const LIMBS: usize> AddAssign<&Self> for MontyField<LIMBS> {
-    #[inline(always)]
-    fn add_assign(&mut self, rhs: &Self) {
-        *self.0.as_montgomery_mut() = self
-            .0
-            .as_montgomery()
-            .add_mod(rhs.0.as_montgomery(), self.0.params().modulus().as_nz_ref());
-    }
-}
-
-impl<const LIMBS: usize> SubAssign<&Self> for MontyField<LIMBS> {
-    #[inline(always)]
-    fn sub_assign(&mut self, rhs: &Self) {
-        *self.0.as_montgomery_mut() = self
-            .0
-            .as_montgomery()
-            .sub_mod(rhs.0.as_montgomery(), self.0.params().modulus().as_nz_ref());
-    }
-}
-
-impl<const LIMBS: usize> MulAssign<&Self> for MontyField<LIMBS> {
-    #[inline(always)]
-    fn mul_assign(&mut self, rhs: &Self) {
-        let monty_mul = crypto_bigint_helpers::mul::monty_mul(
-            self.0.as_montgomery(),
-            rhs.0.as_montgomery(),
-            self.0.params().modulus().as_ref(),
-        );
-        *self.0.as_montgomery_mut() = monty_mul;
-    }
-}
-
-impl<const LIMBS: usize> DivAssign<&Self> for MontyField<LIMBS> {
-    fn div_assign(&mut self, rhs: &Self) {
-        self.mul_assign(rhs.inv().expect("Division by zero"));
-    }
-}
-
-//
-// Aggregate operations
-//
-
-impl<const LIMBS: usize> Sum for MontyField<LIMBS> {
-    fn sum<I: Iterator<Item = Self>>(mut iter: I) -> Self {
-        let Some(MontyField(first)) = iter.next() else {
-            panic!("Sum of an empty iterator is not defined for MontyField");
-        };
-        Self(iter.fold(first, |acc, x| FixedMontyForm::add(&acc, &x.0)))
-    }
-}
-
-impl<'a, const LIMBS: usize> Sum<&'a Self> for MontyField<LIMBS> {
-    fn sum<I: Iterator<Item = &'a Self>>(mut iter: I) -> Self {
-        let Some(MontyField(first)) = iter.next() else {
-            panic!("Sum of an empty iterator is not defined for MontyField");
-        };
-        Self(iter.fold(*first, |acc, x| FixedMontyForm::add(&acc, &x.0)))
-    }
-}
-
-impl<const LIMBS: usize> Product for MontyField<LIMBS> {
-    #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn product<I: Iterator<Item = Self>>(mut iter: I) -> Self {
-        let Some(first) = iter.next() else {
-            panic!("Product of an empty iterator is not defined for MontyField");
-        };
-        iter.fold(first, |acc, x| acc * x)
-    }
-}
-
-impl<'a, const LIMBS: usize> Product<&'a Self> for MontyField<LIMBS> {
-    #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn product<I: Iterator<Item = &'a Self>>(mut iter: I) -> Self {
-        let Some(first) = iter.next() else {
-            panic!("Product of an empty iterator is not defined for MontyField");
-        };
-        iter.fold(first.clone(), |acc, x| acc * x)
-    }
+    // Assign operations use the default implementations, which delegate to the
+    // operations above (`Uint` arithmetic is not in-place anyway)
 }
 
 //
 // Conversions
 //
 
-impl<const LIMBS: usize> From<FixedMontyForm<LIMBS>> for MontyField<LIMBS> {
-    #[inline(always)]
-    fn from(value: FixedMontyForm<LIMBS>) -> Self {
-        Self(value)
-    }
-}
-
-impl<const LIMBS: usize> From<MontyField<LIMBS>> for FixedMontyForm<LIMBS> {
-    #[inline(always)]
-    fn from(value: MontyField<LIMBS>) -> Self {
-        value.0
-    }
-}
-
-impl<const LIMBS: usize> From<&MontyField<LIMBS>> for MontyField<LIMBS> {
-    fn from(value: &Self) -> Self {
-        value.clone()
-    }
-}
-
 macro_rules! impl_from_unsigned {
     ($($t:ty),* $(,)?) => {
         $(
-            impl<const LIMBS: usize>FromWithConfig<$t> for MontyField<LIMBS> {
-                fn from_with_cfg(value: $t, cfg: &Self::Config) -> Self {
-                    let abs: crypto_bigint::Uint<LIMBS> = value.into();
-                    let monty_mul = crypto_bigint_helpers::mul::monty_mul(
-                        &abs,
-                        cfg.r2(),
-                        cfg.modulus(),
-                    );
-                    MontyField(FixedMontyForm::from_montgomery(monty_mul, cfg))
-                }
-            }
-
-            impl<const LIMBS: usize>FromWithConfig<&$t> for MontyField<LIMBS> {
-                fn from_with_cfg(value: &$t, cfg: &Self::Config) -> Self {
-                    Self::from_with_cfg(*value, cfg)
+            impl<const LIMBS: usize> ProjectElement<$t> for MontyField<LIMBS> {
+                fn project(&self, value: &$t) -> Self::Element {
+                    let abs: crypto_bigint::Uint<LIMBS> = (*value).into();
+                    self.project(&Uint::new(abs))
                 }
             }
         )*
@@ -380,23 +166,11 @@ macro_rules! impl_from_unsigned {
 macro_rules! impl_from_signed {
     ($($t:ty),* $(,)?) => {
         $(
-            #[allow(clippy::arithmetic_side_effects)] // False alert
-            impl<const LIMBS: usize>FromWithConfig<$t> for MontyField<LIMBS> {
-                fn from_with_cfg(value: $t, cfg: &Self::Config) -> Self {
-                    let magnitude = Uint::from(value.abs_diff(0));
-                    let monty_mul = crypto_bigint_helpers::mul::monty_mul(
-                        magnitude.inner(),
-                        cfg.r2(),
-                        cfg.modulus(),
-                    );
-                    let result = MontyField(FixedMontyForm::from_montgomery(monty_mul, cfg));
-                    if value.is_negative() { -result } else { result }
-                }
-            }
-
-            impl<const LIMBS: usize>FromWithConfig<&$t> for MontyField<LIMBS> {
-                fn from_with_cfg(value: &$t, cfg: &Self::Config) -> Self {
-                    Self::from_with_cfg(*value, cfg)
+            impl<const LIMBS: usize> ProjectElement<$t> for MontyField<LIMBS> {
+                fn project(&self, value: &$t) -> Self::Element {
+                    let magnitude: crypto_bigint::Uint<LIMBS> = value.abs_diff(0).into();
+                    let magnitude = self.project(&Uint::new(magnitude));
+                    if value.is_negative() { self.neg(&magnitude) } else { magnitude }
                 }
             }
         )*
@@ -406,171 +180,105 @@ macro_rules! impl_from_signed {
 impl_from_unsigned!(u8, u16, u32, u64, u128);
 impl_from_signed!(i8, i16, i32, i64, i128);
 
-impl<const LIMBS: usize> FromWithConfig<bool> for MontyField<LIMBS> {
-    fn from_with_cfg(value: bool, cfg: &Self::Config) -> Self {
-        let value = if value {
-            crypto_bigint::Uint::one()
+impl<const LIMBS: usize> ProjectElement<bool> for MontyField<LIMBS> {
+    fn project(&self, value: &bool) -> Self::Element {
+        if *value { self.one() } else { self.zero() }
+    }
+}
+
+impl<const LIMBS: usize> ProjectElement<Boolean> for MontyField<LIMBS> {
+    #[inline(always)]
+    fn project(&self, value: &Boolean) -> Self::Element {
+        self.project(&value.inner())
+    }
+}
+
+impl<const LIMBS: usize, const LIMBS2: usize> ProjectElement<Int<LIMBS2>> for MontyField<LIMBS> {
+    fn project(&self, value: &Int<LIMBS2>) -> Self::Element {
+        let abs = self.project(&Uint::new(value.inner().abs()));
+        if value.is_negative() {
+            self.neg(&abs)
         } else {
-            Zero::zero()
-        };
-        Self(FixedMontyForm::new(&value, cfg))
+            abs
+        }
     }
 }
 
-impl<const LIMBS: usize> FromWithConfig<&bool> for MontyField<LIMBS> {
-    fn from_with_cfg(value: &bool, cfg: &Self::Config) -> Self {
-        Self::from_with_cfg(*value, cfg)
-    }
-}
-
-impl<const LIMBS: usize> FromWithConfig<Boolean> for MontyField<LIMBS> {
-    fn from_with_cfg(value: Boolean, cfg: &Self::Config) -> Self {
-        Self::from_with_cfg(*value, cfg)
-    }
-}
-
-impl<const LIMBS: usize> FromWithConfig<&Boolean> for MontyField<LIMBS> {
-    fn from_with_cfg(value: &Boolean, cfg: &Self::Config) -> Self {
-        Self::from_with_cfg(*value, cfg)
-    }
-}
-
-impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<Int<LIMBS2>> for MontyField<LIMBS> {
-    fn from_with_cfg(value: Int<LIMBS2>, cfg: &Self::Config) -> Self {
-        Self::from_with_cfg(&value, cfg)
-    }
-}
-
-impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<&Int<LIMBS2>> for MontyField<LIMBS> {
-    #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn from_with_cfg(value: &Int<LIMBS2>, cfg: &Self::Config) -> Self {
-        let mut abs = value.inner().abs();
-        if LIMBS < LIMBS2 {
-            abs = abs.rem(cfg.modulus().get().resize::<LIMBS2>())
-        };
-        let abs = abs.resize();
-
-        let monty_mul = crypto_bigint_helpers::mul::monty_mul(&abs, cfg.r2(), cfg.modulus());
-        let result = MontyField(FixedMontyForm::from_montgomery(monty_mul, cfg));
-
-        if value.is_negative() { -result } else { result }
-    }
-}
-
-impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<Uint<LIMBS2>> for MontyField<LIMBS> {
-    fn from_with_cfg(value: Uint<LIMBS2>, cfg: &Self::Config) -> Self {
-        Self::from_with_cfg(&value, cfg)
-    }
-}
-
-impl<const LIMBS: usize, const LIMBS2: usize> FromWithConfig<&Uint<LIMBS2>> for MontyField<LIMBS> {
-    #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn from_with_cfg(value: &Uint<LIMBS2>, cfg: &Self::Config) -> Self {
+impl<const LIMBS: usize, const LIMBS2: usize> ProjectElement<Uint<LIMBS2>> for MontyField<LIMBS> {
+    /// Convert the given integer into the Montgomery domain.
+    fn project(&self, value: &Uint<LIMBS2>) -> Self::Element {
         let value: crypto_bigint::Uint<LIMBS> = if LIMBS >= LIMBS2 {
             value.inner().resize()
         } else {
+            // The value is wider than the modulus: reduce it first, so that
+            // the resize below cannot truncate.
             value
                 .inner()
-                .rem(&NonZero::<crypto_bigint::Uint<LIMBS>>::new_unwrap(
-                    cfg.modulus().get(),
+                .rem(&NonZero::<crypto_bigint::Uint<LIMBS2>>::new_unwrap(
+                    self.params.modulus().as_ref().resize::<LIMBS2>(),
                 ))
                 .resize()
         };
 
-        let monty_mul = crypto_bigint_helpers::mul::monty_mul(&value, cfg.r2(), cfg.modulus());
-        MontyField(FixedMontyForm::from_montgomery(monty_mul, cfg))
+        // Convert into the Montgomery domain
+        crypto_bigint_helpers::mul::monty_mul(
+            &value,
+            self.params.r2(),
+            self.params.modulus().as_ref(),
+        )
+        .into()
     }
 }
 
 //
-// Semiring, Ring and Field
+// Field stuff
 //
 
-impl<const LIMBS: usize> Semiring for MontyField<LIMBS> {}
-
-impl<const LIMBS: usize> Ring for MontyField<LIMBS> {}
-
-impl<const LIMBS: usize> Field for MontyField<LIMBS> {
-    type Inner = Uint<LIMBS>;
-    type Integer = Uint<LIMBS>;
-
-    #[inline(always)]
-    fn inner(&self) -> &Self::Inner {
-        Uint::new_ref(self.0.as_montgomery())
+impl<const LIMBS: usize> FieldConfig for MontyField<LIMBS> {
+    fn new(modulus: &Self::Integer) -> Result<Self, FieldError> {
+        let Some(modulus) = Odd::new(*modulus.inner()).into_option() else {
+            return Err(FieldError::InvalidModulus);
+        };
+        Ok(Self {
+            params: FixedMontyParams::new(modulus),
+        })
     }
 
-    #[inline(always)]
-    fn inner_mut(&mut self) -> &mut Self::Inner {
-        Uint::new_ref_mut(self.0.as_montgomery_mut())
-    }
-
-    #[inline(always)]
-    fn into_inner(self) -> Self::Inner {
-        Uint::new(self.0.to_montgomery())
-    }
-
-    #[inline(always)]
-    fn lift_to_integer(&self) -> Self::Integer {
-        Uint::new(self.0.retrieve())
-    }
-}
-
-impl<const LIMBS: usize> HasPrimeFieldConfig for MontyField<LIMBS> {
-    type Config = FixedMontyParams<LIMBS>;
-
-    fn cfg(&self) -> &Self::Config {
-        self.0.params()
-    }
-}
-
-impl<const LIMBS: usize> PrimeField for MontyField<LIMBS> {
-    fn modulus(cfg: &Self::Config) -> Self::Integer {
-        Uint::new(cfg.modulus().get())
+    fn modulus(&self) -> Self::Integer {
+        Uint::new(self.params.modulus().get())
     }
 
     #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn modulus_minus_one_div_two(cfg: &Self::Config) -> Self::Inner {
-        let value = cfg.modulus().get();
+    fn modulus_minus_one_div_two(&self) -> Self::Integer {
+        let value = self.params.modulus().get();
         Uint::new(
             (value - crypto_bigint::Uint::one())
                 / NonZero::new(crypto_bigint::Uint::<LIMBS>::from(2_u8)).unwrap(),
         )
     }
+}
 
-    fn make_cfg(modulus: &Self::Integer) -> Result<Self::Config, FieldError> {
-        let Some(modulus) = Odd::new(*modulus.inner()).into_option() else {
-            return Err(FieldError::InvalidModulus);
-        };
-        Ok(FixedMontyParams::new(modulus))
-    }
+impl<const LIMBS: usize> WithAssociatedInteger for MontyField<LIMBS> {
+    type Integer = Uint<LIMBS>;
+}
 
-    fn new_unchecked_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self {
-        Self(FixedMontyForm::from_montgomery(inner.into_inner(), cfg))
-    }
-
-    fn is_zero(value: &Self) -> bool {
-        value.0.as_montgomery().is_zero_vartime()
-    }
-
-    fn zero_with_cfg(cfg: &Self::Config) -> Self {
-        Self(FixedMontyForm::zero(cfg))
-    }
-
-    fn one_with_cfg(cfg: &Self::Config) -> Self {
-        Self(FixedMontyForm::one(cfg))
+impl<const LIMBS: usize> LiftToIntegerDynamic for MontyField<LIMBS> {
+    /// Retrieves the integer currently encoded in this [`MontyField`],
+    /// guaranteed to be reduced.
+    #[inline(always)]
+    fn lift_to_integer(&self, value: &Self::Element) -> Self::Integer {
+        let mut out = crypto_bigint::Uint::<LIMBS>::ZERO;
+        crypto_bigint_helpers::monty_retrieve_inner(
+            value.0.inner().as_limbs(),
+            out.as_mut_limbs(),
+            self.params.modulus().as_ref().as_limbs(),
+            self.params.mod_neg_inv(),
+        );
+        Uint::new(out)
     }
 }
 
-//
-// Zeroize
-//
-
-#[cfg(feature = "zeroize")]
-impl<const LIMBS: usize> zeroize::Zeroize for MontyField<LIMBS> {
-    fn zeroize(&mut self) {
-        self.0.zeroize()
-    }
-}
+// TODO: Do we want to zeroize the modulus?
 
 //
 // Predefined fields of various sizes for convenience
@@ -613,201 +321,164 @@ mod tests {
     use super::*;
     use crate::ensure_type_implements_trait;
     use alloc::vec;
+    use core::cmp::Ordering;
     use crypto_bigint::U64;
-    use num_traits::{ConstOne, ConstZero, Pow};
 
     const LIMBS: usize = 4;
     type F = F256;
 
+    #[test]
+    fn ensure_traits() {
+        ensure_type_implements_trait!(F, FieldConfig);
+    }
+
     //
     // Test helpers
     //
-    fn test_config() -> FixedMontyParams<LIMBS> {
+
+    fn make_f() -> F {
         // Using a 256-bit prime 2^256 - 2^32 - 977 (secp256k1 field prime)
         let modulus = crypto_bigint::Uint::<LIMBS>::from_be_hex(
             "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
         );
         let modulus = Odd::new(modulus).expect("modulus should be odd");
-        FixedMontyParams::new(modulus)
+        F::wrap(FixedMontyParams::new(modulus))
     }
 
     #[test]
     fn new_with_cfg_correct() {
-        let cfg = test_config();
+        let f = make_f();
 
         // `modulus + 1` should reduce to one.
-        let x = Uint::<{ F256::LIMBS }>::from_be_hex(
+        let x = Uint::<LIMBS>::from_be_hex(
             "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30",
         );
-        assert_eq!(F::from_with_cfg(x, &cfg), F::one_with_cfg(&cfg));
+        assert_eq!(f.project(&x), f.one());
 
         // `modulus` itself should reduce to zero.
-        let modulus = F::modulus(&cfg);
-        assert_eq!(F::from_with_cfg(modulus, &cfg), F::zero_with_cfg(&cfg));
+        let modulus = f.modulus();
+        assert_eq!(f.project(&modulus), f.zero());
 
         // Lifting to integer and projecting back yields the original element.
         for x in [
-            F::zero_with_cfg(&cfg),
-            F::one_with_cfg(&cfg),
-            F::from_with_cfg(2_u64, &cfg),
-            F::from_with_cfg(123456789_u64, &cfg),
+            f.zero(),
+            f.one(),
+            f.project(&2_u64),
+            f.project(&123456789_u64),
         ] {
-            assert_eq!(F::from_with_cfg(x.lift_to_integer(), &cfg), x);
+            assert_eq!(f.project(&f.lift_to_integer(&x)), x);
         }
-    }
-
-    fn from_u64(value: u64) -> F {
-        F::from_with_cfg(value, &test_config())
-    }
-
-    fn from_i64(value: i64) -> F {
-        F::from_with_cfg(value, &test_config())
-    }
-
-    fn zero() -> F {
-        F::zero_with_cfg(&test_config())
-    }
-
-    fn one() -> F {
-        F::one_with_cfg(&test_config())
-    }
-
-    #[test]
-    fn ensure_blanket_traits() {
-        // NB: this ensures `PrimeField` implementation too!
-        ensure_type_implements_trait!(F, FromPrimitiveWithConfig);
     }
 
     #[test]
     fn zero_one_basics() {
-        let z = zero();
-        assert!(F::is_zero(&z));
-        let o = one();
-        assert!(!F::is_zero(&o));
+        let f = make_f();
+        let z = f.zero();
+        assert!(f.is_zero(&z));
+        let o = f.one();
+        assert!(!f.is_zero(&o));
         assert_ne!(z, o);
     }
 
     #[test]
     fn basic_operations() {
-        // Negation
-        let a = from_u64(9);
-        let neg_a = -a.clone();
-        assert_eq!(&a + &neg_a, zero());
+        let f = make_f();
 
-        let a = from_u64(10);
-        let b = from_u64(5);
+        // Negation
+        let a = f.project(&9);
+        let neg_a = f.neg(&a);
+        assert_eq!(f.add(&a, &neg_a), f.zero());
+
+        let a = f.project(&10);
+        let b = f.project(&5);
 
         // Addition
-        let c = a.clone() + b.clone();
-        assert_eq!(c, from_u64(15));
+        let c = f.add(&a, &b);
+        assert_eq!(c, f.project(&15));
 
         // Subtraction
-        let d = a.clone() - b.clone();
-        assert_eq!(d, from_u64(5));
+        let d = f.sub(&a, &b);
+        assert_eq!(d, f.project(&5));
 
         // Multiplication
-        let e = a.clone() * b.clone();
-        assert_eq!(e, from_u64(50));
+        let e = f.mul(&a, &b);
+        assert_eq!(e, f.project(&50));
 
         // Division
-        let num = from_u64(11);
-        let den = from_u64(5);
-        let q = num.clone() / den.clone();
-        assert_eq!(&q * &den, num);
+        let num = f.project(&11);
+        let den = f.project(&5);
+        let q = f.div(&num, &den);
+        assert_eq!(f.mul(&q, &den), num);
     }
 
     #[test]
     fn basic_operations_overflow() {
-        let params = test_config();
-        let mod_minus_one = Uint::new(params.modulus().get() - crypto_bigint::Uint::one());
-        let mod_minus_one = F::from_with_cfg(mod_minus_one, &params);
+        let f = make_f();
+
+        let mod_minus_one = Uint::new(f.params.modulus().get() - crypto_bigint::Uint::one());
+        let mod_minus_one = f.project(&mod_minus_one);
 
         // Negation
-        let res = -mod_minus_one.clone();
-        assert_eq!(res, one());
+        let res = f.neg(&mod_minus_one);
+        assert_eq!(res, f.one());
 
         // Addition
-        let res = mod_minus_one.clone() + one();
-        assert_eq!(res, zero());
+        let res = f.add(&mod_minus_one, &f.one());
+        assert_eq!(res, f.zero());
 
         // Subtraction
-        let res = zero() - one();
+        let res = f.sub(&f.zero(), &f.one());
         assert_eq!(res, mod_minus_one);
 
         // Multiplication
-        let res = mod_minus_one.clone() * from_u64(2);
-        assert_eq!(res, mod_minus_one.clone() - one());
+        let res = f.mul(&mod_minus_one, &f.project(&2));
+        assert_eq!(res, f.sub(&mod_minus_one, &f.one()));
 
-        let res = mod_minus_one.clone() * mod_minus_one.clone();
-        assert_eq!(res, one());
+        let res = f.mul(&mod_minus_one, &mod_minus_one);
+        assert_eq!(res, f.one());
 
         // Division
-        let res = one() / mod_minus_one.clone();
+        let res = f.div(&f.one(), &mod_minus_one);
         assert_eq!(res, mod_minus_one);
     }
 
     #[test]
     fn add_wrapping() {
-        let a = from_i64(-100);
-        let b = from_u64(105);
-        let c = a + b;
-        let d = from_u64(5);
+        let f = make_f();
+
+        let a = f.project(&-100);
+        let b = f.project(&105);
+        let c = f.add(&a, &b);
+        let d = f.project(&5);
         assert_eq!(c, d);
-    }
-
-    #[allow(clippy::op_ref)]
-    #[test]
-    fn reference_operations() {
-        let a = from_u64(10);
-        let b = from_u64(5);
-
-        // Addition
-        let c = &a + &b;
-        assert_eq!(c, from_u64(15));
-
-        // Subtraction
-        let d = &a - &b;
-        assert_eq!(d, from_u64(5));
-
-        // Multiplication
-        let e = &a * &b;
-        assert_eq!(e, from_u64(50));
-
-        // Division
-        let num = from_u64(11);
-        let den = from_u64(5);
-        let q = &num / &den;
-        assert_eq!(&q * &den, num);
     }
 
     #[test]
     fn from_bool() {
-        let cfg = test_config();
-        assert_eq!(F::from_with_cfg(true, &cfg), one());
-        assert_eq!(F::from_with_cfg(false, &cfg), zero());
+        let f = make_f();
 
-        let t = F::from_with_cfg(true, &cfg);
-        let f = F::from_with_cfg(false, &cfg);
-        assert_eq!(t, one());
-        assert_eq!(f, zero());
+        assert_eq!(f.project(&true), f.one());
+        assert_eq!(f.project(&false), f.zero());
     }
 
     #[test]
     fn from_unsigned_and_signed() {
         const LIMBS: usize = U64::LIMBS;
         type F = F64;
-        let cfg = F::make_cfg(&Uint::from(10064419296686275259_u64)).unwrap();
+
+        // Using a 64-bit prime
+        let f = F::new(&Uint::from(10064419296686275259_u64)).unwrap();
         macro_rules! to_field {
             ($x:expr) => {
-                F::from_with_cfg($x, &cfg)
+                f.project(&$x)
             };
         }
-        let zero = F::zero_with_cfg(&cfg);
-        let one = F::one_with_cfg(&cfg);
+        let zero = f.zero();
+        let one = f.one();
         assert_eq!(to_field!(0), zero);
         assert_eq!(to_field!(1), one);
-        assert_eq!(to_field!(-1) + one, zero);
-        assert_eq!(to_field!(-5) + F::from_with_cfg(5, &cfg), zero);
+        assert_eq!(f.add(&to_field!(-1), &one), zero);
+        assert_eq!(f.add(&to_field!(-5), &f.project(&5)), zero);
 
         // u64 maximum value (hand-calculated)
         assert_eq!(
@@ -829,25 +500,21 @@ mod tests {
 
         // Verify property: i64::MIN + |i64::MIN| = 0
         let i64_min_abs = to_field!(i64::MIN.unsigned_abs());
-        assert_eq!(to_field!(i64::MIN) + i64_min_abs, zero);
+        assert_eq!(f.add(&to_field!(i64::MIN), &i64_min_abs), zero);
     }
 
     #[test]
     fn from_uint_and_int() {
         const LIMBS: usize = U64::LIMBS;
         type F = F64;
-        let cfg = F::make_cfg(&Uint::from(10064419296686275259_u64)).unwrap();
+
+        // Using a 64-bit prime
+        let f = F::new(&Uint::from(10064419296686275259_u64)).unwrap();
         macro_rules! to_field {
             ($x:expr) => {
-                F::from_with_cfg($x, &cfg)
+                f.project(&$x)
             };
         }
-
-        assert_eq!(
-            Int::<LIMBS>::MIN.into_inner().abs(),
-            Uint::<LIMBS>::MAX.into_inner() / Uint::<LIMBS>::from_u64(2).into_inner()
-                + Uint::ONE.into_inner()
-        );
 
         let u: Uint<LIMBS> = Uint::from(123_u64);
         assert_eq!(to_field!(u), to_field!(123_u64));
@@ -855,327 +522,195 @@ mod tests {
         let i: Int<LIMBS> = Int::from(123_i64);
         assert_eq!(to_field!(i), to_field!(123_u64));
 
-        assert_eq!(to_field!(Uint::<LIMBS>::ZERO), F::zero_with_cfg(&cfg));
+        assert_eq!(to_field!(Uint::<LIMBS>::from(0_u64)), f.zero());
 
-        // Uint maximum value (hand-calculated)
-        assert_eq!(
-            to_field!(u64::MAX),
-            to_field!(Uint::<LIMBS>::from_be_hex("7453fff9266d8544"))
-        );
+        // Negative Int encodes to the additive inverse
+        let i: Int<LIMBS> = Int::from(-123_i64);
+        assert_eq!(f.add(&to_field!(i), &to_field!(123_u64)), f.zero());
 
-        // Int maximum value (hand-calculated)
+        // A Uint wider than the modulus is reduced before encoding:
+        // 2^64 mod m = (u64::MAX mod m) + 1 (hand-calculated)
+        let wide = Uint::<{ 2 * LIMBS }>::from_be_hex("00000000000000010000000000000000");
         assert_eq!(
-            to_field!(i64::MAX),
-            to_field!(Uint::<LIMBS>::from_be_hex("7fffffffffffffff"))
-        );
-
-        // Int minimum value (hand-calculated)
-        assert_eq!(
-            to_field!(i64::MIN),
-            to_field!(Uint::<LIMBS>::from_be_hex("0bac0006d9927abb"))
+            to_field!(wide),
+            to_field!(Uint::<LIMBS>::from_be_hex("7453fff9266d8545"))
         );
     }
 
     #[test]
     fn assign_operations() {
+        let f = make_f();
+
         // Addition
-        let mut a = from_u64(5);
-        a += from_u64(6);
-        assert_eq!(a, from_u64(11));
+        let mut a = f.project(&5);
+        f.add_assign(&mut a, &f.project(&6));
+        assert_eq!(a, f.project(&11));
 
         // Subtraction
-        let mut a = from_u64(20);
-        a -= from_u64(7);
-        assert_eq!(a, from_u64(13));
+        let mut a = f.project(&20);
+        f.sub_assign(&mut a, &f.project(&7));
+        assert_eq!(a, f.project(&13));
 
         // Multiplication
-        let mut a = from_u64(11);
-        a *= from_u64(3);
-        assert_eq!(a, from_u64(33));
+        let mut a = f.project(&11);
+        f.mul_assign(&mut a, &f.project(&3));
+        assert_eq!(a, f.project(&33));
 
         // Division
-        let mut a = from_u64(20);
-        let b = from_u64(4);
-        a /= b;
-        assert_eq!(&a * &from_u64(4), from_u64(20));
+        let mut a = f.project(&20);
+        let b = f.project(&4);
+        f.div_assign(&mut a, &b);
+        assert_eq!(f.mul(&a, &b), f.project(&20));
     }
 
     #[test]
     #[should_panic(expected = "Division by zero")]
     fn div_by_zero_panics() {
-        let a = from_u64(7);
-        let zero = zero();
-        let _ = a / zero;
+        let f = make_f();
+
+        let a = f.project(&7);
+        let zero = f.zero();
+        let _ = f.div(&a, &zero);
     }
 
     #[test]
     fn pow_operation() {
+        let f = make_f();
+
         // Test basic exponentiation
-        let base = from_u64(2);
+        let base = f.project(&2);
 
         // 2^0 = 1
-        assert_eq!(base.clone().pow(0), one());
+        assert_eq!(f.pow_u32(&base, 0), f.one());
 
         // 2^1 = 2
-        assert_eq!(base.clone().pow(1), base);
+        assert_eq!(f.pow_u32(&base, 1), base);
 
         // 2^3 = 8
-        assert_eq!(base.clone().pow(3), from_u64(8));
+        assert_eq!(f.pow_u32(&base, 3), f.project(&8));
 
         // 2^10 = 1024
-        assert_eq!(base.clone().pow(10), from_u64(1024));
+        assert_eq!(f.pow_u32(&base, 10), f.project(&1024));
 
         // Test with different base
-        let base = from_u64(3);
+        let base = f.project(&3);
 
         // 3^4 = 81
-        assert_eq!(base.clone().pow(4), from_u64(81));
+        assert_eq!(f.pow_u32(&base, 4), f.project(&81));
 
         // Test with base 1
-        let base = one();
-        assert_eq!(base.clone().pow(1000), one());
+        let base = f.one();
+        assert_eq!(f.pow_u32(&base, 1000), f.one());
 
         // Test with base 0
-        let base = zero();
-        assert_eq!(base.clone().pow(0), one()); // 0^0 = 1 by convention
-        assert_eq!(base.clone().pow(10), zero()); // 0^n = 0 for n > 0
+        let base = f.zero();
+        assert_eq!(f.pow_u32(&base, 0), f.one()); // 0^0 = 1 by convention
+        assert_eq!(f.pow_u32(&base, 10), f.zero()); // 0^n = 0 for n > 0
     }
 
     #[test]
     fn inv_operation() {
-        let a = from_u64(5);
-        let inv_a = a.clone().inv().unwrap();
-        assert_eq!(&a * &inv_a, one());
+        let f = make_f();
+
+        let a = f.project(&5);
+        let inv_a = f.inv(&a).unwrap();
+        assert_eq!(f.mul(&a, &inv_a), f.one());
 
         // Test that zero has no inverse
-        let zero = zero();
-        assert!(zero.inv().is_none());
-    }
-
-    #[test]
-    fn checked_neg() {
-        // Test with positive number
-        let a = from_u64(10);
-        let neg_a = a.checked_neg().unwrap();
-        assert_eq!(neg_a, from_i64(-10));
-
-        // Test with negative number
-        let b = from_i64(-5);
-        let neg_b = b.checked_neg().unwrap();
-        assert_eq!(neg_b, from_u64(5));
-
-        // Test with zero
-        let zero_val = zero();
-        let neg_zero = zero_val.checked_neg().unwrap();
-        assert_eq!(neg_zero, zero());
-    }
-
-    #[test]
-    fn checked_add() {
-        let a = from_u64(10);
-        let b = from_u64(5);
-
-        let c = a.checked_add(&b).unwrap();
-        assert_eq!(c, from_u64(15));
-    }
-
-    #[test]
-    fn checked_sub() {
-        let a = from_u64(10);
-        let b = from_u64(5);
-
-        let d = a.checked_sub(&b).unwrap();
-        assert_eq!(d, from_u64(5));
-    }
-
-    #[test]
-    fn checked_mul() {
-        let a = from_u64(10);
-        let b = from_u64(5);
-
-        let e = a.checked_mul(&b).unwrap();
-        assert_eq!(e, from_u64(50));
+        let zero = f.zero();
+        assert!(f.inv(&zero).is_none());
     }
 
     #[test]
     fn checked_div() {
-        let a = from_u64(10);
-        let b = from_u64(5);
-        let zero = zero();
+        let f = make_f();
+
+        let a = f.project(&10);
+        let b = f.project(&5);
+        let zero = f.zero();
 
         // Normal division
-        let c = a.checked_div(&b).unwrap();
-        assert_eq!(&c * &b, a);
+        let c = f.checked_div(&a, &b).unwrap();
+        assert_eq!(f.mul(&c, &b), a);
 
         // Division by zero
-        assert!(a.checked_div(&zero).is_none());
-    }
-
-    #[allow(clippy::op_ref)]
-    #[test]
-    fn ref_and_value_combinations_add_sub_mul() {
-        let a = from_u64(42);
-        let b = from_u64(123);
-
-        let r1 = &a + &b;
-        let a1 = from_u64(42);
-        let b1 = from_u64(123);
-        let r2 = a1 + b1;
-        let a2 = from_u64(42);
-        let b2 = from_u64(123);
-        let r3 = a2 + &b2;
-        let a3 = from_u64(42);
-        let b3 = from_u64(123);
-        let r4 = &a3 + b3;
-        assert_eq!(r1, r2);
-        assert_eq!(r1, r3);
-        assert_eq!(r1, r4);
-
-        let a = from_u64(88);
-        let b = from_u64(59);
-        let s1 = &a - &b;
-        let a1 = from_u64(88);
-        let b1 = from_u64(59);
-        let s2 = a1 - b1;
-        let a2 = from_u64(88);
-        let b2 = from_u64(59);
-        let s3 = a2 - &b2;
-        let a3 = from_u64(88);
-        let b3 = from_u64(59);
-        let s4 = &a3 - b3;
-        assert_eq!(s1, s2);
-        assert_eq!(s1, s3);
-        assert_eq!(s1, s4);
-
-        let a = from_u64(9);
-        let b = from_u64(14);
-        let m1 = &a * &b;
-        let a1 = from_u64(9);
-        let b1 = from_u64(14);
-        let m2 = a1 * b1;
-        let a2 = from_u64(9);
-        let b2 = from_u64(14);
-        let m3 = a2 * &b2;
-        let a3 = from_u64(9);
-        let b3 = from_u64(14);
-        let m4 = &a3 * b3;
-        assert_eq!(m1, m2);
-        assert_eq!(m1, m3);
-        assert_eq!(m1, m4);
-    }
-
-    #[test]
-    fn assign_ops_with_refs_and_val() {
-        let mut a = from_u64(100);
-        let b = from_u64(50);
-        a += b;
-        assert_eq!(a, from_u64(150));
-
-        let mut c = from_u64(100);
-        let d = from_u64(50);
-        c += &d;
-        assert_eq!(c, from_u64(150));
-
-        let mut e = from_u64(100);
-        let f = from_u64(30);
-        e -= f;
-        assert_eq!(e, from_u64(70));
-
-        let mut g = from_u64(100);
-        let h = from_u64(30);
-        g -= &h;
-        assert_eq!(g, from_u64(70));
-
-        let mut i = from_u64(10);
-        let j = from_u64(5);
-        i *= j;
-        assert_eq!(i, from_u64(50));
-
-        let mut k = from_u64(10);
-        let l = from_u64(5);
-        k *= &l;
-        assert_eq!(k, from_u64(50));
+        assert!(f.checked_div(&a, &zero).is_none());
     }
 
     #[test]
     fn aggregate_operations() {
-        // Sum
-        let values = vec![from_u64(1), from_u64(2), from_u64(3)];
-        let sum: F = values.iter().sum();
-        assert_eq!(sum, from_u64(6));
+        let f = make_f();
 
-        let sum2: F = values.into_iter().sum();
-        assert_eq!(sum2, from_u64(6));
+        // Sum
+        let values = vec![f.project(&1), f.project(&2), f.project(&3)];
+        let sum = f.sum_refs(values.iter());
+        assert_eq!(sum, f.project(&6));
+
+        let sum2 = f.sum(values.into_iter());
+        assert_eq!(sum2, f.project(&6));
 
         // Product
-        let values = vec![from_u64(2), from_u64(3), from_u64(4)];
-        let product: F = values.iter().product();
-        assert_eq!(product, from_u64(24));
+        let values = vec![f.project(&2), f.project(&3), f.project(&4)];
+        let product = f.product_refs(values.iter());
+        assert_eq!(product, f.project(&24));
 
-        let product2: F = values.into_iter().product();
-        assert_eq!(product2, from_u64(24));
+        let product2 = f.product(values.into_iter());
+        assert_eq!(product2, f.project(&24));
 
-        // Test empty collections panic
-        // Note: MontyField doesn't have a default config, so empty
-        // iterators must panic
+        // Empty iterators yield the respective identity elements
+        assert_eq!(f.sum(core::iter::empty()), f.zero());
+        assert_eq!(f.product(core::iter::empty()), f.one());
     }
 
     #[test]
     fn conversions() {
-        let cfg = test_config();
+        let f = make_f();
 
-        // Test FromWithConfig for BoxedUint
-        let f = F::from_with_cfg(123_u64, &cfg);
-        assert_eq!(f, from_u64(123));
-
-        // Test inner() and cfg()
-        let value = from_u64(456);
-        let _inner_ref = value.inner();
-        let _cfg_ref = value.cfg();
+        // Test EncodeElement for Uint
+        let u = Uint::<LIMBS>::from(123_u64);
+        let a = f.project(&u);
+        assert_eq!(a, f.project(&123_u64));
     }
 
     #[test]
     fn from_primitive() {
-        let cfg = test_config();
+        let f = make_f();
 
-        // Test FromWithConfig for various types
-        let a = F::from_with_cfg(42_u8, &cfg);
-        assert_eq!(a, from_u64(42));
+        // Unsigned types
+        assert_eq!(f.project(&42_u8), f.project(&42_u64));
+        assert_eq!(f.project(&12345_u16), f.project(&12345_u64));
+        assert_eq!(f.project(&1234567890_u32), f.project(&1234567890_u64));
+        assert_eq!(
+            f.project(&1234567890123456789_u64),
+            f.project(&1234567890123456789_u128)
+        );
 
-        let b = F::from_with_cfg(12345_u16, &cfg);
-        assert_eq!(b, from_u64(12345));
-
-        let c = F::from_with_cfg(1234567890_u32, &cfg);
-        assert_eq!(c, from_u64(1234567890));
-
-        let d = F::from_with_cfg(1234567890123456789_u64, &cfg);
-        assert_eq!(d, from_u64(1234567890123456789));
-
-        let e = F::from_with_cfg(-42_i8, &cfg);
-        assert_eq!(e, from_i64(-42));
-
-        let f = F::from_with_cfg(-12345_i16, &cfg);
-        assert_eq!(f, from_i64(-12345));
-
-        let g = F::from_with_cfg(-1234567_i32, &cfg);
-        assert_eq!(g, from_i64(-1234567));
-
-        let h = F::from_with_cfg(-1234567890123456789_i64, &cfg);
-        assert_eq!(h, from_i64(-1234567890123456789));
+        // Signed types
+        assert_eq!(f.project(&-42_i8), f.project(&-42_i64));
+        assert_eq!(f.project(&-12345_i16), f.project(&-12345_i64));
+        assert_eq!(f.project(&-1234567_i32), f.project(&-1234567_i64));
+        assert_eq!(
+            f.project(&-1234567890123456789_i64),
+            f.project(&-1234567890123456789_i128)
+        );
     }
 
     #[test]
     fn clone_works() {
-        let a = from_u64(42);
+        let f = make_f();
+
+        let a = f.project(&42);
         let b = a.clone();
         assert_eq!(a, b);
     }
 
     #[test]
     fn equality_and_ordering() {
-        let a = from_u64(10);
-        let b = from_u64(10);
-        let c = from_u64(20);
+        let f = make_f();
+
+        let a = f.project(&10);
+        let b = f.project(&10);
+        let c = f.project(&20);
 
         // Test equality
         assert_eq!(a, b);
@@ -1190,7 +725,7 @@ mod tests {
         assert!(a >= b);
 
         // Verify transitivity of ordering
-        let d = from_u64(30);
+        let d = f.project(&30);
         if a < c && c < d {
             assert!(a < d);
         }
@@ -1217,8 +752,10 @@ mod tests {
             }
         }
 
-        let a = from_u64(42);
-        let b = from_u64(42);
+        let f = make_f();
+
+        let a = f.project(&42);
+        let b = f.project(&42);
 
         let mut hasher_a = TestHasher { state: 0 };
         a.hash(&mut hasher_a);
@@ -1235,12 +772,35 @@ mod tests {
     // MontyField-specific tests
 
     #[test]
+    fn pow_matches_crypto_bigint() {
+        let f = make_f();
+
+        for (base, exp) in [
+            (0_u64, 0_u32),
+            (0, 7),
+            (1, 1000),
+            (2, 10),
+            (3, 251),
+            (123456789, 1),
+            (123456789, u32::MAX),
+        ] {
+            let x = f.project(&base);
+            let expected = FixedMontyForm::from_montgomery(*x.0.inner(), &f.params)
+                .pow(&crypto_bigint::Uint::<1>::from(exp));
+            assert_eq!(
+                f.pow_u32(&x, exp).0.inner(),
+                expected.as_montgomery(),
+                "{base}^{exp} diverges from FixedMontyForm::pow"
+            );
+        }
+    }
+
+    #[test]
     fn prime_field_methods() {
-        let a = from_u64(42);
-        let cfg = a.cfg();
+        let f = make_f();
 
         // Test that we can get modulus
-        let modulus = F::modulus(cfg);
+        let modulus = f.modulus();
         assert_eq!(
             modulus,
             Uint::new(crypto_bigint::Uint::<LIMBS>::from_be_hex(
@@ -1249,40 +809,40 @@ mod tests {
         );
 
         // Test modulus_minus_one_div_two
-        let m_minus_1_div_2 = F::modulus_minus_one_div_two(cfg);
+        let m_minus_1_div_2 = f.modulus_minus_one_div_two();
         assert_eq!(
             m_minus_1_div_2,
             Uint::new(
                 (crypto_bigint::Uint::<LIMBS>::from_be_hex(
                     "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"
                 ) - crypto_bigint::Uint::one())
-                    / crypto_bigint::Uint::<LIMBS>::from(2u64)
+                    / NonZero::new(crypto_bigint::Uint::<LIMBS>::from(2u64)).unwrap()
             )
         );
 
-        // Test zero_with_cfg and one_with_cfg
-        let z = F::zero_with_cfg(cfg);
-        assert!(F::is_zero(&z));
-        let o = F::one_with_cfg(cfg);
-        assert!(!F::is_zero(&o));
+        // Test zero and one
+        let z = f.zero();
+        assert!(f.is_zero(&z));
+        let o = f.one();
+        assert!(!f.is_zero(&o));
     }
 
     #[test]
-    fn make_cfg_works() {
+    fn new_works() {
         let modulus = Uint::new(crypto_bigint::Uint::<LIMBS>::from_be_hex(
             "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
         ));
-        let cfg = F::make_cfg(&modulus).expect("Should create config");
+        let f = F::new(&modulus).expect("Should create config");
 
         // Create a field element using this config
-        let a = F::from_with_cfg(123_u64, &cfg);
-        assert_eq!(a, from_u64(123));
+        let a = f.project(&123_u64);
+        assert_eq!(a, f.project(&123));
     }
 
     #[test]
-    fn make_cfg_rejects_even_modulus() {
+    fn new_rejects_even_modulus() {
         let even_modulus = Uint::<LIMBS>::from(42_u64);
-        let result = F::make_cfg(&even_modulus);
+        let result = F::new(&even_modulus);
         assert!(result.is_err());
     }
 }

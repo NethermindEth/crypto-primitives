@@ -12,7 +12,9 @@ use core::{
     },
     str::FromStr,
 };
-use crypto_bigint::{BitOps, DivVartime, Integer, Limb, RandomBitsError, Resize, Word};
+use crypto_bigint::{
+    BitOps, ConcatenatingMul, DivVartime, Integer, Limb, RandomBitsError, Resize, UintRef, Word,
+};
 use num_traits::{
     CheckedAdd, CheckedMul, CheckedRem, CheckedSub, One, Pow, WrappingAdd, WrappingMul,
     WrappingSub, Zero,
@@ -47,10 +49,16 @@ impl BoxedUint {
         unsafe { &mut *(value as *mut crypto_bigint::BoxedUint as *mut Self) }
     }
 
-    /// Get the reference to the wrapped value
+    /// Get a reference to the wrapped value
     #[inline(always)]
     pub fn inner(&self) -> &crypto_bigint::BoxedUint {
         &self.0
+    }
+
+    /// Get a mutable reference to the wrapped value
+    #[inline(always)]
+    pub fn inner_mut(&mut self) -> &mut crypto_bigint::BoxedUint {
+        &mut self.0
     }
 
     /// Get the wrapped value, consuming self
@@ -154,11 +162,99 @@ impl BoxedUint {
             at_least_bits_precision,
         ))
     }
+
+    /// See [`crypto_bigint::BoxedUint::concatenating_mul`]
+    pub fn concatenating_mul(&self, rhs: &[Limb]) -> Self {
+        let rhs = UintRef::new(rhs);
+        self.0.concatenating_mul(rhs).into()
+    }
+
+    /// Get the least significant 64-bits.
+    pub fn lowest_u64(&self) -> u64 {
+        #[cfg(target_pointer_width = "32")]
+        let res = {
+            debug_assert!(self.nlimbs() >= 1);
+            let mut ret = self.limbs[0].0 as u64;
+
+            if self.nlimbs() >= 2 {
+                ret |= (self.limbs[1].0 as u64) << 32;
+            }
+
+            ret
+        };
+
+        #[cfg(target_pointer_width = "64")]
+        let res = self.as_limbs()[0].0;
+
+        #[cfg(not(any(target_pointer_width = "32", target_pointer_width = "64")))]
+        let res = panic!("Unsupported target pointer width");
+
+        res
+    }
+
+    /// See [`crypto_bigint::BoxedUint::conditional_wrapping_neg_assign`]
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn conditional_wrapping_neg_assign(&mut self, choice: crypto_bigint::Choice) {
+        use crypto_bigint::CtAssign;
+        let mut carry = 1;
+
+        for i in 0..self.nlimbs() {
+            let r = crypto_bigint::WideWord::from(!self.as_limbs()[i].0) + carry;
+            self.as_mut_limbs()[i].ct_assign(&Limb(r as Word), choice);
+            carry = r >> Limb::BITS;
+        }
+    }
+
+    /// See [`crypto_bigint::BoxedUint::borrowing_sub_assign`]
+    #[inline(always)]
+    pub fn borrowing_sub_assign(&mut self, rhs: &[Limb], borrow: Limb) -> Limb {
+        assert!(rhs.len() <= self.nlimbs());
+
+        let mut carry = borrow;
+        let self_limbs = self.as_mut_limbs();
+        for i in 0..self_limbs.len() {
+            let &b = rhs.get(i).unwrap_or(&Limb::ZERO);
+            (self_limbs[i], carry) = Limb::borrowing_sub(self_limbs[i], b, carry);
+        }
+        carry
+    }
+
+    /// See [`crypto_bigint::BoxedUint::sub_assign_mod_with_carry`]
+    #[inline(always)]
+    pub fn sub_assign_mod_with_carry(&mut self, carry: Limb, rhs: &BoxedUint, p: &BoxedUint) {
+        debug_assert!(carry.0 <= 1);
+
+        let borrow = self.borrowing_sub_assign(rhs.as_limbs(), Limb::ZERO);
+
+        // The new `borrow = Word::MAX` iff `carry == 0` and `borrow == Word::MAX`.
+        let mask = carry.wrapping_neg().not().bitand(borrow);
+
+        // If underflow occurred on the final limb, borrow = 0xfff...fff, otherwise
+        // borrow = 0x000...000. Thus, we use it as a mask to conditionally add the
+        // modulus.
+        let _ = UintRef::new_mut(self.as_mut_limbs())
+            .conditional_add_assign(UintRef::new(rhs.as_limbs()), Limb::ZERO, !mask.is_zero())
+            .lsb_to_choice();
+    }
 }
 
 //
 // Core traits
 //
+
+impl AsRef<UintRef> for BoxedUint {
+    #[inline(always)]
+    fn as_ref(&self) -> &UintRef {
+        self.inner().as_ref()
+    }
+}
+
+impl AsMut<UintRef> for BoxedUint {
+    #[inline(always)]
+    fn as_mut(&mut self) -> &mut UintRef {
+        self.inner_mut().as_mut()
+    }
+}
 
 impl Debug for BoxedUint {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
@@ -495,6 +591,20 @@ impl From<BoxedUint> for crypto_bigint::BoxedUint {
     }
 }
 
+impl<'a> From<&'a crypto_bigint::BoxedUint> for &'a BoxedUint {
+    #[inline(always)]
+    fn from(value: &'a crypto_bigint::BoxedUint) -> Self {
+        BoxedUint::new_ref(value)
+    }
+}
+
+impl<'a> From<&'a BoxedUint> for &'a crypto_bigint::BoxedUint {
+    #[inline(always)]
+    fn from(value: &'a BoxedUint) -> Self {
+        &value.0
+    }
+}
+
 impl From<bool> for BoxedUint {
     #[inline(always)]
     fn from(value: bool) -> Self {
@@ -551,10 +661,12 @@ impl<const LIMBS: usize> From<&crypto_bigint::Uint<LIMBS>> for BoxedUint {
 impl Semiring for BoxedUint {}
 
 impl IntSemiring for BoxedUint {
+    #[inline(always)]
     fn is_odd(&self) -> bool {
         self.0.is_odd().into()
     }
 
+    #[inline(always)]
     fn is_even(&self) -> bool {
         self.0.is_even().into()
     }
@@ -695,7 +807,7 @@ mod tests {
     }
 
     #[test]
-    fn ensure_blanket_traits() {
+    fn ensure_traits() {
         ensure_type_implements_trait!(BoxedUint, FixedSemiring);
         ensure_type_implements_trait!(BoxedUint, IntSemiring);
         ensure_type_implements_trait!(BoxedUint, IntSemiringWithShifts);

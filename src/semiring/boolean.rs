@@ -385,10 +385,12 @@ impl ConstSemiring for Boolean {
 }
 
 impl IntSemiring for Boolean {
+    #[inline(always)]
     fn is_odd(&self) -> bool {
         self.0
     }
 
+    #[inline(always)]
     fn is_even(&self) -> bool {
         !self.0
     }
@@ -429,7 +431,7 @@ mod tests {
     use alloc::{vec, vec::Vec};
 
     #[test]
-    fn ensure_blanket_traits() {
+    fn ensure_traits() {
         ensure_type_implements_trait!(Boolean, ConstIntSemiring);
     }
 

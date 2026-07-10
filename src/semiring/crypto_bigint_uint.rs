@@ -1,5 +1,5 @@
 use super::*;
-use crate::{boolean::Boolean, crypto_bigint_int::Int, pow_via_repeated_squaring};
+use crate::{WORD_FACTOR, boolean::Boolean, crypto_bigint_int::Int, pow_via_repeated_squaring};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, LowerHex, Result as FmtResult, UpperHex},
@@ -11,7 +11,7 @@ use core::{
     },
     str::FromStr,
 };
-use crypto_bigint::{DivVartime, Integer, Limb, Word};
+use crypto_bigint::{DivVartime, Integer, Limb, UintRef, Word};
 use num_traits::{
     CheckedAdd, CheckedMul, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow, WrappingAdd,
     WrappingMul, WrappingSub, Zero,
@@ -46,10 +46,16 @@ impl<const LIMBS: usize> Uint<LIMBS> {
         unsafe { &mut *(value as *mut crypto_bigint::Uint<LIMBS> as *mut Self) }
     }
 
-    /// Get the reference to the wrapped value
+    /// Get a reference to the wrapped value
     #[inline(always)]
     pub const fn inner(&self) -> &crypto_bigint::Uint<LIMBS> {
         &self.0
+    }
+
+    /// Get a mutable reference to the wrapped value
+    #[inline(always)]
+    pub const fn inner_mut(&mut self) -> &mut crypto_bigint::Uint<LIMBS> {
+        &mut self.0
     }
 
     /// Get the wrapped value, consuming self
@@ -154,6 +160,20 @@ impl<const LIMBS: usize> Uint<LIMBS> {
 //
 // Core traits
 //
+
+impl<const LIMBS: usize> AsRef<UintRef> for Uint<LIMBS> {
+    #[inline(always)]
+    fn as_ref(&self) -> &UintRef {
+        self.inner().as_ref()
+    }
+}
+
+impl<const LIMBS: usize> AsMut<UintRef> for Uint<LIMBS> {
+    #[inline(always)]
+    fn as_mut(&mut self) -> &mut UintRef {
+        self.inner_mut().as_mut()
+    }
+}
 
 impl<const LIMBS: usize> Debug for Uint<LIMBS> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
@@ -499,6 +519,20 @@ impl<const LIMBS: usize> From<Uint<LIMBS>> for crypto_bigint::Uint<LIMBS> {
     }
 }
 
+impl<'a, const LIMBS: usize> From<&'a crypto_bigint::Uint<LIMBS>> for &'a Uint<LIMBS> {
+    #[inline(always)]
+    fn from(value: &'a crypto_bigint::Uint<LIMBS>) -> Self {
+        Uint::new_ref(value)
+    }
+}
+
+impl<'a, const LIMBS: usize> From<&'a Uint<LIMBS>> for &'a crypto_bigint::Uint<LIMBS> {
+    #[inline(always)]
+    fn from(value: &'a Uint<LIMBS>) -> Self {
+        &value.0
+    }
+}
+
 impl<const LIMBS: usize> From<bool> for Uint<LIMBS> {
     #[inline(always)]
     fn from(value: bool) -> Self {
@@ -567,10 +601,12 @@ impl<const LIMBS: usize> ConstSemiring for Uint<LIMBS> {
 }
 
 impl<const LIMBS: usize> IntSemiring for Uint<LIMBS> {
+    #[inline(always)]
     fn is_odd(&self) -> bool {
         self.0.is_odd().into()
     }
 
+    #[inline(always)]
     fn is_even(&self) -> bool {
         self.0.is_even().into()
     }
@@ -671,6 +707,40 @@ impl<const LIMBS: usize> crypto_bigint::Constants for Uint<LIMBS> {
     const MAX: Self = ConstSemiring::MAX;
 }
 
+//
+// Predefined uints of various sizes for convenience
+//
+
+pub type U64 = Uint<{ 1 * WORD_FACTOR }>;
+pub type U128 = Uint<{ 2 * WORD_FACTOR }>;
+pub type U192 = Uint<{ 3 * WORD_FACTOR }>;
+pub type U256 = Uint<{ 4 * WORD_FACTOR }>;
+pub type U320 = Uint<{ 5 * WORD_FACTOR }>;
+pub type U384 = Uint<{ 6 * WORD_FACTOR }>;
+pub type U448 = Uint<{ 7 * WORD_FACTOR }>;
+pub type U512 = Uint<{ 8 * WORD_FACTOR }>;
+pub type U576 = Uint<{ 9 * WORD_FACTOR }>;
+pub type U640 = Uint<{ 10 * WORD_FACTOR }>;
+pub type U704 = Uint<{ 11 * WORD_FACTOR }>;
+pub type U768 = Uint<{ 12 * WORD_FACTOR }>;
+pub type U832 = Uint<{ 13 * WORD_FACTOR }>;
+pub type U896 = Uint<{ 14 * WORD_FACTOR }>;
+pub type U960 = Uint<{ 15 * WORD_FACTOR }>;
+pub type U1024 = Uint<{ 16 * WORD_FACTOR }>;
+pub type U1280 = Uint<{ 20 * WORD_FACTOR }>;
+pub type U1536 = Uint<{ 24 * WORD_FACTOR }>;
+pub type U1792 = Uint<{ 28 * WORD_FACTOR }>;
+pub type U2048 = Uint<{ 32 * WORD_FACTOR }>;
+pub type U3072 = Uint<{ 48 * WORD_FACTOR }>;
+pub type U3584 = Uint<{ 56 * WORD_FACTOR }>;
+pub type U4096 = Uint<{ 64 * WORD_FACTOR }>;
+pub type U4224 = Uint<{ 66 * WORD_FACTOR }>;
+pub type U4352 = Uint<{ 68 * WORD_FACTOR }>;
+pub type U6144 = Uint<{ 96 * WORD_FACTOR }>;
+pub type U8192 = Uint<{ 128 * WORD_FACTOR }>;
+pub type U16384 = Uint<{ 256 * WORD_FACTOR }>;
+pub type U32768 = Uint<{ 512 * WORD_FACTOR }>;
+
 #[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
 #[cfg(test)]
 mod tests {
@@ -688,7 +758,7 @@ mod tests {
     type Uint4 = Uint<{ WORD_FACTOR * 4 }>;
 
     #[test]
-    fn ensure_blanket_traits() {
+    fn ensure_traits() {
         ensure_type_implements_trait!(Uint4, ConstIntSemiring);
         ensure_type_implements_trait!(Uint4, IntSemiringWithShifts);
     }

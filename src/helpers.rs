@@ -33,7 +33,7 @@ macro_rules! pow_via_repeated_squaring {
 #[cfg(test)]
 #[macro_export]
 macro_rules! ensure_type_implements_trait {
-    ($type_name:ty, $trait_name:ident) => {{
+    ($type_name:ty, $trait_name:path) => {{
         fn _assert_impl<T: $trait_name>() {}
         _assert_impl::<$type_name>();
     }};

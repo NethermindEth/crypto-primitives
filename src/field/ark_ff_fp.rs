@@ -487,32 +487,21 @@ impl<T: MontConfig<N>, const N: usize> ConstSemiring for Fp<MontBackend<T, N>, N
 impl<P: FpConfig<N>, const N: usize> Ring for Fp<P, N> {}
 
 impl<P: FpConfig<N>, const N: usize> IntSemiring for Fp<P, N> {
+    #[inline(always)]
     fn is_odd(&self) -> bool {
+        // There's no way to check that efficiently
         self.0.into_bigint().is_odd()
     }
 
+    #[inline(always)]
     fn is_even(&self) -> bool {
+        // There's no way to check that efficiently
         self.0.into_bigint().is_even()
     }
 }
 
-impl<P: FpConfig<N>, const N: usize> IntRing for Fp<P, N> {
-    fn checked_abs(&self) -> Option<Self> {
-        Some(*self)
-    }
-
-    fn is_positive(&self) -> bool {
-        !self.is_zero()
-    }
-
-    fn is_negative(&self) -> bool {
-        false
-    }
-}
-
-impl<P: FpConfig<N>, const N: usize> Field for Fp<P, N> {
+impl<M: MontConfig<N>, const N: usize> FixedField for Fp<MontBackend<M, N>, N> {
     type Inner = BigInt<N>;
-    type Integer = BigInt<N>;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -529,21 +518,27 @@ impl<P: FpConfig<N>, const N: usize> Field for Fp<P, N> {
         BigInt::new(self.0.0)
     }
 
-    #[inline(always)]
-    fn lift_to_integer(&self) -> Self::Integer {
-        BigInt::new(self.0.into_bigint())
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(ArkWrappedFp::new_unchecked(inner.into_inner()))
     }
 }
 
 /// ConstPrimeField is only implemented for MontConfig and MontBackend
-impl<M: MontConfig<N>, const N: usize> ConstPrimeField for Fp<MontBackend<M, N>, N> {
+impl<M: MontConfig<N>, const N: usize> ConstBaseField for Fp<MontBackend<M, N>, N> {
     const MODULUS: Self::Integer = BigInt::new(M::MODULUS);
-    const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner = BigInt::new(
+    const MODULUS_MINUS_ONE_DIV_TWO: Self::Integer = BigInt::new(
         <ArkWrappedFp<MontBackend<M, N>, N> as ArkPrimeField>::MODULUS_MINUS_ONE_DIV_TWO,
     );
+}
 
-    fn new_unchecked(inner: Self::Inner) -> Self {
-        Self(ArkWrappedFp::new_unchecked(inner.into_inner()))
+impl<P: FpConfig<N>, const N: usize> WithAssociatedInteger for Fp<P, N> {
+    type Integer = BigInt<N>;
+}
+
+impl<P: FpConfig<N>, const N: usize> LiftToIntegerStatic for Fp<P, N> {
+    #[inline(always)]
+    fn lift_to_integer(&self) -> Self::Integer {
+        BigInt::new(self.0.into_bigint())
     }
 }
 
@@ -786,9 +781,10 @@ mod tests {
     type F = Fp<MontBackend<TestFpConfig, 4>, 4>;
 
     #[test]
-    fn ensure_blanket_traits() {
+    fn ensure_traits() {
         ensure_type_implements_trait!(F, ConstIntRing);
-        ensure_type_implements_trait!(F, FromPrimitiveWithConfig);
+        ensure_type_implements_trait!(F, ConstBaseField);
+        ensure_type_implements_trait!(F, From<BigInt<4>>);
     }
 
     #[test]
@@ -799,7 +795,7 @@ mod tests {
         assert!(!o.is_zero());
         assert_ne!(z, o);
 
-        assert_eq!(F::from(<F as PrimeField>::modulus(&())), z);
+        assert_eq!(F::from(<F as FixedBaseField>::modulus()), z);
 
         // Lifting to integer and projecting back yields the original element.
         for x in [z, o, F::from(2_u64), F::from(123456789_u64)] {

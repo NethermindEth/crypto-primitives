@@ -1,4 +1,7 @@
-use crate::{ConstPrimeField, ConstSemiring, Field, Ring, Semiring, boolean::Boolean};
+use crate::{
+    ConstBaseField, ConstRing, ConstSemiring, FixedField, FixedRing, IntRing, IntSemiring,
+    LiftToIntegerStatic, Ring, Semiring, WithAssociatedInteger, boolean::Boolean,
+};
 use core::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     hash::Hash,
@@ -378,11 +381,22 @@ impl ConstSemiring for F2 {
     const MIN: Self = Self::ZERO;
 }
 
+impl IntSemiring for F2 {
+    #[inline(always)]
+    fn is_odd(&self) -> bool {
+        !self.is_zero()
+    }
+
+    #[inline(always)]
+    fn is_even(&self) -> bool {
+        self.is_zero()
+    }
+}
+
 impl Ring for F2 {}
 
-impl Field for F2 {
+impl FixedField for F2 {
     type Inner = bool;
-    type Integer = u8;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -400,18 +414,24 @@ impl Field for F2 {
     }
 
     #[inline(always)]
-    fn lift_to_integer(&self) -> Self::Integer {
-        u8::from(self.0)
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(inner)
     }
 }
 
-impl ConstPrimeField for F2 {
+impl ConstBaseField for F2 {
     const MODULUS: Self::Integer = 2;
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Integer = 0;
+}
 
+impl WithAssociatedInteger for F2 {
+    type Integer = u8;
+}
+
+impl LiftToIntegerStatic for F2 {
     #[inline(always)]
-    fn new_unchecked(inner: Self::Inner) -> Self {
-        Self(inner)
+    fn lift_to_integer(&self) -> Self::Integer {
+        u8::from(self.0)
     }
 }
 
@@ -447,7 +467,7 @@ impl zeroize::DefaultIsZeroes for F2 {}
 mod tests {
     use super::*;
     use crate::{
-        ConstPrimeField, FromPrimitiveWithConfig, PrimeField, ensure_type_implements_trait,
+        ConstIntRing, FieldConfig, FixedBaseField, FixedFieldConfig, ensure_type_implements_trait,
     };
     use alloc::format;
     use num_traits::{One, Zero};
@@ -456,9 +476,10 @@ mod tests {
     const V1: F2 = F2::ONE;
 
     #[test]
-    fn ensure_blanket_traits() {
-        // NB: this ensures `PrimeField` implementation too!
-        ensure_type_implements_trait!(F2, FromPrimitiveWithConfig);
+    fn ensure_traits() {
+        ensure_type_implements_trait!(F2, ConstIntRing);
+        ensure_type_implements_trait!(F2, FixedBaseField);
+        ensure_type_implements_trait!(F2, ConstBaseField);
     }
 
     #[test]
@@ -472,12 +493,10 @@ mod tests {
     #[test]
     fn zero_one_basics() {
         assert!(V0.is_zero());
-        assert!(PrimeField::is_zero(&V0));
         assert!(!V1.is_zero());
-        assert!(!PrimeField::is_zero(&V1));
         assert_ne!(V0, V1);
 
-        assert_eq!(F2::from(F2::modulus(&())), V0);
+        assert_eq!(F2::from(F2::modulus()), V0);
 
         // Lifting to integer and projecting back yields the original element.
         for x in [V0, V1] {
@@ -704,8 +723,8 @@ mod tests {
 
     #[test]
     fn const_prime_field() {
-        assert_eq!(<F2 as ConstPrimeField>::MODULUS, 2_u8);
-        assert_eq!(<F2 as ConstPrimeField>::MODULUS_MINUS_ONE_DIV_TWO, 0_u8);
+        assert_eq!(<F2 as ConstBaseField>::MODULUS, 2_u8);
+        assert_eq!(<F2 as ConstBaseField>::MODULUS_MINUS_ONE_DIV_TWO, 0_u8);
 
         assert_eq!(F2::new(true), V1);
         assert_eq!(F2::new(false), V0);
@@ -715,11 +734,13 @@ mod tests {
 
     #[test]
     fn prime_field_methods() {
-        assert_eq!(F2::modulus(&()), 2_u8);
-        assert_eq!(F2::modulus_minus_one_div_two(&()), 0_u8);
-        assert_eq!(F2::make_cfg(&2_u8), Ok(()));
-        assert!(F2::make_cfg(&0_u8).is_err());
-        assert!(F2::make_cfg(&3_u8).is_err());
+        assert_eq!(F2::modulus(), 2_u8);
+        assert_eq!(F2::modulus_minus_one_div_two(), 0_u8);
+
+        type Cfg = FixedFieldConfig<F2>;
+        assert!(Cfg::new(&2_u8).is_ok());
+        assert!(Cfg::new(&0_u8).is_err());
+        assert!(Cfg::new(&3_u8).is_err());
     }
 
     #[test]
@@ -776,13 +797,13 @@ mod tests {
         assert_eq!(V1.into_inner(), true);
         assert_eq!(V0.into_inner(), false);
 
-        // Field::inner
-        assert_eq!(*Field::inner(&V1), true);
-        assert_eq!(*Field::inner(&V0), false);
+        // FixedFieldBase::inner
+        assert_eq!(*FixedField::inner(&V1), true);
+        assert_eq!(*FixedField::inner(&V0), false);
 
-        // Field::inner_mut
+        // FixedFieldBase::inner_mut
         let mut x = V0;
-        *Field::inner_mut(&mut x) = true;
+        *FixedField::inner_mut(&mut x) = true;
         assert_eq!(x, V1);
     }
 }
