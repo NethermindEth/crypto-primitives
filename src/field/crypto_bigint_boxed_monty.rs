@@ -130,7 +130,7 @@ impl Display for BoxedMontyField {
 // Field operations
 //
 
-impl FieldConfigOps for BoxedMontyField {
+impl FieldConfig for BoxedMontyField {
     type Element = BoxedMontyFieldElement;
 
     fn is_zero(&self, value: &Self::Element) -> bool {
@@ -236,7 +236,7 @@ impl FieldConfigOps for BoxedMontyField {
 macro_rules! impl_from_unsigned {
     ($($t:ty),* $(,)?) => {
         $(
-            impl ProjectElement<$t> for BoxedMontyField {
+            impl ProjectElementDynamic<$t> for BoxedMontyField {
                 fn project(&self, value: &$t) -> Self::Element {
                     let abs: BoxedUint = value.into();
                     self.project(&abs.resize(self.modulus().bits_precision()))
@@ -249,7 +249,7 @@ macro_rules! impl_from_unsigned {
 macro_rules! impl_from_signed {
     ($($t:ty),* $(,)?) => {
         $(
-            impl ProjectElement<$t> for BoxedMontyField {
+            impl ProjectElementDynamic<$t> for BoxedMontyField {
                 fn project(&self, value: &$t) -> Self::Element {
                     let magnitude = BoxedUint::from(value.abs_diff(0)).resize(self.modulus().bits_precision());
                     let magnitude = self.project(&magnitude);
@@ -263,20 +263,20 @@ macro_rules! impl_from_signed {
 impl_from_unsigned!(u8, u16, u32, u64, u128);
 impl_from_signed!(i8, i16, i32, i64, i128);
 
-impl ProjectElement<bool> for BoxedMontyField {
+impl ProjectElementDynamic<bool> for BoxedMontyField {
     fn project(&self, value: &bool) -> Self::Element {
         if *value { self.one() } else { self.zero() }
     }
 }
 
-impl ProjectElement<Boolean> for BoxedMontyField {
+impl ProjectElementDynamic<Boolean> for BoxedMontyField {
     #[inline(always)]
     fn project(&self, value: &Boolean) -> Self::Element {
         self.project(value.inner())
     }
 }
 
-impl<const LIMBS: usize> ProjectElement<Int<LIMBS>> for BoxedMontyField {
+impl<const LIMBS: usize> ProjectElementDynamic<Int<LIMBS>> for BoxedMontyField {
     #[allow(clippy::arithmetic_side_effects)] // False alert
     fn project(&self, value: &Int<LIMBS>) -> Self::Element {
         let abs: BoxedUint = value.inner().abs().into();
@@ -289,7 +289,7 @@ impl<const LIMBS: usize> ProjectElement<Int<LIMBS>> for BoxedMontyField {
     }
 }
 
-impl ProjectElement<BoxedUint> for BoxedMontyField {
+impl ProjectElementDynamic<BoxedUint> for BoxedMontyField {
     /// Convert the given integer into the Montgomery domain.
     fn project(&self, value: &BoxedUint) -> Self::Element {
         debug_assert_eq!(value.bits_precision(), self.bits_precision());
@@ -300,14 +300,14 @@ impl ProjectElement<BoxedUint> for BoxedMontyField {
     }
 }
 
-impl<const LIMBS: usize> ProjectElement<Uint<LIMBS>> for BoxedMontyField {
+impl<const LIMBS: usize> ProjectElementDynamic<Uint<LIMBS>> for BoxedMontyField {
     #[inline(always)]
     fn project(&self, value: &Uint<LIMBS>) -> Self::Element {
         self.project(&BoxedUint::from(&value.0))
     }
 }
 
-impl<const LIMBS: usize> ProjectElement<crypto_bigint::Uint<LIMBS>> for BoxedMontyField {
+impl<const LIMBS: usize> ProjectElementDynamic<crypto_bigint::Uint<LIMBS>> for BoxedMontyField {
     #[inline(always)]
     fn project(&self, value: &crypto_bigint::Uint<LIMBS>) -> Self::Element {
         self.project(Uint::new_ref(value))
@@ -340,11 +340,11 @@ impl WithAssociatedInteger for BoxedMontyField {
     type Integer = BoxedUint;
 }
 
-impl LiftToIntegerDynamic for BoxedMontyField {
+impl LiftElementDynamic<<Self as WithAssociatedInteger>::Integer> for BoxedMontyField {
     /// Retrieves the integer currently encoded in this [`BoxedMontyField`],
     /// guaranteed to be reduced.
     #[inline(always)]
-    fn lift_to_integer(&self, value: &Self::Element) -> Self::Integer {
+    fn lift(&self, value: &Self::Element) -> Self::Integer {
         let mut out = BoxedUint::zero_with_precision(value.bits_precision());
         crypto_bigint_helpers::monty_retrieve_inner(
             value.0.as_limbs(),
@@ -415,7 +415,7 @@ mod tests {
             f.project(&2_u64),
             f.project(&123456789_u64),
         ] {
-            assert_eq!(f.project(&f.lift_to_integer(&x)), x);
+            assert_eq!(f.project(&f.lift(&x)), x);
         }
     }
 

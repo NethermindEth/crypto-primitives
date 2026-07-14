@@ -591,13 +591,13 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> IntSemiring for ConstMontyField<Mod
     #[inline(always)]
     fn is_odd(&self) -> bool {
         // There's no way to check that efficiently
-        self.lift_to_integer().is_odd()
+        self.lift().is_odd()
     }
 
     #[inline(always)]
     fn is_even(&self) -> bool {
         // There's no way to check that efficiently
-        self.lift_to_integer().is_even()
+        self.lift().is_even()
     }
 }
 
@@ -621,9 +621,11 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> WithAssociatedInteger for ConstMont
     type Integer = Uint<LIMBS>;
 }
 
-impl<Mod: Params<LIMBS>, const LIMBS: usize> LiftToIntegerStatic for ConstMontyField<Mod, LIMBS> {
+impl<Mod: Params<LIMBS>, const LIMBS: usize>
+    LiftElementStatic<<Self as WithAssociatedInteger>::Integer> for ConstMontyField<Mod, LIMBS>
+{
     #[inline(always)]
-    fn lift_to_integer(&self) -> Self::Integer {
+    fn lift(&self) -> <Self as WithAssociatedInteger>::Integer {
         Uint::new(self.0.retrieve())
     }
 }
@@ -806,7 +808,7 @@ mod tests {
 
         // Lifting to integer and projecting back yields the original element.
         for x in [F::zero(), F::one(), F::from(2_u64), F::from(123456789_u64)] {
-            assert_eq!(F::from(x.lift_to_integer()), x);
+            assert_eq!(F::from(x.lift()), x);
         }
     }
 

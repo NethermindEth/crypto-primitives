@@ -1,5 +1,5 @@
 use crate::{
-    ConstBaseField, ConstSemiring, FixedField, IntSemiring, LiftToIntegerStatic, Ring, Semiring,
+    ConstBaseField, ConstSemiring, FixedField, IntSemiring, LiftElementStatic, Ring, Semiring,
     WithAssociatedInteger, Wrapper, boolean::Boolean,
 };
 use core::{
@@ -440,9 +440,9 @@ impl WithAssociatedInteger for F2 {
     type Integer = u8;
 }
 
-impl LiftToIntegerStatic for F2 {
+impl LiftElementStatic<<Self as WithAssociatedInteger>::Integer> for F2 {
     #[inline(always)]
-    fn lift_to_integer(&self) -> Self::Integer {
+    fn lift(&self) -> <Self as WithAssociatedInteger>::Integer {
         u8::from(self.0)
     }
 }
@@ -479,7 +479,7 @@ impl zeroize::DefaultIsZeroes for F2 {}
 mod tests {
     use super::*;
     use crate::{
-        BaseFieldConfig, ConstIntRing, FieldConfigOps, FixedBaseField, FixedFieldConfig,
+        BaseFieldConfig, ConstIntRing, FieldConfig, FixedBaseField, FixedFieldConfig,
         ensure_type_implements_trait,
     };
     use alloc::format;
@@ -513,7 +513,7 @@ mod tests {
 
         // Lifting to integer and projecting back yields the original element.
         for x in [V0, V1] {
-            assert_eq!(F2::from(x.lift_to_integer()), x);
+            assert_eq!(F2::from(x.lift()), x);
         }
     }
 

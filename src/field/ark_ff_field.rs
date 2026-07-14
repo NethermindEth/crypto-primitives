@@ -492,12 +492,12 @@ where
     type Integer = BigInt<N>;
 }
 
-impl<F, const N: usize> LiftToIntegerStatic for ArkField<F>
+impl<F, const N: usize> LiftElementStatic<<Self as WithAssociatedInteger>::Integer> for ArkField<F>
 where
     F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
 {
     #[inline(always)]
-    fn lift_to_integer(&self) -> Self::Integer {
+    fn lift(&self) -> <Self as WithAssociatedInteger>::Integer {
         BigInt::new(self.0.into_bigint())
     }
 }
@@ -776,7 +776,7 @@ mod tests {
 
         // Lifting to integer and projecting back yields the original element.
         for x in [z, o, F::from(2_u64), F::from(123456789_u64)] {
-            assert_eq!(F::from(x.lift_to_integer()), x);
+            assert_eq!(F::from(x.lift()), x);
         }
     }
 

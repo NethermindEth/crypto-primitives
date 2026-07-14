@@ -1,3 +1,40 @@
+//! This module defines **fields** - sets where addition and
+//! multiplication are defined with their respective inverse operations.
+//! Supports both static and dynamic fields (via general [`FieldConfig`]).
+//!
+//! Currently, this only defines **base** (non-extension) prime fields, whose
+//! modulus is an integer, but can be seamlessly extended to support extension
+//! fields in the future as well.
+//!
+//! - [`FixedField`] and [`ConstField`] are fields where each element is
+//!   self-sufficient. Instances carry around all metadata necessary to perform
+//!   operations, so they can be used normally as e.g. `a + b`. Every
+//!   [`ConstField`] is a [`FixedField`] as well.
+//!
+//! - [`FieldConfig`] is a field configuration that carries the metadata needed
+//!   to perform operations that the elements themselves do not carry, e.g. a
+//!   modulus only available at runtime. It's used as `f.add(&a, &b)`. Bridge
+//!   between this and [`FixedField`] is [`FixedFieldConfig`].
+//!
+//! - [`WithAssociatedInteger`] is a trait that defines the associated integer
+//!   type for a field, which is used for exponents and order, as well as the
+//!   modulus for base fields.
+//!
+//! - [`LiftElementDynamic`] and [`ProjectElementDynamic`] define how to lift a
+//!   field element to a chosen type and project it back, for a general
+//!   [`FieldConfig`]; base fields lift to their associated integer type (see
+//!   [`BaseFieldConfig`]).
+//!
+//! - Lift/project counterpart for fixed fields is asymmetric - lifting is done
+//!   via [`LiftElementStatic`] (by reference, avoiding a copy of the element)
+//!   while projection is done with [`From`] (both by reference and by value),
+//!   e.g. `F::from(f.lift()) == f`.
+//!
+//! - Base field variants of fields are [`FixedBaseField`], [`ConstBaseField`]
+//!   and [`BaseFieldConfig`]. They additionally allow lifting elements to the
+//!   associated integer type (and, on the config side, projecting from it).
+//!   They also define an integer `modulus`.
+
 #[cfg(feature = "ark_ff")]
 pub mod ark_ff_field;
 #[cfg(feature = "ark_ff")]
@@ -31,8 +68,10 @@ pub const WORD_FACTOR: usize = 2;
 // FixedField (static and const)
 //
 
-/// Element of a field (F) - a group where addition and multiplication are
+/// Element of a field (F) - a set where addition and multiplication are
 /// defined with their respective inverse operations.
+///
+/// This is a general trait for all fields, base and extension.
 pub trait FixedField:
     FixedRing
     + WithAssociatedInteger
@@ -55,9 +94,13 @@ pub trait FixedField:
 {
 }
 
+/// [`FixedField`] with a bunch of values known at compile time.
+pub trait ConstField: FixedField + ConstRing {}
+impl<F: FixedField + ConstRing> ConstField for F {}
+
 /// Base (non-extension) prime field with elements being self-sufficient, but
 /// whose metadata like modulus is not necessarily known at compile-time.
-pub trait FixedBaseField: FixedField + LiftToIntegerStatic {
+pub trait FixedBaseField: FixedField + LiftElementStatic<Self::Integer> {
     fn modulus() -> Self::Integer;
 
     /// (mod - 1) / 2
@@ -66,7 +109,7 @@ pub trait FixedBaseField: FixedField + LiftToIntegerStatic {
 
 /// Base (non-extension) prime field whose modulus and other metadata are
 /// constant values known at compile time.
-pub trait ConstBaseField: FixedField + LiftToIntegerStatic + ConstRing {
+pub trait ConstBaseField: ConstField + LiftElementStatic<Self::Integer> {
     const MODULUS: Self::Integer;
 
     /// (mod - 1) / 2
@@ -118,7 +161,7 @@ macro_rules! delegate_to_ref_binary {
 // FieldConfig (both static and dynamic)
 //
 
-pub trait FieldConfigOps: WithAssociatedInteger {
+pub trait FieldConfig: WithAssociatedInteger {
     type Element: Debug + Eq + Clone + Send + Sync + 'static;
 
     fn is_zero(&self, value: &Self::Element) -> bool;
@@ -151,9 +194,7 @@ pub trait FieldConfigOps: WithAssociatedInteger {
         self.checked_div(x, y).expect("Division by zero")
     }
 
-    /// x / y
-    ///
-    /// (Note: Field operations do not overflow)
+    /// x / y, [`None`] if `y == 0`
     #[inline(always)]
     fn checked_div(&self, x: &Self::Element, y: &Self::Element) -> Option<Self::Element> {
         Some(self.mul(x, &self.inv(y)?))
@@ -256,13 +297,13 @@ pub trait FieldConfigOps: WithAssociatedInteger {
 /// Fixed/constant prime fields are considered a special case of dynamic prime
 /// fields, and the bridge struct is [`FixedFieldConfig`].
 ///
-/// For base fields (and only for them), [`Self::Integer`] additionally serves
-/// as the modulus type and the target of `LiftToInteger*`.
+/// For base fields (and only for them), [`WithAssociatedInteger::Integer`]
+/// additionally serves as the modulus type and the target of `LiftElement*`.
 pub trait BaseFieldConfig:
     Sized
-    + FieldConfigOps
-    + LiftToIntegerDynamic
-    + ProjectElement<<Self as WithAssociatedInteger>::Integer>
+    + FieldConfig
+    + LiftElementDynamic<<Self as WithAssociatedInteger>::Integer>
+    + ProjectElementDynamic<<Self as WithAssociatedInteger>::Integer>
 {
     fn new(modulus: &Self::Integer) -> Result<Self, FieldError>;
 
@@ -280,7 +321,7 @@ pub trait BaseFieldConfig:
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct FixedFieldConfig<F: FixedField>(PhantomData<F>);
 
-impl<F: FixedField> FieldConfigOps for FixedFieldConfig<F> {
+impl<F: FixedField> FieldConfig for FixedFieldConfig<F> {
     type Element = F;
 
     #[inline(always)]
@@ -360,59 +401,52 @@ impl<F: FixedField> WithAssociatedInteger for FixedFieldConfig<F> {
     type Integer = F::Integer;
 }
 
-impl<F> LiftToIntegerDynamic for FixedFieldConfig<F>
-where
-    F: FixedBaseField + LiftToIntegerStatic,
-{
+impl<F: FixedBaseField> LiftElementDynamic<F::Integer> for FixedFieldConfig<F> {
     #[inline(always)]
-    fn lift_to_integer(&self, value: &Self::Element) -> Self::Integer {
-        LiftToIntegerStatic::lift_to_integer(value)
+    fn lift(&self, value: &F) -> F::Integer {
+        LiftElementStatic::lift(value)
     }
 }
 
-impl<F> ProjectElement<F::Integer> for FixedFieldConfig<F>
-where
-    F: FixedBaseField + LiftToIntegerStatic,
-{
-    fn project(&self, value: &F::Integer) -> Self::Element {
+impl<F: FixedBaseField> ProjectElementDynamic<F::Integer> for FixedFieldConfig<F> {
+    #[inline(always)]
+    fn project(&self, value: &F::Integer) -> F {
         F::from(value)
     }
 }
 
 //
-// WithAssociatedInteger/LiftToInteger
+// WithAssociatedInteger
 //
 
 pub trait WithAssociatedInteger {
     /// The exponent/order domain of this field: an integer semiring type wide
     /// enough to hold the exponents the field cares about (up to its order).
-    ///
-    ///
-    /// Note: this type is deliberately NOT the "modulus/lift" type in general
-    /// (an extension field would lift to a polynomial, not to an integer).
-    /// Only for base (prime) fields do the two coincide, as guaranteed by
-    /// [`BaseFieldConfig`] and the `LiftToInteger*` traits.
     type Integer: Semiring;
 }
 
-/// Lifts the structure element to an associated integer, applicable for fixed
-/// fields where this can be done on the element itself.
-pub trait LiftToIntegerStatic: WithAssociatedInteger {
-    /// Lift the field element to integer semiring using a natural approach.
+//
+// LiftElement
+//
+
+/// Lifts the field element to a specified type, applicable for fixed fields
+/// where this can be done on the element itself.
+pub trait LiftElementStatic<T> {
+    /// Lift the field element to a specified type using a natural approach.
     ///
-    /// Can be projected back to the field using
-    /// [`ProjectElement::project`] to get the same field element.
-    fn lift_to_integer(&self) -> Self::Integer;
+    /// Can be projected back to the field using [`From`] to get the same
+    /// field element.
+    fn lift(&self) -> T;
 }
 
-/// Lifts the structure element to an associated integer, applicable for
-/// general/dynamic fields where this requres [`BaseFieldConfig`] to work.
-pub trait LiftToIntegerDynamic: WithAssociatedInteger + FieldConfigOps {
-    /// Lift the field element to integer semiring using a natural approach.
+/// Lifts the field element to a specified type, applicable for
+/// general/dynamic fields where this requires a [`FieldConfig`] to work.
+pub trait LiftElementDynamic<T>: FieldConfig {
+    /// Lift the field element to a specified type using a natural approach.
     ///
     /// Can be projected back to the field using
-    /// [`ProjectElement::project`] to get the same field element.
-    fn lift_to_integer(&self, value: &Self::Element) -> Self::Integer;
+    /// [`ProjectElementDynamic::project`] to get the same field element.
+    fn lift(&self, value: &Self::Element) -> T;
 }
 
 //
@@ -420,14 +454,16 @@ pub trait LiftToIntegerDynamic: WithAssociatedInteger + FieldConfigOps {
 //
 
 /// Converts a given value to a field element of a current field.
-pub trait ProjectElement<T>: FieldConfigOps {
+///
+/// Static counterpart of this trait is just [`From`].
+pub trait ProjectElementDynamic<T>: FieldConfig {
     fn project(&self, value: &T) -> Self::Element;
 }
 
 /// Trivial implementation for fixed fields and types that implement `From<T>`.
-impl<F, T> ProjectElement<T> for F
+impl<F, T> ProjectElementDynamic<T> for F
 where
-    F: FieldConfigOps + FixedBaseField,
+    F: FieldConfig + FixedBaseField,
     F::Element: for<'a> From<&'a T>,
 {
     fn project(&self, value: &T) -> F::Element {
@@ -438,33 +474,33 @@ where
 /// The trait combines all `ProjectElement<u*>` and `ProjectElement<i*>` into
 /// one umbrella trait. Handy when one needs conversion functions for different
 /// primitive int types.
-pub trait ProjectPrimitiveIntegers:
-    ProjectElement<u8>
-    + ProjectElement<u16>
-    + ProjectElement<u32>
-    + ProjectElement<u64>
-    + ProjectElement<u128>
-    + ProjectElement<i8>
-    + ProjectElement<i16>
-    + ProjectElement<i32>
-    + ProjectElement<i64>
-    + ProjectElement<i128>
+pub trait ProjectPrimitiveIntegersDynamic:
+    ProjectElementDynamic<u8>
+    + ProjectElementDynamic<u16>
+    + ProjectElementDynamic<u32>
+    + ProjectElementDynamic<u64>
+    + ProjectElementDynamic<u128>
+    + ProjectElementDynamic<i8>
+    + ProjectElementDynamic<i16>
+    + ProjectElementDynamic<i32>
+    + ProjectElementDynamic<i64>
+    + ProjectElementDynamic<i128>
 {
 }
 
 /// Blanket implementation.
 impl<
-    T: ProjectElement<u8>
-        + ProjectElement<u16>
-        + ProjectElement<u32>
-        + ProjectElement<u64>
-        + ProjectElement<u128>
-        + ProjectElement<i8>
-        + ProjectElement<i16>
-        + ProjectElement<i32>
-        + ProjectElement<i64>
-        + ProjectElement<i128>,
-> ProjectPrimitiveIntegers for T
+    T: ProjectElementDynamic<u8>
+        + ProjectElementDynamic<u16>
+        + ProjectElementDynamic<u32>
+        + ProjectElementDynamic<u64>
+        + ProjectElementDynamic<u128>
+        + ProjectElementDynamic<i8>
+        + ProjectElementDynamic<i16>
+        + ProjectElementDynamic<i32>
+        + ProjectElementDynamic<i64>
+        + ProjectElementDynamic<i128>,
+> ProjectPrimitiveIntegersDynamic for T
 {
 }
 

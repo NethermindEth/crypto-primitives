@@ -106,7 +106,7 @@ impl<const LIMBS: usize> Display for MontyField<LIMBS> {
 // Field operations
 //
 
-impl<const LIMBS: usize> FieldConfigOps for MontyField<LIMBS> {
+impl<const LIMBS: usize> FieldConfig for MontyField<LIMBS> {
     type Element = MontyFieldElement<LIMBS>;
 
     fn is_zero(&self, value: &Self::Element) -> bool {
@@ -198,7 +198,7 @@ impl<const LIMBS: usize> FieldConfigOps for MontyField<LIMBS> {
 macro_rules! impl_from_unsigned {
     ($($t:ty),* $(,)?) => {
         $(
-            impl<const LIMBS: usize> ProjectElement<$t> for MontyField<LIMBS> {
+            impl<const LIMBS: usize> ProjectElementDynamic<$t> for MontyField<LIMBS> {
                 fn project(&self, value: &$t) -> Self::Element {
                     let abs: crypto_bigint::Uint<LIMBS> = (*value).into();
                     self.project(&Uint::new(abs))
@@ -211,7 +211,7 @@ macro_rules! impl_from_unsigned {
 macro_rules! impl_from_signed {
     ($($t:ty),* $(,)?) => {
         $(
-            impl<const LIMBS: usize> ProjectElement<$t> for MontyField<LIMBS> {
+            impl<const LIMBS: usize> ProjectElementDynamic<$t> for MontyField<LIMBS> {
                 fn project(&self, value: &$t) -> Self::Element {
                     let magnitude: crypto_bigint::Uint<LIMBS> = value.abs_diff(0).into();
                     let magnitude = self.project(&Uint::new(magnitude));
@@ -225,20 +225,22 @@ macro_rules! impl_from_signed {
 impl_from_unsigned!(u8, u16, u32, u64, u128);
 impl_from_signed!(i8, i16, i32, i64, i128);
 
-impl<const LIMBS: usize> ProjectElement<bool> for MontyField<LIMBS> {
+impl<const LIMBS: usize> ProjectElementDynamic<bool> for MontyField<LIMBS> {
     fn project(&self, value: &bool) -> Self::Element {
         if *value { self.one() } else { self.zero() }
     }
 }
 
-impl<const LIMBS: usize> ProjectElement<Boolean> for MontyField<LIMBS> {
+impl<const LIMBS: usize> ProjectElementDynamic<Boolean> for MontyField<LIMBS> {
     #[inline(always)]
     fn project(&self, value: &Boolean) -> Self::Element {
         self.project(value.inner())
     }
 }
 
-impl<const LIMBS: usize, const LIMBS2: usize> ProjectElement<Int<LIMBS2>> for MontyField<LIMBS> {
+impl<const LIMBS: usize, const LIMBS2: usize> ProjectElementDynamic<Int<LIMBS2>>
+    for MontyField<LIMBS>
+{
     fn project(&self, value: &Int<LIMBS2>) -> Self::Element {
         let abs = self.project(&Uint::new(value.inner().abs()));
         if value.is_negative() {
@@ -249,7 +251,9 @@ impl<const LIMBS: usize, const LIMBS2: usize> ProjectElement<Int<LIMBS2>> for Mo
     }
 }
 
-impl<const LIMBS: usize, const LIMBS2: usize> ProjectElement<Uint<LIMBS2>> for MontyField<LIMBS> {
+impl<const LIMBS: usize, const LIMBS2: usize> ProjectElementDynamic<Uint<LIMBS2>>
+    for MontyField<LIMBS>
+{
     /// Convert the given integer into the Montgomery domain.
     fn project(&self, value: &Uint<LIMBS2>) -> Self::Element {
         let value: crypto_bigint::Uint<LIMBS> = if LIMBS >= LIMBS2 {
@@ -302,11 +306,13 @@ impl<const LIMBS: usize> WithAssociatedInteger for MontyField<LIMBS> {
     type Integer = Uint<LIMBS>;
 }
 
-impl<const LIMBS: usize> LiftToIntegerDynamic for MontyField<LIMBS> {
+impl<const LIMBS: usize> LiftElementDynamic<<Self as WithAssociatedInteger>::Integer>
+    for MontyField<LIMBS>
+{
     /// Retrieves the integer currently encoded in this [`MontyField`],
     /// guaranteed to be reduced.
     #[inline(always)]
-    fn lift_to_integer(&self, value: &Self::Element) -> Self::Integer {
+    fn lift(&self, value: &Self::Element) -> Self::Integer {
         let mut out = crypto_bigint::Uint::<LIMBS>::ZERO;
         crypto_bigint_helpers::monty_retrieve_inner(
             value.0.inner().as_limbs(),
@@ -407,7 +413,7 @@ mod tests {
             f.project(&2_u64),
             f.project(&123456789_u64),
         ] {
-            assert_eq!(f.project(&f.lift_to_integer(&x)), x);
+            assert_eq!(f.project(&f.lift(&x)), x);
         }
     }
 

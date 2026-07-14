@@ -545,9 +545,11 @@ impl<P: FpConfig<N>, const N: usize> WithAssociatedInteger for Fp<P, N> {
     type Integer = BigInt<N>;
 }
 
-impl<P: FpConfig<N>, const N: usize> LiftToIntegerStatic for Fp<P, N> {
+impl<P: FpConfig<N>, const N: usize> LiftElementStatic<<Self as WithAssociatedInteger>::Integer>
+    for Fp<P, N>
+{
     #[inline(always)]
-    fn lift_to_integer(&self) -> Self::Integer {
+    fn lift(&self) -> <Self as WithAssociatedInteger>::Integer {
         BigInt::new(self.0.into_bigint())
     }
 }
@@ -747,7 +749,7 @@ impl<P: FpConfig<N>, const N: usize> ArkPrimeField for Fp<P, N> {
     }
 
     fn into_bigint(self) -> Self::BigInt {
-        self.lift_to_integer()
+        self.lift()
     }
 }
 
@@ -810,7 +812,7 @@ mod tests {
 
         // Lifting to integer and projecting back yields the original element.
         for x in [z, o, F::from(2_u64), F::from(123456789_u64)] {
-            assert_eq!(F::from(x.lift_to_integer()), x);
+            assert_eq!(F::from(x.lift()), x);
         }
     }
 

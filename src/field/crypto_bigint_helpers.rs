@@ -36,7 +36,7 @@ pub const fn monty_retrieve_inner(
 /// cache-friendly than the FIOS method used in crypto-bigint.
 /// Based on the implementation described in the Section 5 of the paper
 /// "Analyzing and comparing Montgomery multiplication algorithms" with some
-/// slight tweaks: https://www.microsoft.com/en-us/research/wp-content/uploads/1996/01/j37acmon.pdf
+/// slight tweaks: <https://www.microsoft.com/en-us/research/wp-content/uploads/1996/01/j37acmon.pdf>
 pub mod mul {
     use crypto_bigint::{Limb, Uint, WideWord, Word};
     use num_traits::ConstZero;

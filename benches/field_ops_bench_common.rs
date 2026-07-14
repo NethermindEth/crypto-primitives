@@ -1,9 +1,9 @@
 use std::hint::black_box;
 
 use criterion::{AxisScale, BenchmarkId, Criterion, PlotConfiguration};
-use crypto_primitives::BaseFieldConfig;
+use crypto_primitives::FieldConfig;
 
-fn bench_random_field<C: BaseFieldConfig>(
+fn bench_random_field<C: FieldConfig>(
     group: &mut criterion::BenchmarkGroup<criterion::measurement::WallTime>,
     num: u64,
     config: &C,
@@ -107,7 +107,7 @@ fn bench_random_field<C: BaseFieldConfig>(
     });
 }
 
-pub fn field_benchmarks<C: BaseFieldConfig>(
+pub fn field_benchmarks<C: FieldConfig>(
     c: &mut Criterion,
     name: &str,
     config: &C,
