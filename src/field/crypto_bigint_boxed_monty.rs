@@ -162,7 +162,7 @@ impl FieldConfigOps for BoxedMontyField {
 
         let r2 = BoxedUint::new_ref(self.params.as_ref().r2()).into();
         let x_inv = self.mul(&inverted, r2);
-        Some(self.mul(&x_inv, r2).into())
+        Some(self.mul(&x_inv, r2))
     }
 
     /// Montgomery multiplication `x*y/R mod m`, fully reduced.
@@ -183,9 +183,10 @@ impl FieldConfigOps for BoxedMontyField {
     }
 
     fn pow(&self, x: &Self::Element, y: &Self::Integer) -> Self::Element {
-        crypto_bigint_helpers::pow::pow(
+        crypto_bigint_helpers::pow::pow_bounded_exp(
             &x.0,
             y.as_limbs(),
+            y.bits_precision(),
             BoxedUint::new(self.params.as_ref().one().clone()),
             BoxedUint::new_ref(self.params.modulus().as_ref()),
             self.params.as_ref().mod_neg_inv(),

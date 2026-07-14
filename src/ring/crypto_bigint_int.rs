@@ -777,7 +777,7 @@ impl<const LIMBS: usize> crypto_bigint::Constants for Int<LIMBS> {
 // Predefined ints of various sizes for convenience
 //
 
-pub type I64 = Int<{ 1 * WORD_FACTOR }>;
+pub type I64 = Int<{ WORD_FACTOR }>;
 pub type I128 = Int<{ 2 * WORD_FACTOR }>;
 pub type I192 = Int<{ 3 * WORD_FACTOR }>;
 pub type I256 = Int<{ 4 * WORD_FACTOR }>;

@@ -2,7 +2,7 @@ use super::*;
 use crate::{IntRing, Wrapper, boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint};
 use core::fmt::{Display, Formatter, Result as FmtResult};
 use crypto_bigint::{
-    NonZero, Odd, One,
+    BitOps, NonZero, Odd, One,
     modular::{FixedMontyForm, FixedMontyParams},
 };
 
@@ -160,9 +160,10 @@ impl<const LIMBS: usize> FieldConfigOps for MontyField<LIMBS> {
     }
 
     fn pow(&self, x: &Self::Element, y: &Self::Integer) -> Self::Element {
-        crypto_bigint_helpers::pow::pow(
+        crypto_bigint_helpers::pow::pow_bounded_exp(
             x.0.inner(),
             y.inner().as_limbs(),
+            y.inner().bits_precision(),
             *self.params.one(),
             self.params.modulus().as_ref(),
             self.params.mod_neg_inv(),

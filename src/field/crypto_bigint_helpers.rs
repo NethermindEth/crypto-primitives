@@ -1,3 +1,5 @@
+#![allow(clippy::arithmetic_side_effects, clippy::needless_range_loop)]
+
 use crypto_bigint::Limb;
 
 /// Copy-paste from `crypto-bigint`
@@ -228,7 +230,7 @@ pub mod pow {
     /// `exponent_bits` represents the length of the exponent in bits.
     ///
     /// NOTE: `exponent_bits` is leaked in the time pattern.
-    pub fn pow_montgomery_form_amm<'a, U>(
+    pub fn pow_montgomery_form_amm<U>(
         x: &U,
         exponent: &[Limb],
         exponent_bits: u32,
@@ -308,27 +310,12 @@ pub mod pow {
 
     /// Raise `x` (in Montgomery form) to a `u32` exponent, returning a fully
     /// reduced result in Montgomery form.
-    ///
-    /// Wraps [`pow_montgomery_form_amm`] with the AMM closures and the scratch
-    /// buffers they need (mirroring `BoxedMontyMultiplier`'s reusable product
-    /// buffer; one per closure so the mutable borrows stay disjoint).
     pub fn pow_u32<U>(x: &U, exponent: u32, one: U, modulus: &U, mod_neg_inv: Limb) -> U
     where
         U: AsRef<UintRef> + AsMut<UintRef> + Clone,
     {
         let exponent = [Limb(Word::from(exponent)); 1];
         pow_bounded_exp(x, &exponent, u32::BITS, one, modulus, mod_neg_inv)
-    }
-
-    /// Raise `x` (in Montgomery form) to an exponent, returning a fully
-    /// reduced result in Montgomery form.
-    pub fn pow<U>(x: &U, exponent: &[Limb], one: U, modulus: &U, mod_neg_inv: Limb) -> U
-    where
-        U: AsRef<UintRef> + AsMut<UintRef> + Clone,
-    {
-        #[allow(clippy::cast_possible_truncation)] // Limb count fits in u32
-        let exponent_bits = exponent.len() as u32 * Limb::BITS;
-        pow_bounded_exp(x, exponent, exponent_bits, one, modulus, mod_neg_inv)
     }
 
     /// Raise `x` (in Montgomery form) to the `exponent_bits` least significant

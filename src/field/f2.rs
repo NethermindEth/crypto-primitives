@@ -1,6 +1,6 @@
 use crate::{
-    ConstBaseField, ConstRing, ConstSemiring, FixedField, FixedRing, IntRing, IntSemiring,
-    LiftToIntegerStatic, Ring, Semiring, WithAssociatedInteger, Wrapper, boolean::Boolean,
+    ConstBaseField, ConstSemiring, FixedField, IntSemiring, LiftToIntegerStatic, Ring, Semiring,
+    WithAssociatedInteger, Wrapper, boolean::Boolean,
 };
 use core::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},

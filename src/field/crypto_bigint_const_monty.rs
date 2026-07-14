@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    IntRing, IntSemiring, Semiring, Wrapper, boolean::Boolean, crypto_bigint_int::Int,
+    IntSemiring, Semiring, Wrapper, boolean::Boolean, crypto_bigint_int::Int,
     crypto_bigint_uint::Uint,
 };
 use core::{

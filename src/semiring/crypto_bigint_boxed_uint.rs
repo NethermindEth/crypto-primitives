@@ -175,7 +175,7 @@ impl BoxedUint {
     }
 
     /// See [`crypto_bigint::BoxedUint::conditional_wrapping_neg_assign`]
-    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_possible_truncation, clippy::arithmetic_side_effects)]
     pub fn conditional_wrapping_neg_assign(&mut self, choice: crypto_bigint::Choice) {
         use crypto_bigint::CtAssign;
         let mut carry = 1;
@@ -189,11 +189,13 @@ impl BoxedUint {
 
     /// See [`crypto_bigint::BoxedUint::borrowing_sub_assign`]
     #[inline(always)]
+    #[allow(clippy::needless_range_loop)]
     pub fn borrowing_sub_assign(&mut self, rhs: &[Limb], borrow: Limb) -> Limb {
         assert!(rhs.len() <= self.nlimbs());
 
         let mut carry = borrow;
         let self_limbs = self.as_mut_limbs();
+
         for i in 0..self_limbs.len() {
             let &b = rhs.get(i).unwrap_or(&Limb::ZERO);
             (self_limbs[i], carry) = Limb::borrowing_sub(self_limbs[i], b, carry);
@@ -215,7 +217,7 @@ impl BoxedUint {
         // borrow = 0x000...000. Thus, we use it as a mask to conditionally add the
         // modulus.
         let _ = UintRef::new_mut(self.as_mut_limbs())
-            .conditional_add_assign(UintRef::new(rhs.as_limbs()), Limb::ZERO, !mask.is_zero())
+            .conditional_add_assign(UintRef::new(p.as_limbs()), Limb::ZERO, !mask.is_zero())
             .lsb_to_choice();
     }
 }

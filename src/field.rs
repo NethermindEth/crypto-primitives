@@ -12,9 +12,7 @@ pub(crate) mod crypto_bigint_helpers;
 pub mod crypto_bigint_monty;
 pub mod f2;
 
-use crate::{
-    ConstRing, ConstSemiring, FixedRing, FixedSemiring, IntRing, IntSemiring, Semiring, ring::Ring,
-};
+use crate::{ConstRing, ConstSemiring, FixedRing, IntRing, IntSemiring, Semiring, ring::Ring};
 use core::{
     fmt::Debug,
     marker::PhantomData,

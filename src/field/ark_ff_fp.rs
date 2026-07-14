@@ -1,5 +1,5 @@
 use super::*;
-use crate::{IntRing, IntSemiring, Semiring, Wrapper, boolean::Boolean};
+use crate::{IntSemiring, Semiring, Wrapper, boolean::Boolean};
 use ark_ff::{
     AdditiveGroup, BigInteger, FftField, FpConfig, LegendreSymbol, MontBackend, MontConfig,
     SqrtPrecomputation,

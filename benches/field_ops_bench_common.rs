@@ -1,183 +1,76 @@
-#![allow(non_local_definitions)]
-#![allow(clippy::eq_op)]
+use std::hint::black_box;
 
-use std::{
-    hint::black_box,
-    iter::{Product, Sum},
-    ops::{Add, Div, Mul},
-};
+use criterion::{AxisScale, BenchmarkId, Criterion, PlotConfiguration};
+use crypto_primitives::FieldConfig;
 
-use criterion::{AxisScale, BatchSize, BenchmarkId, Criterion, PlotConfiguration};
-use crypto_primitives::{FromPrimitiveWithConfig, PrimeField};
-
-fn bench_random_field<F>(
+fn bench_random_field<C: FieldConfig>(
     group: &mut criterion::BenchmarkGroup<criterion::measurement::WallTime>,
     num: u64,
-    config: &F::Config,
-) where
-    for<'a> &'a F: Add<&'a F> + Mul<&'a F> + Div<&'a F>,
-    F: PrimeField + FromPrimitiveWithConfig + for<'a> Sum<&'a F> + for<'a> Product<&'a F>,
-{
-    let field_elem = F::from_with_cfg(num, config);
-    let param = format!("Param = {}", num);
-
-    group.bench_with_input(
-        BenchmarkId::new("Mul owned by owned", &param),
-        &field_elem,
-        |b, unop_elem| {
-            b.iter_batched(
-                || {
-                    (
-                        vec![unop_elem.clone(); 10000],
-                        vec![unop_elem.clone(); 10000],
-                    )
-                },
-                |(lhs, rhs)| {
-                    for (lhs, rhs) in lhs.into_iter().zip(rhs) {
-                        let _ = black_box(lhs * rhs);
-                    }
-                },
-                BatchSize::SmallInput,
-            );
-        },
-    );
-
-    group.bench_with_input(
-        BenchmarkId::new("Mul owned by ref", &param),
-        &field_elem,
-        |b, unop_elem| {
-            b.iter_batched(
-                || {
-                    (
-                        vec![unop_elem.clone(); 10000],
-                        vec![unop_elem.clone(); 10000],
-                    )
-                },
-                |(lhs, rhs)| {
-                    for (lhs, rhs) in lhs.into_iter().zip(rhs) {
-                        let _ = black_box(lhs * &rhs);
-                    }
-                },
-                BatchSize::SmallInput,
-            );
-        },
-    );
+    config: &C,
+    project: &impl Fn(&C, u64) -> C::Element,
+) {
+    let field_elem = project(config, num);
+    let param = format!("Param = {num}");
 
     group.bench_with_input(
         BenchmarkId::new("Mul ref by ref", &param),
         &field_elem,
-        |b, unop_elem| {
+        |b, elem| {
             b.iter(|| {
                 for _ in 0..10000 {
-                    let _ = black_box(unop_elem * unop_elem);
+                    let _ = black_box(config.mul(elem, elem));
                 }
             });
         },
     );
 
     group.bench_with_input(
-        BenchmarkId::new("Add owned to owned", &param),
+        BenchmarkId::new("Mul assign", &param),
         &field_elem,
-        |b, unop_elem| {
-            b.iter_batched(
-                || {
-                    (
-                        vec![unop_elem.clone(); 10000],
-                        vec![unop_elem.clone(); 10000],
-                    )
-                },
-                |(lhs, rhs)| {
-                    for (lhs, rhs) in lhs.into_iter().zip(rhs) {
-                        let _ = black_box(lhs + rhs);
-                    }
-                },
-                BatchSize::SmallInput,
-            );
-        },
-    );
-
-    group.bench_with_input(
-        BenchmarkId::new("Add owned to ref", &param),
-        &field_elem,
-        |b, unop_elem| {
-            b.iter_batched(
-                || {
-                    (
-                        vec![unop_elem.clone(); 10000],
-                        vec![unop_elem.clone(); 10000],
-                    )
-                },
-                |(lhs, rhs)| {
-                    for (lhs, rhs) in lhs.into_iter().zip(rhs) {
-                        let _ = black_box(lhs + &rhs);
-                    }
-                },
-                BatchSize::SmallInput,
-            );
+        |b, elem| {
+            b.iter(|| {
+                let mut acc = elem.clone();
+                for _ in 0..10000 {
+                    config.mul_assign(&mut acc, elem);
+                }
+                black_box(acc)
+            });
         },
     );
 
     group.bench_with_input(
         BenchmarkId::new("Add ref to ref", &param),
         &field_elem,
-        |b, unop_elem| {
+        |b, elem| {
             b.iter(|| {
                 for _ in 0..10000 {
-                    let _ = black_box(unop_elem + unop_elem);
+                    let _ = black_box(config.add(elem, elem));
                 }
             });
         },
     );
 
     group.bench_with_input(
-        BenchmarkId::new("Div owned by owned", &param),
+        BenchmarkId::new("Add assign", &param),
         &field_elem,
-        |b, unop_elem| {
-            b.iter_batched(
-                || {
-                    (
-                        vec![unop_elem.clone(); 10000],
-                        vec![unop_elem.clone(); 10000],
-                    )
-                },
-                |(lhs, rhs)| {
-                    for (lhs, rhs) in lhs.into_iter().zip(rhs) {
-                        let _ = black_box(lhs / rhs);
-                    }
-                },
-                BatchSize::SmallInput,
-            );
-        },
-    );
-
-    group.bench_with_input(
-        BenchmarkId::new("Div owned by ref", &param),
-        &field_elem,
-        |b, unop_elem| {
-            b.iter_batched(
-                || {
-                    (
-                        vec![unop_elem.clone(); 10000],
-                        vec![unop_elem.clone(); 10000],
-                    )
-                },
-                |(lhs, rhs)| {
-                    for (lhs, rhs) in lhs.into_iter().zip(rhs) {
-                        let _ = black_box(lhs / &rhs);
-                    }
-                },
-                BatchSize::SmallInput,
-            );
+        |b, elem| {
+            b.iter(|| {
+                let mut acc = elem.clone();
+                for _ in 0..10000 {
+                    config.add_assign(&mut acc, elem);
+                }
+                black_box(acc)
+            });
         },
     );
 
     group.bench_with_input(
         BenchmarkId::new("Div ref by ref", &param),
         &field_elem,
-        |b, unop_elem| {
+        |b, elem| {
             b.iter(|| {
                 for _ in 0..10000 {
-                    let _ = black_box(unop_elem / unop_elem);
+                    let _ = black_box(config.div(elem, elem));
                 }
             });
         },
@@ -186,16 +79,12 @@ fn bench_random_field<F>(
     group.bench_with_input(
         BenchmarkId::new("Negation", &param),
         &field_elem,
-        |b, unop_elem| {
-            b.iter_batched(
-                || vec![unop_elem.clone(); 10000],
-                |unop_elem| {
-                    for x in unop_elem.into_iter() {
-                        let _ = black_box(-x);
-                    }
-                },
-                BatchSize::SmallInput,
-            );
+        |b, elem| {
+            b.iter(|| {
+                for _ in 0..10000 {
+                    let _ = black_box(config.neg(elem));
+                }
+            });
         },
     );
 
@@ -204,7 +93,7 @@ fn bench_random_field<F>(
     group.bench_with_input(BenchmarkId::new("Sum", &param), &v, |b, v| {
         b.iter(|| {
             for _ in 0..10000 {
-                let _ = black_box(F::sum(v.iter()));
+                let _ = black_box(config.sum_refs(v.iter()));
             }
         });
     });
@@ -212,25 +101,26 @@ fn bench_random_field<F>(
     group.bench_with_input(BenchmarkId::new("Product", &param), &v, |b, v| {
         b.iter(|| {
             for _ in 0..10000 {
-                let _ = black_box(F::product(v.iter()));
+                let _ = black_box(config.product_refs(v.iter()));
             }
         });
     });
 }
 
-pub fn field_benchmarks<F>(c: &mut Criterion, name: &str, config: &F::Config)
-where
-    for<'a> &'a F: Add<&'a F> + Mul<&'a F> + Div<&'a F>,
-    F: PrimeField + FromPrimitiveWithConfig + for<'a> Sum<&'a F> + for<'a> Product<&'a F>,
-{
+pub fn field_benchmarks<C: FieldConfig>(
+    c: &mut Criterion,
+    name: &str,
+    config: &C,
+    project: impl Fn(&C, u64) -> C::Element,
+) {
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
 
     let mut group = c.benchmark_group(name);
     group.plot_config(plot_config);
 
-    bench_random_field::<F>(&mut group, 695962179703_u64, config);
-    bench_random_field::<F>(&mut group, 2345695962179703_u64, config);
-    bench_random_field::<F>(&mut group, 111111111111111111_u64, config);
-    bench_random_field::<F>(&mut group, 12345678124578658568_u64, config);
+    bench_random_field(&mut group, 695962179703_u64, config, &project);
+    bench_random_field(&mut group, 2345695962179703_u64, config, &project);
+    bench_random_field(&mut group, 111111111111111111_u64, config, &project);
+    bench_random_field(&mut group, 12345678124578658568_u64, config, &project);
     group.finish();
 }
