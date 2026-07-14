@@ -60,6 +60,7 @@ pub trait FixedField:
 pub trait FixedBaseField: FixedField + LiftToIntegerStatic {
     fn modulus() -> Self::Integer;
 
+    /// (mod - 1) / 2
     fn modulus_minus_one_div_two() -> Self::Integer;
 }
 
@@ -67,6 +68,8 @@ pub trait FixedBaseField: FixedField + LiftToIntegerStatic {
 /// constant values known at compile time.
 pub trait ConstBaseField: FixedField + LiftToIntegerStatic + ConstRing {
     const MODULUS: Self::Integer;
+
+    /// (mod - 1) / 2
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Integer;
 }
 
@@ -248,32 +251,36 @@ pub trait FieldConfigOps: WithAssociatedInteger {
 /// Prime modulus might be dynamic and can be determined at runtime.
 ///
 /// When performing arithmetic operations, the modulus of both operands must be
-/// the same, otherwise operations should panic in debug mode.
+/// the same, otherwise outcome is undefined.
 ///
-/// Constant prime fields are considered a special case of dynamic prime fields.
-pub trait FieldConfig:
+/// Fixed/constant prime fields are considered a special case of dynamic prime
+/// fields, and the bridge struct is [`FixedFieldConfig`].
+///
+/// For base fields (and only for them), [`Self::Integer`] additionally serves
+/// as the modulus type and the target of `LiftToInteger*`.
+pub trait BaseFieldConfig:
     Sized
-    + WithAssociatedInteger
     + FieldConfigOps
+    + LiftToIntegerDynamic
     + ProjectElement<<Self as WithAssociatedInteger>::Integer>
 {
     fn new(modulus: &Self::Integer) -> Result<Self, FieldError>;
 
     fn modulus(&self) -> Self::Integer;
 
+    /// (mod - 1) / 2
     fn modulus_minus_one_div_two(&self) -> Self::Integer;
 }
 
-/// [`FieldConfig`] implementation for fixed fields.
+/// [`BaseFieldConfig`] implementation for fixed fields.
 /// It delegates operations to the field, and `new` checks if the modulus
 /// matches the static one.
-#[derive(Clone, Copy, Default, Debug)]
-pub struct FixedFieldConfig<F: FixedBaseField>(PhantomData<F>);
+///
+/// Use [`Default::default`] to get a usable instance.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct FixedFieldConfig<F: FixedField>(PhantomData<F>);
 
-impl<F> FieldConfigOps for FixedFieldConfig<F>
-where
-    F: FixedBaseField + LiftToIntegerStatic,
-{
+impl<F: FixedField> FieldConfigOps for FixedFieldConfig<F> {
     type Element = F;
 
     #[inline(always)]
@@ -327,10 +334,9 @@ where
     }
 }
 
-impl<F> FieldConfig for FixedFieldConfig<F>
-where
-    F: FixedBaseField + LiftToIntegerStatic,
-{
+impl<F: FixedBaseField> BaseFieldConfig for FixedFieldConfig<F> {
+    /// Usually it makes more sense to use [`Default::default`] to obtain an
+    /// instance instead.
     fn new(modulus: &Self::Integer) -> Result<Self, FieldError> {
         if *modulus == F::modulus() {
             Ok(Self::default())
@@ -350,7 +356,7 @@ where
     }
 }
 
-impl<F: FixedBaseField> WithAssociatedInteger for FixedFieldConfig<F> {
+impl<F: FixedField> WithAssociatedInteger for FixedFieldConfig<F> {
     type Integer = F::Integer;
 }
 
@@ -374,29 +380,38 @@ where
 }
 
 //
-// LiftToInteger
+// WithAssociatedInteger/LiftToInteger
 //
 
 pub trait WithAssociatedInteger {
-    /// A semiring integer type that's used to represent the value of this field
-    /// when lifted to integers. Also used to represent modulus in prime
-    /// fields.
+    /// The exponent/order domain of this field: an integer semiring type wide
+    /// enough to hold the exponents the field cares about (up to its order).
+    ///
+    ///
+    /// Note: this type is deliberately NOT the "modulus/lift" type in general
+    /// (an extension field would lift to a polynomial, not to an integer).
+    /// Only for base (prime) fields do the two coincide, as guaranteed by
+    /// [`BaseFieldConfig`] and the `LiftToInteger*` traits.
     type Integer: Semiring;
 }
 
+/// Lifts the structure element to an associated integer, applicable for fixed
+/// fields where this can be done on the element itself.
 pub trait LiftToIntegerStatic: WithAssociatedInteger {
     /// Lift the field element to integer semiring using a natural approach.
     ///
     /// Can be projected back to the field using
-    /// [`ProjectElement::encode`] to get the same field element.
+    /// [`ProjectElement::project`] to get the same field element.
     fn lift_to_integer(&self) -> Self::Integer;
 }
 
+/// Lifts the structure element to an associated integer, applicable for
+/// general/dynamic fields where this requres [`BaseFieldConfig`] to work.
 pub trait LiftToIntegerDynamic: WithAssociatedInteger + FieldConfigOps {
     /// Lift the field element to integer semiring using a natural approach.
     ///
     /// Can be projected back to the field using
-    /// [`FromWithConfig::from_with_cfg`] to get the same field element.
+    /// [`ProjectElement::project`] to get the same field element.
     fn lift_to_integer(&self, value: &Self::Element) -> Self::Integer;
 }
 

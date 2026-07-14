@@ -2,14 +2,14 @@ use super::*;
 use crate::{IntRing, Wrapper, boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint};
 use core::fmt::{Display, Formatter, Result as FmtResult};
 use crypto_bigint::{
-    BitOps, NonZero, Odd, One,
+    BitOps, Limb, NonZero, Odd, Word,
     modular::{FixedMontyForm, FixedMontyParams},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(transparent)]
 pub struct MontyField<const LIMBS: usize> {
     pub params: FixedMontyParams<LIMBS>,
+    pub modulus_minus_one_div_two: Uint<LIMBS>,
 }
 
 impl<const LIMBS: usize> MontyField<LIMBS> {
@@ -17,18 +17,23 @@ impl<const LIMBS: usize> MontyField<LIMBS> {
 
     /// Creates a new [`MontyField`] from [`FixedMontyParams`].
     #[inline(always)]
+    #[allow(clippy::arithmetic_side_effects)] // False alert
     pub const fn wrap(params: FixedMontyParams<LIMBS>) -> Self {
-        Self { params }
+        let modulus = params.modulus().get_copy();
+        let two = crypto_bigint::Uint::<LIMBS>::from_u8(2_u8)
+            .to_nz()
+            .to_inner_unchecked();
+        let (tmp, _) = modulus.borrowing_sub(&crypto_bigint::Uint::ONE, Limb(0_u8 as Word));
+        let modulus_minus_one_div_two = Uint::new(tmp.div_exact(&two).to_inner_unchecked());
+        Self {
+            params,
+            modulus_minus_one_div_two,
+        }
     }
 
     /// Unwrap the [`FixedMontyForm`] into a field config and a field element.
     pub const fn unwrap_monty(el: FixedMontyForm<LIMBS>) -> (Self, Uint<LIMBS>) {
-        (
-            Self {
-                params: *el.params(),
-            },
-            Uint::new(el.to_montgomery()),
-        )
+        (Self::wrap(*el.params()), Uint::new(el.to_montgomery()))
     }
 
     /// Reassemble the `crypto-bigint`'s [`FixedMontyForm`] from a raw
@@ -274,27 +279,22 @@ impl<const LIMBS: usize, const LIMBS2: usize> ProjectElement<Uint<LIMBS2>> for M
 // Field stuff
 //
 
-impl<const LIMBS: usize> FieldConfig for MontyField<LIMBS> {
+impl<const LIMBS: usize> BaseFieldConfig for MontyField<LIMBS> {
     fn new(modulus: &Self::Integer) -> Result<Self, FieldError> {
         let Some(modulus) = Odd::new(*modulus.inner()).into_option() else {
             return Err(FieldError::InvalidModulus);
         };
-        Ok(Self {
-            params: FixedMontyParams::new(modulus),
-        })
+        Ok(Self::wrap(FixedMontyParams::new(modulus)))
     }
 
+    #[inline(always)]
     fn modulus(&self) -> Self::Integer {
         Uint::new(self.params.modulus().get())
     }
 
-    #[allow(clippy::arithmetic_side_effects)] // False alert
+    #[inline(always)]
     fn modulus_minus_one_div_two(&self) -> Self::Integer {
-        let value = self.params.modulus().get();
-        Uint::new(
-            (value - crypto_bigint::Uint::one())
-                / NonZero::new(crypto_bigint::Uint::<LIMBS>::from(2_u8)).unwrap(),
-        )
+        self.modulus_minus_one_div_two
     }
 }
 
@@ -354,7 +354,8 @@ pub type F32768 = MontyField<{ 512 * WORD_FACTOR }>;
 #[allow(
     clippy::arithmetic_side_effects,
     clippy::cast_lossless,
-    clippy::redundant_clone
+    clippy::redundant_clone,
+    clippy::clone_on_copy
 )]
 #[cfg(test)]
 mod tests {
@@ -369,7 +370,7 @@ mod tests {
 
     #[test]
     fn ensure_traits() {
-        ensure_type_implements_trait!(F, FieldConfig);
+        ensure_type_implements_trait!(F, BaseFieldConfig);
     }
 
     //
@@ -455,7 +456,7 @@ mod tests {
     fn basic_operations_overflow() {
         let f = make_f();
 
-        let mod_minus_one = Uint::new(f.params.modulus().get() - crypto_bigint::Uint::one());
+        let mod_minus_one = Uint::new(f.params.modulus().get() - crypto_bigint::Uint::ONE);
         let mod_minus_one = f.project(&mod_minus_one);
 
         // Negation
@@ -716,7 +717,7 @@ mod tests {
     fn conversions() {
         let f = make_f();
 
-        // Test EncodeElement for Uint
+        // Test ProjectElement for Uint
         let u = Uint::<LIMBS>::from(123_u64);
         let a = f.project(&u);
         assert_eq!(a, f.project(&123_u64));
@@ -881,7 +882,7 @@ mod tests {
             Uint::new(
                 (crypto_bigint::Uint::<LIMBS>::from_be_hex(
                     "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"
-                ) - crypto_bigint::Uint::one())
+                ) - crypto_bigint::Uint::ONE)
                     / NonZero::new(crypto_bigint::Uint::<LIMBS>::from(2u64)).unwrap()
             )
         );

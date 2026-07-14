@@ -479,7 +479,7 @@ impl zeroize::DefaultIsZeroes for F2 {}
 mod tests {
     use super::*;
     use crate::{
-        ConstIntRing, FieldConfig, FieldConfigOps, FixedBaseField, FixedFieldConfig,
+        BaseFieldConfig, ConstIntRing, FieldConfigOps, FixedBaseField, FixedFieldConfig,
         ensure_type_implements_trait,
     };
     use alloc::format;

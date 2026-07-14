@@ -1,6 +1,7 @@
 use super::*;
 use crate::{
-    IntRing, Wrapper, boolean::Boolean, crypto_bigint_boxed_uint::BoxedUint, crypto_bigint_int::Int,
+    IntRing, Wrapper, boolean::Boolean, crypto_bigint_boxed_uint::BoxedUint,
+    crypto_bigint_int::Int, crypto_bigint_uint::Uint,
 };
 use core::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use crypto_bigint::{
@@ -10,22 +11,32 @@ use crypto_bigint::{
 use num_traits::One;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[repr(transparent)]
 pub struct BoxedMontyField {
     pub params: BoxedMontyParams,
+    pub modulus_minus_one_div_two: BoxedUint,
 }
 
 impl BoxedMontyField {
     /// Creates a new [`BoxedMontyField`] from [`BoxedMontyParams`].
     #[inline(always)]
-    pub const fn wrap(params: BoxedMontyParams) -> Self {
-        Self { params }
+    #[allow(clippy::arithmetic_side_effects)] // False alert
+    pub fn wrap(params: BoxedMontyParams) -> Self {
+        let two = BoxedUint::from(2_u8).into_inner();
+        let two = two.as_nz_vartime().expect("Can't fail");
+        let modulus_minus_one_div_two =
+            (params.modulus().as_ref() - BoxedUint::one().into_inner()).div(two);
+        let modulus_minus_one_div_two = BoxedUint::new(modulus_minus_one_div_two);
+        Self {
+            params,
+            modulus_minus_one_div_two,
+        }
     }
 
     /// Unwrap the [`BoxedMontyForm`] into a field config and a field element.
+    #[inline(always)]
     pub fn unwrap_monty(el: BoxedMontyForm) -> (Self, BoxedUint) {
         let params = el.params().clone();
-        (Self { params }, BoxedUint::new(el.into_montgomery()))
+        (Self::wrap(params), BoxedUint::new(el.into_montgomery()))
     }
 
     /// Reassemble the `crypto-bigint`'s [`BoxedMontyForm`] from a raw
@@ -289,18 +300,25 @@ impl ProjectElement<BoxedUint> for BoxedMontyField {
     }
 }
 
-// impl<const LIMBS: usize> EncodeElement<crypto_bigint::Uint<LIMBS>> for
-// BoxedMontyField {     #[inline(always)]
-//     fn project(&self, value: &crypto_bigint::Uint<LIMBS>) -> Self::Element {
-//         self.project(Uint::new_ref(value))
-//     }
-// }
+impl<const LIMBS: usize> ProjectElement<Uint<LIMBS>> for BoxedMontyField {
+    #[inline(always)]
+    fn project(&self, value: &Uint<LIMBS>) -> Self::Element {
+        self.project(&BoxedUint::from(&value.0))
+    }
+}
+
+impl<const LIMBS: usize> ProjectElement<crypto_bigint::Uint<LIMBS>> for BoxedMontyField {
+    #[inline(always)]
+    fn project(&self, value: &crypto_bigint::Uint<LIMBS>) -> Self::Element {
+        self.project(Uint::new_ref(value))
+    }
+}
 
 //
 // Field stuff
 //
 
-impl FieldConfig for BoxedMontyField {
+impl BaseFieldConfig for BoxedMontyField {
     fn new(modulus: &Self::Integer) -> Result<Self, FieldError> {
         let Some(modulus) = Odd::new(modulus.clone().into_inner()).into_option() else {
             return Err(FieldError::InvalidModulus);
@@ -314,8 +332,7 @@ impl FieldConfig for BoxedMontyField {
 
     #[allow(clippy::arithmetic_side_effects)] // False alert
     fn modulus_minus_one_div_two(&self) -> Self::Integer {
-        let value = self.modulus();
-        (value - BoxedUint::one()) / BoxedUint::from(2_u8)
+        self.modulus_minus_one_div_two.clone()
     }
 }
 
@@ -357,7 +374,7 @@ mod tests {
 
     #[test]
     fn ensure_traits() {
-        ensure_type_implements_trait!(F, FieldConfig);
+        ensure_type_implements_trait!(F, BaseFieldConfig);
     }
 
     //
@@ -715,7 +732,7 @@ mod tests {
     fn conversions() {
         let f = make_f();
 
-        // Test EncodeElement for BoxedUint
+        // Test ProjectElement for BoxedUint
         let u = BoxedUint::from(123_u64).resize(f.modulus().bits_precision());
         let a = f.project(&u);
         assert_eq!(a, f.project(&123_u64));
