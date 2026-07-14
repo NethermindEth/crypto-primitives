@@ -41,11 +41,11 @@ pub trait FixedField:
     + Pow<u32, Output=Self>
     + Inv<Output = Option<Self>>
     // Arithmetic operations consuming rhs
-    //+ Pow<Self::Integer, Output=Self>
+    + Pow<Self::Integer, Output=Self>
     + Div<Output=Self>
     + DivAssign
     // Arithmetic operations with rhs reference
-    //+ for<'a> Pow<&'a Self::Integer, Output=Self>
+    + for<'a> Pow<&'a Self::Integer, Output=Self>
     + for<'a> Div<&'a Self, Output=Self>
     + for<'a> DivAssign<&'a Self>
     // Conversion
@@ -77,7 +77,7 @@ pub trait FixedField:
 
 /// Base (non-extension) prime field with elements being self-sufficient, but
 /// whose metadata like modulus is not necessarily known at compile-time.
-pub trait FixedBaseField: FixedField {
+pub trait FixedBaseField: FixedField + LiftToIntegerStatic {
     fn modulus() -> Self::Integer;
 
     fn modulus_minus_one_div_two() -> Self::Integer;
@@ -85,7 +85,7 @@ pub trait FixedBaseField: FixedField {
 
 /// Base (non-extension) prime field whose modulus and other metadata are
 /// constant values known at compile time.
-pub trait ConstBaseField: FixedField + ConstRing {
+pub trait ConstBaseField: FixedField + LiftToIntegerStatic + ConstRing {
     const MODULUS: Self::Integer;
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Integer;
 }
@@ -135,7 +135,7 @@ macro_rules! delegate_to_ref_binary {
 // FieldConfig (both static and dynamic)
 //
 
-pub trait FieldConfigOps {
+pub trait FieldConfigOps: WithAssociatedInteger {
     type Element: Debug + Eq + Clone + Send + Sync + 'static;
 
     fn is_zero(&self, value: &Self::Element) -> bool;
@@ -177,7 +177,7 @@ pub trait FieldConfigOps {
     }
 
     /// x ** y
-    fn pow(&self, x: &Self::Element, y: &Self::Element) -> Self::Element { todo!() }
+    fn pow(&self, x: &Self::Element, y: &Self::Integer) -> Self::Element;
 
     /// x ** y
     fn pow_u32(&self, x: &Self::Element, y: u32) -> Self::Element;
@@ -213,7 +213,7 @@ pub trait FieldConfigOps {
 
     delegate_to_ref_binary! {
         /// x **= y
-        pow
+        pow(&Self::Integer)
     }
 
     delegate_to_ref_binary! {
@@ -272,7 +272,7 @@ pub trait FieldConfigOps {
 ///
 /// Constant prime fields are considered a special case of dynamic prime fields.
 pub trait FieldConfig:
-    Sized + FieldConfigOps + WithAssociatedInteger + ProjectElement<Self::Integer>
+    Sized + WithAssociatedInteger + FieldConfigOps + ProjectElement<<Self as WithAssociatedInteger>::Integer>
 {
     fn new(modulus: &Self::Integer) -> Result<Self, FieldError>;
 
@@ -287,7 +287,10 @@ pub trait FieldConfig:
 #[derive(Clone, Copy, Default, Debug)]
 pub struct FixedFieldConfig<F: FixedBaseField>(PhantomData<F>);
 
-impl<F: FixedBaseField> FieldConfigOps for FixedFieldConfig<F> {
+impl<F> FieldConfigOps for FixedFieldConfig<F>
+where
+    F: FixedBaseField + LiftToIntegerStatic,
+{
     type Element = F;
 
     #[inline(always)]
@@ -315,10 +318,12 @@ impl<F: FixedBaseField> FieldConfigOps for FixedFieldConfig<F> {
         x.clone() + y
     }
 
+    #[inline(always)]
     fn sub(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
         x.clone() - y
     }
 
+    #[inline(always)]
     fn inv(&self, x: &Self::Element) -> Option<Self::Element> {
         x.clone().inv()
     }
@@ -328,16 +333,21 @@ impl<F: FixedBaseField> FieldConfigOps for FixedFieldConfig<F> {
         x.clone() * y
     }
 
-    fn pow(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
-        todo!() //x.clone().pow(y)
+    #[inline(always)]
+    fn pow(&self, x: &Self::Element, y: &F::Integer) -> Self::Element {
+        x.clone().pow(y)
     }
 
+    #[inline(always)]
     fn pow_u32(&self, x: &Self::Element, y: u32) -> Self::Element {
         x.clone().pow(y)
     }
 }
 
-impl<F: FixedBaseField> FieldConfig for FixedFieldConfig<F> {
+impl<F> FieldConfig for FixedFieldConfig<F>
+where
+    F: FixedBaseField + LiftToIntegerStatic,
+{
     fn new(modulus: &Self::Integer) -> Result<Self, FieldError> {
         if *modulus == F::modulus() {
             Ok(Self::default())
@@ -361,14 +371,20 @@ impl<F: FixedBaseField> WithAssociatedInteger for FixedFieldConfig<F> {
     type Integer = F::Integer;
 }
 
-impl<F: FixedBaseField + LiftToIntegerStatic> LiftToIntegerDynamic for FixedFieldConfig<F> {
+impl<F> LiftToIntegerDynamic for FixedFieldConfig<F>
+where
+    F: FixedBaseField + LiftToIntegerStatic,
+{
     #[inline(always)]
     fn lift_to_integer(&self, value: &Self::Element) -> Self::Integer {
         LiftToIntegerStatic::lift_to_integer(value)
     }
 }
 
-impl<F: FixedBaseField> ProjectElement<F::Integer> for FixedFieldConfig<F> {
+impl<F> ProjectElement<F::Integer> for FixedFieldConfig<F>
+where
+    F: FixedBaseField + LiftToIntegerStatic,
+{
     fn project(&self, value: &F::Integer) -> Self::Element {
         F::from(value)
     }

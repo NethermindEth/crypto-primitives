@@ -278,6 +278,23 @@ impl<P: FpConfig<N>, const N: usize> Pow<u32> for Fp<P, N> {
     }
 }
 
+impl<P: FpConfig<N>, const N: usize> Pow<BigInt<N>> for Fp<P, N> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn pow(self, rhs: BigInt<N>) -> Self::Output {
+        self.pow(&rhs)
+    }
+}
+
+impl<P: FpConfig<N>, const N: usize> Pow<&BigInt<N>> for Fp<P, N> {
+    type Output = Self;
+
+    fn pow(self, rhs: &BigInt<N>) -> Self::Output {
+        Self(self.0.pow(rhs.inner()))
+    }
+}
+
 impl<P: FpConfig<N>, const N: usize> Inv for Fp<P, N> {
     type Output = Option<Self>;
 
@@ -968,31 +985,37 @@ mod tests {
         let base = F::from(2_u64);
 
         // 2^0 = 1
-        assert_eq!(base.pow(0), F::one());
+        assert_eq!(base.pow(0_u32), F::one());
 
         // 2^1 = 2
-        assert_eq!(base.pow(1), base);
+        assert_eq!(base.pow(1_u32), base);
 
         // 2^3 = 8
-        assert_eq!(base.pow(3), F::from(8_u64));
+        assert_eq!(base.pow(3_u32), F::from(8_u64));
 
         // 2^10 = 1024
-        assert_eq!(base.pow(10), F::from(1024_u64));
+        assert_eq!(base.pow(10_u32), F::from(1024_u64));
 
         // Test with different base
         let base = F::from(3_u64);
 
         // 3^4 = 81
-        assert_eq!(base.pow(4), F::from(81_u64));
+        assert_eq!(base.pow(4_u32), F::from(81_u64));
 
         // Test with base 1
         let base = F::from(1_u64);
-        assert_eq!(base.pow(1000), F::from(1_u64));
+        assert_eq!(base.pow(1000_u32), F::from(1_u64));
 
         // Test with base 0
         let base = F::from(0_u64);
-        assert_eq!(base.pow(0), F::one()); // 0^0 = 1 by convention
-        assert_eq!(base.pow(10), F::zero()); // 0^n = 0 for n > 0
+        assert_eq!(base.pow(0_u32), F::one()); // 0^0 = 1 by convention
+        assert_eq!(base.pow(10_u32), F::zero()); // 0^n = 0 for n > 0
+
+        // Same checks via `BigInt` (`Self::Integer`) exponents
+        let base = F::from(2_u64);
+        assert_eq!(base.pow(BigInt::from(0_u64)), F::one());
+        assert_eq!(base.pow(&BigInt::from(3_u64)), F::from(8_u64));
+        assert_eq!(base.pow(BigInt::from(10_u64)), F::from(1024_u64));
     }
 
     #[test]

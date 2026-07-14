@@ -154,6 +154,17 @@ impl FieldConfigOps for BoxedMontyField {
         out.into()
     }
 
+    fn pow(&self, x: &Self::Element, y: &Self::Integer) -> Self::Element {
+        crypto_bigint_helpers::pow::pow(
+            &x.0,
+            y.as_limbs(),
+            BoxedUint::new(self.params.as_ref().one().clone()),
+            BoxedUint::new_ref(self.params.modulus().as_ref()),
+            self.params.as_ref().mod_neg_inv(),
+        )
+        .into()
+    }
+
     fn pow_u32(&self, x: &Self::Element, y: u32) -> Self::Element {
         crypto_bigint_helpers::pow::pow_u32(
             &x.0,
@@ -536,35 +547,45 @@ mod tests {
     fn pow_operation() {
         let f = make_f();
 
+        // Check both `pow` flavors: a `u32` exponent and the same exponent
+        // as a `Self::Integer`.
+        macro_rules! assert_pow {
+            ($base:expr, $exp:expr, $expected:expr) => {{
+                let exp: u32 = $exp;
+                assert_eq!(f.pow_u32(&$base, exp), $expected);
+                assert_eq!(f.pow(&$base, &BoxedUint::from(exp)), $expected);
+            }};
+        }
+
         // Test basic exponentiation
         let base = f.project(&2);
 
         // 2^0 = 1
-        assert_eq!(f.pow_u32(&base, 0), f.one());
+        assert_pow!(base, 0, f.one());
 
         // 2^1 = 2
-        assert_eq!(f.pow_u32(&base, 1), base);
+        assert_pow!(base, 1, base.clone());
 
         // 2^3 = 8
-        assert_eq!(f.pow_u32(&base, 3), f.project(&8));
+        assert_pow!(base, 3, f.project(&8));
 
         // 2^10 = 1024
-        assert_eq!(f.pow_u32(&base, 10), f.project(&1024));
+        assert_pow!(base, 10, f.project(&1024));
 
         // Test with different base
         let base = f.project(&3);
 
         // 3^4 = 81
-        assert_eq!(f.pow_u32(&base, 4), f.project(&81));
+        assert_pow!(base, 4, f.project(&81));
 
         // Test with base 1
         let base = f.one();
-        assert_eq!(f.pow_u32(&base, 1000), f.one());
+        assert_pow!(base, 1000, f.one());
 
         // Test with base 0
         let base = f.zero();
-        assert_eq!(f.pow_u32(&base, 0), f.one()); // 0^0 = 1 by convention
-        assert_eq!(f.pow_u32(&base, 10), f.zero()); // 0^n = 0 for n > 0
+        assert_pow!(base, 0, f.one()); // 0^0 = 1 by convention
+        assert_pow!(base, 10, f.zero()); // 0^n = 0 for n > 0
     }
 
     #[test]
@@ -588,7 +609,23 @@ mod tests {
                 expected.as_montgomery(),
                 "{base}^{exp} diverges from BoxedMontyForm::pow"
             );
+            assert_eq!(
+                f.pow(&x, &BoxedUint::from(exp)).0.inner(),
+                expected.as_montgomery(),
+                "{base}^{exp} (integer exponent) diverges from BoxedMontyForm::pow"
+            );
         }
+
+        // An exponent wider than u32 (integer-exponent `pow` only)
+        let x = f.project(&123456789_u64);
+        let exp = u128::MAX;
+        let expected = BoxedMontyForm::from_montgomery(x.0.inner().clone(), &f.params)
+            .pow(&crypto_bigint::BoxedUint::from(exp));
+        assert_eq!(
+            f.pow(&x, &BoxedUint::from(exp)).0.inner(),
+            expected.as_montgomery(),
+            "u128::MAX exponent diverges from BoxedMontyForm::pow"
+        );
     }
 
     #[test]

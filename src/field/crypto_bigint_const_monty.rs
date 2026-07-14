@@ -255,6 +255,23 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Pow<u32> for ConstMontyField<Mod, L
     }
 }
 
+impl<Mod: Params<LIMBS>, const LIMBS: usize> Pow<Uint<LIMBS>> for ConstMontyField<Mod, LIMBS> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn pow(self, rhs: Uint<LIMBS>) -> Self::Output {
+        self.pow(&rhs)
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> Pow<&Uint<LIMBS>> for ConstMontyField<Mod, LIMBS> {
+    type Output = Self;
+
+    fn pow(self, rhs: &Uint<LIMBS>) -> Self::Output {
+        Self(self.0.pow(rhs.inner()))
+    }
+}
+
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Inv for ConstMontyField<Mod, LIMBS> {
     type Output = Option<Self>;
 
@@ -1249,14 +1266,20 @@ mod tests {
         let base: F = 2_u64.into();
 
         // Test basic exponentiation
-        assert_eq!(base.pow(0), F::one());
-        assert_eq!(base.pow(1), base);
-        assert_eq!(base.pow(3), F::from(8_u64));
-        assert_eq!(base.pow(10), F::from(1024_u64));
+        assert_eq!(base.pow(0_u32), F::one());
+        assert_eq!(base.pow(1_u32), base);
+        assert_eq!(base.pow(3_u32), F::from(8_u64));
+        assert_eq!(base.pow(10_u32), F::from(1024_u64));
 
         // Test with different base
         let base3: F = 3_u64.into();
-        assert_eq!(base3.pow(4), F::from(81_u64));
+        assert_eq!(base3.pow(4_u32), F::from(81_u64));
+
+        // Same checks via `Uint` (`Self::Integer`) exponents
+        assert_eq!(base.pow(Uint::from(0_u64)), F::one());
+        assert_eq!(base.pow(&Uint::from(3_u64)), F::from(8_u64));
+        assert_eq!(base.pow(Uint::from(10_u64)), F::from(1024_u64));
+        assert_eq!(base3.pow(&Uint::from(4_u64)), F::from(81_u64));
     }
 
     #[test]

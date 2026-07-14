@@ -317,33 +317,40 @@ pub mod pow {
         U: AsRef<UintRef> + AsMut<UintRef> + Clone,
     {
         let exponent = [Limb(Word::from(exponent)); 1];
-        // Only the size matters: `almost_montgomery_mul` zeroes its output
-        // buffer on every use.
-        let mut mul_product = modulus.clone();
-        let mut square_product = modulus.clone();
-
-        pow_montgomery_form_amm(
-            x,
-            &exponent,
-            u32::BITS,
-            one,
-            modulus,
-            |a, b| mul_amm_assign(a, b, &mut mul_product, modulus, mod_neg_inv),
-            |a| square_amm_assign(a, &mut square_product, modulus, mod_neg_inv),
-        )
+        pow_bounded_exp(x, &exponent, u32::BITS, one, modulus, mod_neg_inv)
     }
 
     /// Raise `x` (in Montgomery form) to an exponent, returning a fully
     /// reduced result in Montgomery form.
-    ///
-    /// Wraps [`pow_montgomery_form_amm`] with the AMM closures and the scratch
-    /// buffers they need (mirroring `BoxedMontyMultiplier`'s reusable product
-    /// buffer; one per closure so the mutable borrows stay disjoint).
     pub fn pow<U>(x: &U, exponent: &[Limb], one: U, modulus: &U, mod_neg_inv: Limb) -> U
     where
         U: AsRef<UintRef> + AsMut<UintRef> + Clone,
     {
-        todo!();
+        #[allow(clippy::cast_possible_truncation)] // Limb count fits in u32
+        let exponent_bits = exponent.len() as u32 * Limb::BITS;
+        pow_bounded_exp(x, exponent, exponent_bits, one, modulus, mod_neg_inv)
+    }
+
+    /// Raise `x` (in Montgomery form) to the `exponent_bits` least significant
+    /// bits of `exponent`, returning a fully reduced result in Montgomery
+    /// form.
+    ///
+    /// Wraps [`pow_montgomery_form_amm`] with the AMM closures and the scratch
+    /// buffers they need (mirroring `BoxedMontyMultiplier`'s reusable product
+    /// buffer; one per closure so the mutable borrows stay disjoint).
+    ///
+    /// NOTE: `exponent_bits` may be leaked in the time pattern.
+    pub fn pow_bounded_exp<U>(
+        x: &U,
+        exponent: &[Limb],
+        exponent_bits: u32,
+        one: U,
+        modulus: &U,
+        mod_neg_inv: Limb,
+    ) -> U
+    where
+        U: AsRef<UintRef> + AsMut<UintRef> + Clone,
+    {
         // Only the size matters: `almost_montgomery_mul` zeroes its output
         // buffer on every use.
         let mut mul_product = modulus.clone();
@@ -351,8 +358,8 @@ pub mod pow {
 
         pow_montgomery_form_amm(
             x,
-            &exponent,
-            u32::BITS,
+            exponent,
+            exponent_bits,
             one,
             modulus,
             |a, b| mul_amm_assign(a, b, &mut mul_product, modulus, mod_neg_inv),

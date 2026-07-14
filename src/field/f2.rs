@@ -189,6 +189,24 @@ impl Pow<u32> for F2 {
     }
 }
 
+impl Pow<u8> for F2 {
+    type Output = Self;
+
+    #[inline(always)]
+    fn pow(self, rhs: u8) -> Self::Output {
+        self.pow(u32::from(rhs))
+    }
+}
+
+impl Pow<&u8> for F2 {
+    type Output = Self;
+
+    #[inline(always)]
+    fn pow(self, rhs: &u8) -> Self::Output {
+        self.pow(u32::from(*rhs))
+    }
+}
+
 impl Inv for F2 {
     type Output = Option<Self>;
 
@@ -467,7 +485,8 @@ impl zeroize::DefaultIsZeroes for F2 {}
 mod tests {
     use super::*;
     use crate::{
-        ConstIntRing, FieldConfig, FixedBaseField, FixedFieldConfig, ensure_type_implements_trait,
+        ConstIntRing, FieldConfig, FieldConfigOps, FixedBaseField, FixedFieldConfig,
+        ensure_type_implements_trait,
     };
     use alloc::format;
     use num_traits::{One, Zero};
@@ -644,18 +663,38 @@ mod tests {
     #[test]
     fn pow_operation() {
         // 0^0 = 1 by convention
-        assert_eq!(V0.pow(0), V1);
+        assert_eq!(V0.pow(0_u32), V1);
 
         // 0^n = 0 for n > 0
-        assert_eq!(V0.pow(1), V0);
-        assert_eq!(V0.pow(2), V0);
-        assert_eq!(V0.pow(100), V0);
+        assert_eq!(V0.pow(1_u32), V0);
+        assert_eq!(V0.pow(2_u32), V0);
+        assert_eq!(V0.pow(100_u32), V0);
 
         // 1^n = 1 for all n
-        assert_eq!(V1.pow(0), V1);
-        assert_eq!(V1.pow(1), V1);
-        assert_eq!(V1.pow(2), V1);
-        assert_eq!(V1.pow(100), V1);
+        assert_eq!(V1.pow(0_u32), V1);
+        assert_eq!(V1.pow(1_u32), V1);
+        assert_eq!(V1.pow(2_u32), V1);
+        assert_eq!(V1.pow(100_u32), V1);
+
+        // Same checks via `u8` (`Self::Integer`) exponents
+        assert_eq!(V0.pow(0_u8), V1);
+        assert_eq!(V0.pow(&2_u8), V0);
+        assert_eq!(V1.pow(0_u8), V1);
+        assert_eq!(V1.pow(&100_u8), V1);
+    }
+
+    #[test]
+    fn config_pow() {
+        let cfg = FixedFieldConfig::<F2>::default();
+
+        assert_eq!(cfg.pow_u32(&V0, 0), V1); // 0^0 = 1 by convention
+        assert_eq!(cfg.pow_u32(&V0, 2), V0);
+        assert_eq!(cfg.pow_u32(&V1, 100), V1);
+
+        assert_eq!(cfg.pow(&V0, &0_u8), V1); // 0^0 = 1 by convention
+        assert_eq!(cfg.pow(&V0, &1_u8), V0);
+        assert_eq!(cfg.pow(&V1, &0_u8), V1);
+        assert_eq!(cfg.pow(&V1, &1_u8), V1);
     }
 
     #[test]
