@@ -1,5 +1,7 @@
 use super::*;
-use crate::{WORD_FACTOR, boolean::Boolean, crypto_bigint_int::Int, pow_via_repeated_squaring};
+use crate::{
+    WORD_FACTOR, Wrapper, boolean::Boolean, crypto_bigint_int::Int, pow_via_repeated_squaring,
+};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, LowerHex, Result as FmtResult, UpperHex},
@@ -23,7 +25,7 @@ use rand::{distr::StandardUniform, prelude::*, rand_core::TryRng};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
-pub struct Uint<const LIMBS: usize>(crypto_bigint::Uint<LIMBS>);
+pub struct Uint<const LIMBS: usize>(pub crypto_bigint::Uint<LIMBS>);
 
 impl<const LIMBS: usize> Uint<LIMBS> {
     /// Wraps a given value into this wrapper type
@@ -44,24 +46,6 @@ impl<const LIMBS: usize> Uint<LIMBS> {
         // Safety: Uint<LIMBS> is #[repr(transparent)] and is guaranteed to have the
         // same memory layout as crypto_bigint::Uint
         unsafe { &mut *(value as *mut crypto_bigint::Uint<LIMBS> as *mut Self) }
-    }
-
-    /// Get a reference to the wrapped value
-    #[inline(always)]
-    pub const fn inner(&self) -> &crypto_bigint::Uint<LIMBS> {
-        &self.0
-    }
-
-    /// Get a mutable reference to the wrapped value
-    #[inline(always)]
-    pub const fn inner_mut(&mut self) -> &mut crypto_bigint::Uint<LIMBS> {
-        &mut self.0
-    }
-
-    /// Get the wrapped value, consuming self
-    #[inline(always)]
-    pub const fn into_inner(self) -> crypto_bigint::Uint<LIMBS> {
-        self.0
     }
 
     /// See [crypto_bigint::Uint::from_words]
@@ -590,6 +574,34 @@ impl<const LIMBS: usize, const LIMBS2: usize> TryFrom<&crypto_bigint::Uint<LIMBS
 }
 
 //
+// Wrapper
+//
+
+impl<const LIMBS: usize> Wrapper for Uint<LIMBS> {
+    type Inner = crypto_bigint::Uint<LIMBS>;
+
+    #[inline(always)]
+    fn inner(&self) -> &Self::Inner {
+        &self.0
+    }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        &mut self.0
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        self.0
+    }
+
+    #[inline(always)]
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(inner)
+    }
+}
+
+//
 // Semiring
 //
 
@@ -759,6 +771,7 @@ mod tests {
 
     #[test]
     fn ensure_traits() {
+        ensure_type_implements_trait!(Uint4, Wrapper);
         ensure_type_implements_trait!(Uint4, ConstIntSemiring);
         ensure_type_implements_trait!(Uint4, IntSemiringWithShifts);
     }

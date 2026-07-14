@@ -1,5 +1,5 @@
 use super::*;
-use crate::{Semiring, boolean::Boolean, semiring::ark_ff_bigint::BigInt};
+use crate::{Semiring, Wrapper, boolean::Boolean, semiring::ark_ff_bigint::BigInt};
 use ark_ff::{
     AdditiveGroup, FftField, LegendreSymbol, SqrtPrecomputation,
     fields::{Field as ArkWrappedField, PrimeField as ArkWrappedPrimeField},
@@ -29,26 +29,13 @@ use rand::distr::StandardUniform;
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
 #[repr(transparent)]
-pub struct ArkField<F: ArkWrappedPrimeField>(F);
+pub struct ArkField<F: ArkWrappedPrimeField>(pub F);
 
 impl<F: ArkWrappedPrimeField> ArkField<F> {
     /// Wraps a given value into this wrapper type
     #[inline(always)]
     pub const fn new(value: F) -> Self {
         Self(value)
-    }
-
-    /// Get the reference to the wrapped value
-    #[inline(always)]
-    #[must_use]
-    pub const fn inner(&self) -> &F {
-        &self.0
-    }
-
-    /// Get the wrapped value, consuming self
-    #[inline(always)]
-    pub const fn into_inner(self) -> F {
-        self.0
     }
 }
 
@@ -444,17 +431,10 @@ impl<F: ArkWrappedPrimeField + Into<num_bigint::BigUint>> From<ArkField<F>>
 }
 
 //
-// Semiring, Ring and Field
+// Wrapper
 //
 
-impl<F: ArkWrappedPrimeField> Semiring for ArkField<F> {}
-
-impl<F: ArkWrappedPrimeField> Ring for ArkField<F> {}
-
-impl<F, const N: usize> FixedField for ArkField<F>
-where
-    F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
-{
+impl<F: ArkWrappedPrimeField> Wrapper for ArkField<F> {
     type Inner = F;
 
     #[inline(always)]
@@ -472,9 +452,23 @@ where
         self.0
     }
 
+    #[inline(always)]
     fn new_unchecked(inner: Self::Inner) -> Self {
         Self(inner)
     }
+}
+
+//
+// Semiring, Ring and Field
+//
+
+impl<F: ArkWrappedPrimeField> Semiring for ArkField<F> {}
+
+impl<F: ArkWrappedPrimeField> Ring for ArkField<F> {}
+
+impl<F, const N: usize> FixedField for ArkField<F> where
+    F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>
+{
 }
 
 // TODO: Can be made into ConstField, but it's hard to compute MODULUS - 1
@@ -763,6 +757,7 @@ mod tests {
 
     #[test]
     fn ensure_traits() {
+        ensure_type_implements_trait!(F, Wrapper);
         // Should be ConstRing, but it's hard to compute MODULUS - 1 for
         // Self::BigInt
         ensure_type_implements_trait!(F, FixedRing);

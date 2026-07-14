@@ -1,6 +1,6 @@
 use crate::{
     ConstBaseField, ConstRing, ConstSemiring, FixedField, FixedRing, IntRing, IntSemiring,
-    LiftToIntegerStatic, Ring, Semiring, WithAssociatedInteger, boolean::Boolean,
+    LiftToIntegerStatic, Ring, Semiring, WithAssociatedInteger, Wrapper, boolean::Boolean,
 };
 use core::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
@@ -25,25 +25,13 @@ use rand::{distr::StandardUniform, prelude::*};
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
 #[repr(transparent)]
-pub struct F2(bool);
+pub struct F2(pub bool);
 
 impl F2 {
     /// Creates a new F2 element from a bool value.
     #[inline(always)]
     pub const fn new(value: bool) -> Self {
         Self(value)
-    }
-
-    /// Get the inner bool value.
-    #[inline(always)]
-    pub const fn inner(&self) -> &bool {
-        &self.0
-    }
-
-    /// Convert to the inner bool value.
-    #[inline(always)]
-    pub const fn into_inner(self) -> bool {
-        self.0
     }
 }
 
@@ -389,6 +377,34 @@ impl_from_unsigned!(u8, u16, u32, u64, u128);
 impl_from_signed!(i8, i16, i32, i64, i128);
 
 //
+// Wrapper
+//
+
+impl Wrapper for F2 {
+    type Inner = bool;
+
+    #[inline(always)]
+    fn inner(&self) -> &Self::Inner {
+        &self.0
+    }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        &mut self.0
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        self.0
+    }
+
+    #[inline(always)]
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(inner)
+    }
+}
+
+//
 // Semiring, Ring and Field
 //
 
@@ -413,29 +429,7 @@ impl IntSemiring for F2 {
 
 impl Ring for F2 {}
 
-impl FixedField for F2 {
-    type Inner = bool;
-
-    #[inline(always)]
-    fn inner(&self) -> &Self::Inner {
-        &self.0
-    }
-
-    #[inline(always)]
-    fn inner_mut(&mut self) -> &mut Self::Inner {
-        &mut self.0
-    }
-
-    #[inline(always)]
-    fn into_inner(self) -> Self::Inner {
-        self.0
-    }
-
-    #[inline(always)]
-    fn new_unchecked(inner: Self::Inner) -> Self {
-        Self(inner)
-    }
-}
+impl FixedField for F2 {}
 
 impl ConstBaseField for F2 {
     const MODULUS: Self::Integer = 2;
@@ -836,13 +830,13 @@ mod tests {
         assert_eq!(V1.into_inner(), true);
         assert_eq!(V0.into_inner(), false);
 
-        // FixedFieldBase::inner
-        assert_eq!(*FixedField::inner(&V1), true);
-        assert_eq!(*FixedField::inner(&V0), false);
+        // Wrapper::inner
+        assert_eq!(*Wrapper::inner(&V1), true);
+        assert_eq!(*Wrapper::inner(&V0), false);
 
-        // FixedFieldBase::inner_mut
+        // Wrapper::inner_mut
         let mut x = V0;
-        *FixedField::inner_mut(&mut x) = true;
+        *Wrapper::inner_mut(&mut x) = true;
         assert_eq!(x, V1);
     }
 }

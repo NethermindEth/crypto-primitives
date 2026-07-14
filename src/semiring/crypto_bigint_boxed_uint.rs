@@ -1,5 +1,5 @@
 use super::*;
-use crate::{boolean::Boolean, pow_via_repeated_squaring};
+use crate::{Wrapper, boolean::Boolean, pow_via_repeated_squaring};
 use alloc::boxed::Box;
 use core::{
     cmp::Ordering,
@@ -26,7 +26,7 @@ use rand::rand_core::TryRng;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
-pub struct BoxedUint(crypto_bigint::BoxedUint);
+pub struct BoxedUint(pub crypto_bigint::BoxedUint);
 
 impl BoxedUint {
     /// Wraps a given value into this wrapper type
@@ -47,24 +47,6 @@ impl BoxedUint {
         // Safety: BoxedUint is #[repr(transparent)] and is guaranteed to have the
         // same memory layout as crypto_bigint::BoxedUint
         unsafe { &mut *(value as *mut crypto_bigint::BoxedUint as *mut Self) }
-    }
-
-    /// Get a reference to the wrapped value
-    #[inline(always)]
-    pub fn inner(&self) -> &crypto_bigint::BoxedUint {
-        &self.0
-    }
-
-    /// Get a mutable reference to the wrapped value
-    #[inline(always)]
-    pub fn inner_mut(&mut self) -> &mut crypto_bigint::BoxedUint {
-        &mut self.0
-    }
-
-    /// Get the wrapped value, consuming self
-    #[inline(always)]
-    pub fn into_inner(self) -> crypto_bigint::BoxedUint {
-        self.0
     }
 
     /// See [crypto_bigint::BoxedUint::from_words]
@@ -655,6 +637,34 @@ impl<const LIMBS: usize> From<&crypto_bigint::Uint<LIMBS>> for BoxedUint {
 }
 
 //
+// Wrapper
+//
+
+impl Wrapper for BoxedUint {
+    type Inner = crypto_bigint::BoxedUint;
+
+    #[inline(always)]
+    fn inner(&self) -> &Self::Inner {
+        &self.0
+    }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        &mut self.0
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        self.0
+    }
+
+    #[inline(always)]
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(inner)
+    }
+}
+
+//
 // Semiring
 //
 
@@ -808,6 +818,7 @@ mod tests {
 
     #[test]
     fn ensure_traits() {
+        ensure_type_implements_trait!(BoxedUint, Wrapper);
         ensure_type_implements_trait!(BoxedUint, FixedSemiring);
         ensure_type_implements_trait!(BoxedUint, IntSemiring);
         ensure_type_implements_trait!(BoxedUint, IntSemiringWithShifts);

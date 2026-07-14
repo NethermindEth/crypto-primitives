@@ -1,5 +1,5 @@
 use super::*;
-use crate::{IntRing, boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint};
+use crate::{IntRing, Wrapper, boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint};
 use core::fmt::{Display, Formatter, Result as FmtResult};
 use crypto_bigint::{
     NonZero, Odd, One,
@@ -35,7 +35,7 @@ impl<const LIMBS: usize> MontyField<LIMBS> {
     /// Montgomery value.
     #[inline(always)]
     pub const fn form(&self, el: &MontyFieldElement<LIMBS>) -> FixedMontyForm<LIMBS> {
-        FixedMontyForm::from_montgomery(*el.0.inner(), &self.params)
+        FixedMontyForm::from_montgomery(el.0.0, &self.params)
     }
 }
 
@@ -56,6 +56,34 @@ impl<const LIMBS: usize> From<crypto_bigint::Uint<LIMBS>> for MontyFieldElement<
     #[inline(always)]
     fn from(value: crypto_bigint::Uint<LIMBS>) -> Self {
         Self(Uint::new(value))
+    }
+}
+
+//
+// Wrapper
+//
+
+impl<const LIMBS: usize> Wrapper for MontyFieldElement<LIMBS> {
+    type Inner = Uint<LIMBS>;
+
+    #[inline(always)]
+    fn inner(&self) -> &Self::Inner {
+        &self.0
+    }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        &mut self.0
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        self.0
+    }
+
+    #[inline(always)]
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(inner)
     }
 }
 
@@ -200,7 +228,7 @@ impl<const LIMBS: usize> ProjectElement<bool> for MontyField<LIMBS> {
 impl<const LIMBS: usize> ProjectElement<Boolean> for MontyField<LIMBS> {
     #[inline(always)]
     fn project(&self, value: &Boolean) -> Self::Element {
-        self.project(&value.inner())
+        self.project(value.inner())
     }
 }
 

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{IntRing, IntSemiring, Semiring, boolean::Boolean};
+use crate::{IntRing, IntSemiring, Semiring, Wrapper, boolean::Boolean};
 use ark_ff::{
     AdditiveGroup, BigInteger, FftField, FpConfig, LegendreSymbol, MontBackend, MontConfig,
     SqrtPrecomputation,
@@ -33,25 +33,13 @@ use rand::distr::StandardUniform;
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
 #[repr(transparent)]
-pub struct Fp<P: FpConfig<N>, const N: usize>(ArkWrappedFp<P, N>);
+pub struct Fp<P: FpConfig<N>, const N: usize>(pub ArkWrappedFp<P, N>);
 
 impl<P: FpConfig<N>, const N: usize> Fp<P, N> {
     /// Wraps a given value into this wrapper type
     #[inline(always)]
     pub const fn new(value: ArkWrappedFp<P, N>) -> Self {
         Self(value)
-    }
-
-    /// Get the reference to the wrapped value
-    #[inline(always)]
-    pub const fn inner(&self) -> &ArkWrappedFp<P, N> {
-        &self.0
-    }
-
-    /// Get the wrapped value, consuming self
-    #[inline(always)]
-    pub const fn into_inner(self) -> ArkWrappedFp<P, N> {
-        self.0
     }
 }
 
@@ -65,9 +53,7 @@ impl<T: MontConfig<N>, const N: usize> Fp<MontBackend<T, N>, N> {
 
     #[inline(always)]
     pub const fn new_from_bigint(element: BigInt<N>) -> Self {
-        Self(ArkWrappedFp::<MontBackend<T, N>, N>::new(
-            element.into_inner(),
-        ))
+        Self(ArkWrappedFp::<MontBackend<T, N>, N>::new(element.0))
     }
 }
 
@@ -99,7 +85,7 @@ impl<P: FpConfig<N>, const N: usize> Deref for Fp<P, N> {
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        self.inner()
+        &self.0
     }
 }
 
@@ -477,6 +463,34 @@ impl<P: FpConfig<N>, const N: usize> From<Fp<P, N>> for num_bigint::BigUint {
 }
 
 //
+// Wrapper
+//
+
+impl<M: MontConfig<N>, const N: usize> Wrapper for Fp<MontBackend<M, N>, N> {
+    type Inner = BigInt<N>;
+
+    #[inline(always)]
+    fn inner(&self) -> &Self::Inner {
+        BigInt::new_ref(&self.0.0)
+    }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        BigInt::new_ref_mut(&mut self.0.0)
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        BigInt::new(self.0.0)
+    }
+
+    #[inline(always)]
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(ArkWrappedFp::new_unchecked(inner.into_inner()))
+    }
+}
+
+//
 // Semiring, Ring and Field
 //
 
@@ -517,28 +531,7 @@ impl<P: FpConfig<N>, const N: usize> IntSemiring for Fp<P, N> {
     }
 }
 
-impl<M: MontConfig<N>, const N: usize> FixedField for Fp<MontBackend<M, N>, N> {
-    type Inner = BigInt<N>;
-
-    #[inline(always)]
-    fn inner(&self) -> &Self::Inner {
-        BigInt::new_ref(&self.0.0)
-    }
-
-    #[inline(always)]
-    fn inner_mut(&mut self) -> &mut Self::Inner {
-        BigInt::new_ref_mut(&mut self.0.0)
-    }
-
-    #[inline(always)]
-    fn into_inner(self) -> Self::Inner {
-        BigInt::new(self.0.0)
-    }
-
-    fn new_unchecked(inner: Self::Inner) -> Self {
-        Self(ArkWrappedFp::new_unchecked(inner.into_inner()))
-    }
-}
+impl<M: MontConfig<N>, const N: usize> FixedField for Fp<MontBackend<M, N>, N> {}
 
 /// ConstPrimeField is only implemented for MontConfig and MontBackend
 impl<M: MontConfig<N>, const N: usize> ConstBaseField for Fp<MontBackend<M, N>, N> {
@@ -799,6 +792,7 @@ mod tests {
 
     #[test]
     fn ensure_traits() {
+        ensure_type_implements_trait!(F, Wrapper);
         ensure_type_implements_trait!(F, ConstIntRing);
         ensure_type_implements_trait!(F, ConstBaseField);
         ensure_type_implements_trait!(F, From<BigInt<4>>);
@@ -1202,11 +1196,13 @@ mod tests {
         let wrapped = F::new(inner);
         assert_eq!(wrapped, F::from(123_u64));
 
-        // Test inner() and into_inner()
+        // Test Wrapper::inner()/into_inner()/new_unchecked: the inner
+        // representation is the Montgomery-form BigInt
         let value = F::from(456_u64);
-        let inner_ref = value.inner();
-        assert_eq!(*inner_ref, ark_ff::MontFp!("456"));
-        assert_eq!(value.into_inner(), ark_ff::MontFp!("456"));
+        let expected: F = F::new(ark_ff::MontFp!("456"));
+        assert_eq!(*value.inner(), BigInt::new(expected.0.0));
+        assert_eq!(value.into_inner(), BigInt::new(expected.0.0));
+        assert_eq!(F::new_unchecked(value.into_inner()), value);
     }
 
     #[test]

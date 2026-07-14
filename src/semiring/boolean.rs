@@ -1,4 +1,4 @@
-use crate::{ConstSemiring, IntSemiring, Semiring, f2::F2};
+use crate::{ConstSemiring, IntSemiring, Semiring, Wrapper, f2::F2};
 use core::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     hash::Hash,
@@ -17,7 +17,7 @@ use rand::{distr::StandardUniform, prelude::*};
 /// - In release mode: overflow wraps (e.g., true + true = false)
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct Boolean(bool);
+pub struct Boolean(pub bool);
 
 impl Boolean {
     pub const FALSE: Self = Self(false);
@@ -27,18 +27,6 @@ impl Boolean {
     #[inline(always)]
     pub const fn new(value: bool) -> Self {
         Self(value)
-    }
-
-    /// Get the inner bool value
-    #[inline(always)]
-    pub const fn inner(&self) -> bool {
-        self.0
-    }
-
-    /// Convert to the inner bool value
-    #[inline(always)]
-    pub const fn into_inner(self) -> bool {
-        self.0
     }
 
     /// Convert to u8 (0 or 1)
@@ -374,6 +362,34 @@ impl Pow<u32> for Boolean {
 }
 
 //
+// Wrapper
+//
+
+impl Wrapper for Boolean {
+    type Inner = bool;
+
+    #[inline(always)]
+    fn inner(&self) -> &Self::Inner {
+        &self.0
+    }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        &mut self.0
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        self.0
+    }
+
+    #[inline(always)]
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(inner)
+    }
+}
+
+//
 // Semiring
 //
 
@@ -427,11 +443,12 @@ impl zeroize::DefaultIsZeroes for Boolean {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ConstIntSemiring, ensure_type_implements_trait};
+    use crate::{ConstIntSemiring, Wrapper, ensure_type_implements_trait};
     use alloc::{vec, vec::Vec};
 
     #[test]
     fn ensure_traits() {
+        ensure_type_implements_trait!(Boolean, Wrapper);
         ensure_type_implements_trait!(Boolean, ConstIntSemiring);
     }
 
@@ -590,7 +607,7 @@ mod tests {
         assert_eq!(bool::from(Boolean::FALSE), false);
 
         // Methods
-        assert_eq!(Boolean::new(true).inner(), true);
+        assert_eq!(*Boolean::new(true).inner(), true);
         assert_eq!(Boolean::new(false).into_inner(), false);
         assert_eq!(Boolean::TRUE.to_u8(), 1);
         assert_eq!(Boolean::FALSE.to_u8(), 0);

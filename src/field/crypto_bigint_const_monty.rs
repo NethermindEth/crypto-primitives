@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    IntRing, IntSemiring, Semiring, boolean::Boolean, crypto_bigint_int::Int,
+    IntRing, IntSemiring, Semiring, Wrapper, boolean::Boolean, crypto_bigint_int::Int,
     crypto_bigint_uint::Uint,
 };
 use core::{
@@ -28,7 +28,7 @@ use rand::{distr::StandardUniform, prelude::*, rand_core::TryRng};
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
 #[repr(transparent)]
-pub struct ConstMontyField<Mod: Params<LIMBS>, const LIMBS: usize>(ConstMontyForm<Mod, LIMBS>);
+pub struct ConstMontyField<Mod: Params<LIMBS>, const LIMBS: usize>(pub ConstMontyForm<Mod, LIMBS>);
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstMontyField<Mod, LIMBS> {
     #[allow(clippy::cast_possible_truncation)] // Guaranteed to fit due to crypto_bigint::Uint
@@ -37,22 +37,12 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstMontyField<Mod, LIMBS> {
 
     #[inline(always)]
     pub const fn new(value: Uint<LIMBS>) -> Self {
-        Self(ConstMontyForm::new(value.inner()))
+        Self(ConstMontyForm::new(&value.0))
     }
 
     #[inline(always)]
     pub const fn new_unchecked(inner: Uint<LIMBS>) -> Self {
-        Self(ConstMontyForm::from_montgomery(inner.into_inner()))
-    }
-
-    #[inline(always)]
-    pub const fn inner(&self) -> &Uint<LIMBS> {
-        Uint::new_ref(self.0.as_montgomery())
-    }
-
-    #[inline(always)]
-    pub const fn into_inner(self) -> Uint<LIMBS> {
-        Uint::new(self.0.to_montgomery())
+        Self(ConstMontyForm::from_montgomery(inner.0))
     }
 
     /// Retrieves the integer currently encoded in this [`ConstMontyForm`],
@@ -73,7 +63,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstMontyField<Mod, LIMBS> {
 
     /// Create a `ConstMontyForm` from a value in Montgomery form.
     pub const fn from_montgomery(integer: Uint<LIMBS>) -> Self {
-        Self(ConstMontyForm::from_montgomery(integer.into_inner()))
+        Self(ConstMontyForm::from_montgomery(integer.0))
     }
 
     /// Extract the value from the `ConstMontyForm` in Montgomery form.
@@ -97,7 +87,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstMontyField<Mod, LIMBS> {
         exponent: &Uint<RHS_LIMBS>,
         exponent_bits: u32,
     ) -> Self {
-        Self(self.0.pow_bounded_exp(exponent.inner(), exponent_bits))
+        Self(self.0.pow_bounded_exp(&exponent.0, exponent_bits))
     }
 }
 
@@ -554,6 +544,34 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize, const LIMBS2: usize> From<&crypto_b
 }
 
 //
+// Wrapper
+//
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> Wrapper for ConstMontyField<Mod, LIMBS> {
+    type Inner = Uint<LIMBS>;
+
+    #[inline(always)]
+    fn inner(&self) -> &Self::Inner {
+        Uint::new_ref(self.0.as_montgomery())
+    }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        Uint::new_ref_mut(self.0.as_montgomery_mut())
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        Uint::new(self.0.to_montgomery())
+    }
+
+    #[inline(always)]
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(ConstMontyForm::from_montgomery(inner.into_inner()))
+    }
+}
+
+//
 // Semiring, Ring and Field
 //
 
@@ -585,34 +603,12 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> IntSemiring for ConstMontyField<Mod
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Ring for ConstMontyField<Mod, LIMBS> {}
 
-impl<Mod: Params<LIMBS>, const LIMBS: usize> FixedField for ConstMontyField<Mod, LIMBS> {
-    type Inner = Uint<LIMBS>;
-
-    #[inline(always)]
-    fn inner(&self) -> &Self::Inner {
-        Uint::new_ref(self.0.as_montgomery())
-    }
-
-    #[inline(always)]
-    fn inner_mut(&mut self) -> &mut Self::Inner {
-        Uint::new_ref_mut(self.0.as_montgomery_mut())
-    }
-
-    #[inline(always)]
-    fn into_inner(self) -> Self::Inner {
-        Uint::new(self.0.to_montgomery())
-    }
-
-    #[inline(always)]
-    fn new_unchecked(inner: Self::Inner) -> Self {
-        Self(ConstMontyForm::from_montgomery(inner.into_inner()))
-    }
-}
+impl<Mod: Params<LIMBS>, const LIMBS: usize> FixedField for ConstMontyField<Mod, LIMBS> {}
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstBaseField for ConstMontyField<Mod, LIMBS> {
     const MODULUS: Self::Integer = *Uint::new_ref(Mod::PARAMS.modulus().as_ref());
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Integer = {
-        let m_minus_one = CBUint::wrapping_sub(Self::MODULUS.inner(), &CBUint::ONE);
+        let m_minus_one = CBUint::wrapping_sub(&Self::MODULUS.0, &CBUint::ONE);
         let two = CBUint::<LIMBS>::wrapping_add(&CBUint::ONE, &CBUint::ONE);
         Uint::new(CBUint::wrapping_div(
             &m_minus_one,
@@ -793,6 +789,7 @@ mod tests {
 
     #[test]
     fn ensure_traits() {
+        ensure_type_implements_trait!(F, Wrapper);
         ensure_type_implements_trait!(F, ConstIntRing);
         ensure_type_implements_trait!(F, ConstBaseField);
     }

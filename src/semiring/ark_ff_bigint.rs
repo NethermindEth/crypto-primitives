@@ -1,5 +1,5 @@
 use super::*;
-use crate::{boolean::Boolean, pow_via_repeated_squaring};
+use crate::{Wrapper, boolean::Boolean, pow_via_repeated_squaring};
 use alloc::{format, vec::Vec};
 use ark_ff::{BigInt as ArkBigInt, BigInteger as ArkBigInteger};
 use ark_serialize::{
@@ -21,7 +21,7 @@ use rand::{distr::StandardUniform, prelude::*};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
-pub struct BigInt<const N: usize>(ArkBigInt<N>);
+pub struct BigInt<const N: usize>(pub ArkBigInt<N>);
 
 impl<const N: usize> BigInt<N> {
     /// Size of the underlying limbs in bits
@@ -50,24 +50,6 @@ impl<const N: usize> BigInt<N> {
         // Safety: BigInt is #[repr(transparent)] and is guaranteed to have the
         // same memory layout as ArkBigInt
         unsafe { &mut *(value as *mut ArkBigInt<N> as *mut Self) }
-    }
-
-    /// Get the reference to the wrapped value
-    #[inline(always)]
-    pub const fn inner(&self) -> &ArkBigInt<N> {
-        &self.0
-    }
-
-    /// Get the mutable reference to the wrapped value
-    #[inline(always)]
-    pub const fn inner_mut(&mut self) -> &mut ArkBigInt<N> {
-        &mut self.0
-    }
-
-    /// Get the wrapped value, consuming self
-    #[inline(always)]
-    pub const fn into_inner(self) -> ArkBigInt<N> {
-        self.0
     }
 
     /// See [ArkBigInteger::new]
@@ -514,6 +496,34 @@ impl<const N: usize> TryFrom<num_bigint::BigUint> for BigInt<N> {
 }
 
 //
+// Wrapper
+//
+
+impl<const N: usize> Wrapper for BigInt<N> {
+    type Inner = ArkBigInt<N>;
+
+    #[inline(always)]
+    fn inner(&self) -> &Self::Inner {
+        &self.0
+    }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        &mut self.0
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        self.0
+    }
+
+    #[inline(always)]
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(inner)
+    }
+}
+
+//
 // Semiring
 //
 
@@ -758,6 +768,7 @@ mod tests {
 
     #[test]
     fn ensure_traits() {
+        ensure_type_implements_trait!(BigInt4, Wrapper);
         ensure_type_implements_trait!(BigInt4, ConstIntSemiring);
         ensure_type_implements_trait!(BigInt4, IntSemiringWithShifts);
     }

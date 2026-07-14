@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    IntRing, boolean::Boolean, crypto_bigint_boxed_uint::BoxedUint, crypto_bigint_int::Int,
+    IntRing, Wrapper, boolean::Boolean, crypto_bigint_boxed_uint::BoxedUint, crypto_bigint_int::Int,
 };
 use core::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use crypto_bigint::{
@@ -74,6 +74,34 @@ impl From<crypto_bigint::BoxedUint> for BoxedMontyFieldElement {
     #[inline(always)]
     fn from(value: crypto_bigint::BoxedUint) -> Self {
         Self(BoxedUint::new(value))
+    }
+}
+
+//
+// Wrapper
+//
+
+impl Wrapper for BoxedMontyFieldElement {
+    type Inner = BoxedUint;
+
+    #[inline(always)]
+    fn inner(&self) -> &Self::Inner {
+        &self.0
+    }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        &mut self.0
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        self.0
+    }
+
+    #[inline(always)]
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(inner)
     }
 }
 
@@ -232,7 +260,7 @@ impl ProjectElement<bool> for BoxedMontyField {
 impl ProjectElement<Boolean> for BoxedMontyField {
     #[inline(always)]
     fn project(&self, value: &Boolean) -> Self::Element {
-        self.project(&value.inner())
+        self.project(value.inner())
     }
 }
 
