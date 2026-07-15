@@ -3,6 +3,7 @@ use crate::{
     IntRing, Wrapper, boolean::Boolean, crypto_bigint_boxed_uint::BoxedUint,
     crypto_bigint_int::Int, crypto_bigint_uint::Uint, helpers::crypto_bigint as helpers,
 };
+use alloc::borrow::Cow;
 use core::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use crypto_bigint::{
     MontyForm, Odd,
@@ -292,9 +293,27 @@ impl<const LIMBS: usize> ProjectElementDynamic<Int<LIMBS>> for BoxedMontyField {
 impl ProjectElementDynamic<BoxedUint> for BoxedMontyField {
     /// Convert the given integer into the Montgomery domain.
     fn project(&self, value: &BoxedUint) -> Self::Element {
-        debug_assert_eq!(value.bits_precision(), self.bits_precision());
+        use crypto_bigint::Resize;
+
+        let value = if value.bits_precision() < self.bits_precision() {
+            Cow::Owned(value.resize(self.bits_precision()))
+        } else if value.bits_precision() > self.bits_precision() {
+            // The value is wider than the modulus: reduce it first, so that
+            // the resize below cannot truncate.
+            let modulus = self
+                .params
+                .modulus()
+                .as_ref()
+                .resize(value.bits_precision());
+            let modulus = modulus.into_nz().expect("modulus should be non-zero");
+            let rem = value.0.rem_vartime(&modulus);
+            Cow::Owned(BoxedUint::new(rem).resize(self.bits_precision()))
+        } else {
+            Cow::Borrowed(value)
+        };
+
         self.mul(
-            value.into(),
+            value.as_ref().into(),
             BoxedUint::new_ref(self.params.as_ref().r2()).into(),
         )
     }
@@ -674,6 +693,41 @@ mod tests {
         );
     }
 
+    /// Regression test: the final AMM value of the exponentiation can land in
+    /// `[modulus, 2*modulus)`, where exactly one final conditional subtraction
+    /// is needed. `almost_montgomery_reduce` used to apply a stale comparison
+    /// to both subtractions, subtracting the modulus twice and wrapping.
+    #[test]
+    fn pow_amm_final_reduction() {
+        let f = {
+            // Using a 64-bit prime 10064419296686275259
+            let modulus = BoxedUint::from_be_hex("8bac0006d9927abb", 64).unwrap();
+            let modulus = Odd::new(modulus.into_inner()).expect("modulus should be odd");
+            F::wrap(BoxedMontyParams::new(modulus))
+        };
+
+        // Small cases with hand-checkable results
+        for (base, exp, result) in [(2_u64, 8_u32, 256_u64), (2, 9, 512), (3, 5, 243)] {
+            assert_eq!(
+                f.pow_u32(&f.project(&base), exp),
+                f.project(&result),
+                "{base}^{exp} != {result}"
+            );
+        }
+
+        // Larger cases, verified against the library
+        for (base, exp) in [(12345_u64, 67_u32), (2, 64), (123456789, u32::MAX)] {
+            let x = f.project(&base);
+            let expected = BoxedMontyForm::from_montgomery(x.0.inner().clone(), &f.params)
+                .pow(&crypto_bigint::BoxedUint::from(u64::from(exp)));
+            assert_eq!(
+                f.pow_u32(&x, exp).0.inner(),
+                expected.as_montgomery(),
+                "{base}^{exp} diverges from BoxedMontyForm::pow"
+            );
+        }
+    }
+
     #[test]
     fn inv_operation() {
         let f = make_f();
@@ -736,6 +790,23 @@ mod tests {
         let u = BoxedUint::from(123_u64).resize(f.modulus().bits_precision());
         let a = f.project(&u);
         assert_eq!(a, f.project(&123_u64));
+
+        // A BoxedUint narrower than the field is zero-extended...
+        let narrow = BoxedUint::from(123_u64); // 64-bit precision
+        assert_eq!(f.project(&narrow), f.project(&123_u64));
+
+        // ...including when it arrives via the fixed-width Uint projections.
+        assert_eq!(f.project(&Uint::<1>::from(123_u64)), f.project(&123_u64));
+
+        // A BoxedUint wider than the field is reduced, not truncated:
+        // 2^256 mod (2^256 - 2^32 - 977) = 2^32 + 977 (truncation would give 0)
+        let wide = BoxedUint::from_be_hex(
+            "0000000000000000000000000000000000000000000000000000000000000001\
+             0000000000000000000000000000000000000000000000000000000000000000",
+            512,
+        )
+        .unwrap();
+        assert_eq!(f.project(&wide), f.project(&0x1_000003D1_u64));
     }
 
     #[test]

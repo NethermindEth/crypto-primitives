@@ -862,6 +862,39 @@ mod tests {
         );
     }
 
+    /// Regression test: the final AMM value of the exponentiation can land in
+    /// `[modulus, 2*modulus)`, where exactly one final conditional subtraction
+    /// is needed. `almost_montgomery_reduce` used to apply a stale comparison
+    /// to both subtractions, subtracting the modulus twice and wrapping.
+    #[test]
+    fn pow_amm_final_reduction() {
+        type F = F64;
+
+        // Using a 64-bit prime
+        let f = F::new(&Uint::from(10064419296686275259_u64)).unwrap();
+
+        // Small cases with hand-checkable results
+        for (base, exp, result) in [(2_u64, 8_u32, 256_u64), (2, 9, 512), (3, 5, 243)] {
+            assert_eq!(
+                f.pow_u32(&f.project(&base), exp),
+                f.project(&result),
+                "{base}^{exp} != {result}"
+            );
+        }
+
+        // Larger cases, verified against the library
+        for (base, exp) in [(12345_u64, 67_u32), (2, 64), (123456789, u32::MAX)] {
+            let x = f.project(&base);
+            let expected = FixedMontyForm::from_montgomery(*x.0.inner(), &f.params)
+                .pow(&crypto_bigint::Uint::<1>::from(exp));
+            assert_eq!(
+                f.pow_u32(&x, exp).0.inner(),
+                expected.as_montgomery(),
+                "{base}^{exp} diverges from FixedMontyForm::pow"
+            );
+        }
+    }
+
     #[test]
     fn prime_field_methods() {
         let f = make_f();

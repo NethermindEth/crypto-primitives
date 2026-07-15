@@ -434,9 +434,8 @@ pub mod pow {
     }
 
     fn almost_montgomery_reduce(z: &mut UintRef, modulus: &UintRef) {
-        let choice = UintRef::cmp_vartime(z, modulus).is_ge();
-        conditional_borrowing_sub_assign(z, modulus, choice);
-        conditional_borrowing_sub_assign(z, modulus, choice);
+        conditional_borrowing_sub_assign(z, modulus, UintRef::cmp_vartime(z, modulus).is_ge());
+        conditional_borrowing_sub_assign(z, modulus, UintRef::cmp_vartime(z, modulus).is_ge());
     }
 
     fn conditional_borrowing_sub_assign(lhs: &mut UintRef, rhs: &UintRef, choice: bool) -> bool {
