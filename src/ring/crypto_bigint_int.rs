@@ -1,7 +1,6 @@
 use super::*;
 use crate::{
-    ConstSemiring, WORD_FACTOR, Wrapper, boolean::Boolean, crypto_bigint_uint::Uint,
-    pow_via_repeated_squaring,
+    ConstSemiring, Wrapper, boolean::Boolean, crypto_bigint_uint::Uint, pow_via_repeated_squaring,
 };
 use core::{
     cmp::Ordering,
@@ -777,6 +776,7 @@ impl<const LIMBS: usize> crypto_bigint::Constants for Int<LIMBS> {
 // Predefined ints of various sizes for convenience
 //
 
+use crate::helpers::crypto_bigint::WORD_FACTOR;
 pub type I64 = Int<{ WORD_FACTOR }>;
 pub type I128 = Int<{ 2 * WORD_FACTOR }>;
 pub type I192 = Int<{ 3 * WORD_FACTOR }>;

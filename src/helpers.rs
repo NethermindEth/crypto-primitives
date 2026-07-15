@@ -1,6 +1,9 @@
 //! Contains helper utility functions and macros not visible to the outside
 //! world.
 
+#[cfg(feature = "crypto_bigint")]
+pub(crate) mod crypto_bigint;
+
 /// Implement exponentiation using repeated squaring
 #[macro_export]
 macro_rules! pow_via_repeated_squaring {

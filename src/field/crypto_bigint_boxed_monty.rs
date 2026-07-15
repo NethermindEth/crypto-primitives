@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     IntRing, Wrapper, boolean::Boolean, crypto_bigint_boxed_uint::BoxedUint,
-    crypto_bigint_int::Int, crypto_bigint_uint::Uint,
+    crypto_bigint_int::Int, crypto_bigint_uint::Uint, helpers::crypto_bigint as helpers,
 };
 use core::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use crypto_bigint::{
@@ -181,7 +181,7 @@ impl FieldConfig for BoxedMontyField {
         // Note: CIOS multiplication is worse for this
         let modulus = BoxedUint::new_ref(self.params.modulus().as_ref());
         let mut out = BoxedUint::zero_with_precision(self.bits_precision());
-        let carry = crypto_bigint_helpers::mul::monty_mul_limbs(
+        let carry = helpers::mul::monty_mul_limbs(
             x.0.as_limbs(),
             y.0.as_limbs(),
             out.as_mut_limbs(),
@@ -194,7 +194,7 @@ impl FieldConfig for BoxedMontyField {
     }
 
     fn pow(&self, x: &Self::Element, y: &Self::Integer) -> Self::Element {
-        crypto_bigint_helpers::pow::pow_bounded_exp(
+        helpers::pow::pow_bounded_exp(
             &x.0,
             y.as_limbs(),
             y.bits_precision(),
@@ -206,7 +206,7 @@ impl FieldConfig for BoxedMontyField {
     }
 
     fn pow_u32(&self, x: &Self::Element, y: u32) -> Self::Element {
-        crypto_bigint_helpers::pow::pow_u32(
+        helpers::pow::pow_u32(
             &x.0,
             y,
             BoxedUint::new(self.params.as_ref().one().clone()),
@@ -346,7 +346,7 @@ impl LiftElementDynamic<<Self as WithAssociatedInteger>::Integer> for BoxedMonty
     #[inline(always)]
     fn lift(&self, value: &Self::Element) -> Self::Integer {
         let mut out = BoxedUint::zero_with_precision(value.bits_precision());
-        crypto_bigint_helpers::monty_retrieve_inner(
+        helpers::monty_retrieve_inner(
             value.0.as_limbs(),
             out.as_mut_limbs(),
             self.modulus().as_limbs(),

@@ -1,5 +1,8 @@
 use super::*;
-use crate::{IntRing, Wrapper, boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint};
+use crate::{
+    IntRing, Wrapper, boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint,
+    helpers::crypto_bigint as helpers,
+};
 use core::fmt::{Display, Formatter, Result as FmtResult};
 use crypto_bigint::{
     BitOps, Limb, NonZero, Odd, Word,
@@ -151,21 +154,16 @@ impl<const LIMBS: usize> FieldConfig for MontyField<LIMBS> {
         let inverted = inverted?;
 
         let r2 = self.params.r2();
-        let x_inv = crypto_bigint_helpers::mul::monty_mul(&inverted, r2, modulus.as_ref());
-        Some(crypto_bigint_helpers::mul::monty_mul(&x_inv, r2, modulus.as_ref()).into())
+        let x_inv = helpers::mul::monty_mul(&inverted, r2, modulus.as_ref());
+        Some(helpers::mul::monty_mul(&x_inv, r2, modulus.as_ref()).into())
     }
 
     fn mul(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
-        crypto_bigint_helpers::mul::monty_mul(
-            x.0.inner(),
-            y.0.inner(),
-            self.params.modulus().as_ref(),
-        )
-        .into()
+        helpers::mul::monty_mul(x.0.inner(), y.0.inner(), self.params.modulus().as_ref()).into()
     }
 
     fn pow(&self, x: &Self::Element, y: &Self::Integer) -> Self::Element {
-        crypto_bigint_helpers::pow::pow_bounded_exp(
+        helpers::pow::pow_bounded_exp(
             x.0.inner(),
             y.inner().as_limbs(),
             y.inner().bits_precision(),
@@ -177,7 +175,7 @@ impl<const LIMBS: usize> FieldConfig for MontyField<LIMBS> {
     }
 
     fn pow_u32(&self, x: &Self::Element, y: u32) -> Self::Element {
-        crypto_bigint_helpers::pow::pow_u32(
+        helpers::pow::pow_u32(
             x.0.inner(),
             y,
             *self.params.one(),
@@ -270,12 +268,7 @@ impl<const LIMBS: usize, const LIMBS2: usize> ProjectElementDynamic<Uint<LIMBS2>
         };
 
         // Convert into the Montgomery domain
-        crypto_bigint_helpers::mul::monty_mul(
-            &value,
-            self.params.r2(),
-            self.params.modulus().as_ref(),
-        )
-        .into()
+        helpers::mul::monty_mul(&value, self.params.r2(), self.params.modulus().as_ref()).into()
     }
 }
 
@@ -314,7 +307,7 @@ impl<const LIMBS: usize> LiftElementDynamic<<Self as WithAssociatedInteger>::Int
     #[inline(always)]
     fn lift(&self, value: &Self::Element) -> Self::Integer {
         let mut out = crypto_bigint::Uint::<LIMBS>::ZERO;
-        crypto_bigint_helpers::monty_retrieve_inner(
+        helpers::monty_retrieve_inner(
             value.0.inner().as_limbs(),
             out.as_mut_limbs(),
             self.params.modulus().as_ref().as_limbs(),
@@ -330,7 +323,8 @@ impl<const LIMBS: usize> LiftElementDynamic<<Self as WithAssociatedInteger>::Int
 // Predefined fields of various sizes for convenience
 //
 
-pub type F64 = MontyField<{ crypto_bigint::U64::LIMBS }>;
+use helpers::WORD_FACTOR;
+pub type F64 = MontyField<{ WORD_FACTOR }>;
 pub type F128 = MontyField<{ 2 * WORD_FACTOR }>;
 pub type F192 = MontyField<{ 3 * WORD_FACTOR }>;
 pub type F256 = MontyField<{ 4 * WORD_FACTOR }>;

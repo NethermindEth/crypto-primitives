@@ -1,7 +1,5 @@
 use super::*;
-use crate::{
-    WORD_FACTOR, Wrapper, boolean::Boolean, crypto_bigint_int::Int, pow_via_repeated_squaring,
-};
+use crate::{Wrapper, boolean::Boolean, crypto_bigint_int::Int, pow_via_repeated_squaring};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, LowerHex, Result as FmtResult, UpperHex},
@@ -723,6 +721,7 @@ impl<const LIMBS: usize> crypto_bigint::Constants for Uint<LIMBS> {
 // Predefined uints of various sizes for convenience
 //
 
+use crate::helpers::crypto_bigint::WORD_FACTOR;
 pub type U64 = Uint<{ WORD_FACTOR }>;
 pub type U128 = Uint<{ 2 * WORD_FACTOR }>;
 pub type U192 = Uint<{ 3 * WORD_FACTOR }>;

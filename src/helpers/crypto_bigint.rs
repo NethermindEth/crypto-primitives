@@ -1,6 +1,12 @@
 #![allow(clippy::arithmetic_side_effects, clippy::needless_range_loop)]
-
 use crypto_bigint::Limb;
+
+/// How many words/limbs there are per 64 bits.
+#[cfg(target_pointer_width = "64")]
+pub const WORD_FACTOR: usize = 1;
+/// How many words/limbs there are per 64 bits.
+#[cfg(target_pointer_width = "32")]
+pub const WORD_FACTOR: usize = 2;
 
 /// Copy-paste from `crypto-bigint`
 #[inline(always)]

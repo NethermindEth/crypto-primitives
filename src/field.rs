@@ -44,8 +44,6 @@ pub mod crypto_bigint_boxed_monty;
 #[cfg(feature = "crypto_bigint")]
 pub mod crypto_bigint_const_monty;
 #[cfg(feature = "crypto_bigint")]
-pub(crate) mod crypto_bigint_helpers;
-#[cfg(feature = "crypto_bigint")]
 pub mod crypto_bigint_monty;
 pub mod f2;
 
@@ -58,11 +56,6 @@ use core::{
 use num_traits::{Inv, Pow, Zero};
 use pastey::paste;
 use thiserror::Error;
-
-#[cfg(target_pointer_width = "64")]
-pub const WORD_FACTOR: usize = 1;
-#[cfg(target_pointer_width = "32")]
-pub const WORD_FACTOR: usize = 2;
 
 //
 // FixedField (static and const)
