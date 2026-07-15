@@ -56,32 +56,37 @@ impl BoxedUint {
     }
 
     /// See [crypto_bigint::BoxedUint::to_words]
-    #[inline]
+    #[inline(always)]
     pub fn to_words(self) -> Box<[Word]> {
         self.0.to_words()
     }
 
     /// See [crypto_bigint::BoxedUint::as_words]
+    #[inline(always)]
     pub fn as_words(&self) -> &[Word] {
         self.0.as_words()
     }
 
     /// See [crypto_bigint::BoxedUint::as_mut_words]
+    #[inline(always)]
     pub fn as_mut_words(&mut self) -> &mut [Word] {
         self.0.as_mut_words()
     }
 
     /// See [crypto_bigint::BoxedUint::as_limbs]
+    #[inline(always)]
     pub fn as_limbs(&self) -> &[Limb] {
         self.0.as_limbs()
     }
 
     /// See [crypto_bigint::BoxedUint::as_mut_limbs]
+    #[inline(always)]
     pub fn as_mut_limbs(&mut self) -> &mut [Limb] {
         self.0.as_mut_limbs()
     }
 
     /// See [crypto_bigint::BoxedUint::to_limbs]
+    #[inline(always)]
     pub fn to_limbs(self) -> Box<[Limb]> {
         self.0.to_limbs()
     }
@@ -100,6 +105,7 @@ impl BoxedUint {
     }
 
     /// See [crypto_bigint::BoxedUint::cmp_vartime]
+    #[inline(always)]
     pub fn cmp_vartime(&self, rhs: &Self) -> Ordering {
         self.0.cmp_vartime(&rhs.0)
     }
@@ -112,21 +118,25 @@ impl BoxedUint {
     }
 
     /// See [`crypto_bigint::BoxedUint::bits`]
+    #[inline(always)]
     pub fn bits(&self) -> u32 {
         self.0.bits()
     }
 
     /// See [`crypto_bigint::BoxedUint::bits_precision`]
+    #[inline(always)]
     pub fn bits_precision(&self) -> u32 {
         self.0.bits_precision()
     }
 
     /// See [`crypto_bigint::BoxedUint::bytes_precision`]
+    #[inline(always)]
     pub fn bytes_precision(&self) -> usize {
         self.0.bytes_precision()
     }
 
     /// See [`crypto_bigint::BoxedUint::nlimbs`]
+    #[inline(always)]
     pub fn nlimbs(&self) -> usize {
         self.0.nlimbs()
     }
@@ -156,10 +166,10 @@ impl BoxedUint {
         #[cfg(target_pointer_width = "32")]
         let res = {
             debug_assert!(self.nlimbs() >= 1);
-            let mut ret = self.limbs[0].0 as u64;
+            let mut ret = self.as_limbs()[0].0 as u64;
 
             if self.nlimbs() >= 2 {
-                ret |= (self.limbs[1].0 as u64) << 32;
+                ret |= (self.as_limbs()[1].0 as u64) << 32;
             }
 
             ret
