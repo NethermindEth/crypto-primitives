@@ -164,18 +164,21 @@ impl<const LIMBS: usize> Ord for Int<LIMBS> {
 }
 
 impl<const LIMBS: usize> LowerHex for Int<LIMBS> {
+    #[inline(always)]
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         LowerHex::fmt(&self.0, f)
     }
 }
 
 impl<const LIMBS: usize> UpperHex for Int<LIMBS> {
+    #[inline(always)]
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         UpperHex::fmt(&self.0, f)
     }
 }
 
 impl<const LIMBS: usize> Hash for Int<LIMBS> {
+    #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state)
     }

@@ -21,7 +21,7 @@ use pastey::paste;
 #[cfg(feature = "rand")]
 use rand::{distr::StandardUniform, prelude::*, rand_core::TryRng};
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Uint<const LIMBS: usize>(pub crypto_bigint::Uint<LIMBS>);
 
@@ -94,11 +94,6 @@ impl<const LIMBS: usize> Uint<LIMBS> {
             None => None,
             Some(inner) => Some(Uint(inner)),
         }
-    }
-
-    /// See [crypto_bigint::Uint::cmp_vartime]
-    pub const fn cmp_vartime(&self, rhs: &Self) -> Ordering {
-        self.0.cmp_vartime(&rhs.0)
     }
 
     /// See [crypto_bigint::Uint::as_int]
@@ -176,7 +171,23 @@ impl<const LIMBS: usize> Default for Uint<LIMBS> {
     }
 }
 
+impl<const LIMBS: usize> PartialOrd for Uint<LIMBS> {
+    #[inline(always)]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Implemented manually to use `cmp_vartime`
+impl<const LIMBS: usize> Ord for Uint<LIMBS> {
+    #[inline(always)]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp_vartime(&other.0)
+    }
+}
+
 impl<const LIMBS: usize> LowerHex for Uint<LIMBS> {
+    #[inline(always)]
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         LowerHex::fmt(&self.0, f)
     }
@@ -189,6 +200,7 @@ impl<const LIMBS: usize> UpperHex for Uint<LIMBS> {
 }
 
 impl<const LIMBS: usize> Hash for Uint<LIMBS> {
+    #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state)
     }
@@ -1174,14 +1186,14 @@ mod tests {
     }
 
     #[test]
-    fn cmp_vartime() {
+    fn cmp() {
         let a = Uint4::from(10_u64);
         let b = Uint4::from(20_u64);
         let c = Uint4::from(10_u64);
 
-        assert_eq!(a.cmp_vartime(&b), Ordering::Less);
-        assert_eq!(b.cmp_vartime(&a), Ordering::Greater);
-        assert_eq!(a.cmp_vartime(&c), Ordering::Equal);
+        assert_eq!(a.cmp(&b), Ordering::Less);
+        assert_eq!(b.cmp(&a), Ordering::Greater);
+        assert_eq!(a.cmp(&c), Ordering::Equal);
     }
 
     #[test]

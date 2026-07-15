@@ -24,7 +24,7 @@ use pastey::paste;
 #[cfg(feature = "rand")]
 use rand::rand_core::TryRng;
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct BoxedUint(pub crypto_bigint::BoxedUint);
 
@@ -102,12 +102,6 @@ impl BoxedUint {
     #[inline(always)]
     pub fn resize(&self, at_least_bits_precision: u32) -> Self {
         Self((&self.0).resize_unchecked(at_least_bits_precision))
-    }
-
-    /// See [crypto_bigint::BoxedUint::cmp_vartime]
-    #[inline(always)]
-    pub fn cmp_vartime(&self, rhs: &Self) -> Ordering {
-        self.0.cmp_vartime(&rhs.0)
     }
 
     /// See [crypto_bigint::BoxedUint::from_be_hex]
@@ -269,6 +263,21 @@ impl Default for BoxedUint {
     }
 }
 
+impl PartialOrd for BoxedUint {
+    #[inline(always)]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Implemented manually to use `cmp_vartime`
+impl Ord for BoxedUint {
+    #[inline(always)]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp_vartime(&other.0)
+    }
+}
+
 impl LowerHex for BoxedUint {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         LowerHex::fmt(&self.0, f)
@@ -283,6 +292,7 @@ impl UpperHex for BoxedUint {
 
 impl Hash for BoxedUint {
     #[allow(clippy::arithmetic_side_effects)]
+    #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         // Equality is by numeric value and ignores high zero limbs, so we must
         // hash only the significant limbs to keep `Hash` consistent with `Eq`.
@@ -1232,14 +1242,14 @@ mod tests {
     }
 
     #[test]
-    fn cmp_vartime() {
+    fn cmp() {
         let a = BoxedUint::from(10_u64);
         let b = BoxedUint::from(20_u64);
         let c = BoxedUint::from(10_u64);
 
-        assert_eq!(a.cmp_vartime(&b), Ordering::Less);
-        assert_eq!(b.cmp_vartime(&a), Ordering::Greater);
-        assert_eq!(a.cmp_vartime(&c), Ordering::Equal);
+        assert_eq!(a.cmp(&b), Ordering::Less);
+        assert_eq!(b.cmp(&a), Ordering::Greater);
+        assert_eq!(a.cmp(&c), Ordering::Equal);
     }
 
     #[test]

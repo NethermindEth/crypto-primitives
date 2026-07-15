@@ -99,6 +99,7 @@ impl<P: FpConfig<N>, const N: usize> Clone for Fp<P, N> {
 impl<P: FpConfig<N>, const N: usize> Copy for Fp<P, N> {}
 
 impl<P: FpConfig<N>, const N: usize> PartialEq for Fp<P, N> {
+    #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.0.eq(&other.0)
     }
@@ -107,18 +108,21 @@ impl<P: FpConfig<N>, const N: usize> PartialEq for Fp<P, N> {
 impl<P: FpConfig<N>, const N: usize> Eq for Fp<P, N> {}
 
 impl<P: FpConfig<N>, const N: usize> PartialOrd for Fp<P, N> {
+    #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<P: FpConfig<N>, const N: usize> Ord for Fp<P, N> {
+    #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
         Ord::cmp(&self.0, &other.0)
     }
 }
 
 impl<P: FpConfig<N>, const N: usize> Hash for Fp<P, N> {
+    #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state)
     }

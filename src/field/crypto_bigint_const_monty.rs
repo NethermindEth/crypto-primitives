@@ -115,18 +115,21 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Default for ConstMontyField<Mod, LI
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> PartialOrd for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Ord for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
         Ord::cmp(self.0.as_montgomery(), other.0.as_montgomery())
     }
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Hash for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.as_montgomery().hash(state)
     }
