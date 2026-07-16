@@ -247,7 +247,6 @@ impl IntSemiringConfig for BoxedMontyField {
 }
 
 impl WithExtensionDegree for BoxedMontyField {
-    #[inline(always)]
     fn extension_degree() -> u64 {
         1
     }
@@ -422,6 +421,17 @@ impl LiftElementWithConfig<<Self as WithAssociatedInteger>::Integer> for BoxedMo
             self.params.as_ref().mod_neg_inv(),
         );
         out
+    }
+}
+
+//
+// Zeroize
+//
+
+#[cfg(feature = "zeroize")]
+impl zeroize::Zeroize for BoxedMontyFieldElement {
+    fn zeroize(&mut self) {
+        self.0.zeroize()
     }
 }
 

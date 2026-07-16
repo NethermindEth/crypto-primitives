@@ -367,6 +367,17 @@ impl<const LIMBS: usize> LiftElementWithConfig<<Self as WithAssociatedInteger>::
     }
 }
 
+//
+// Zeroize
+//
+
+#[cfg(feature = "zeroize")]
+impl<const LIMBS: usize> zeroize::Zeroize for MontyFieldElement<LIMBS> {
+    fn zeroize(&mut self) {
+        self.0.zeroize()
+    }
+}
+
 // TODO: Do we want to zeroize the modulus?
 
 //
