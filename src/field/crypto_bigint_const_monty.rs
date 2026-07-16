@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    IntSemiring, Semiring, Wrapper, boolean::Boolean, crypto_bigint_int::Int,
+    IntSemiring, LiftElement, Wrapper, boolean::Boolean, crypto_bigint_int::Int,
     crypto_bigint_uint::Uint, helpers::crypto_bigint as helpers,
 };
 use core::{
@@ -34,6 +34,13 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstMontyField<Mod, LIMBS> {
     #[allow(clippy::cast_possible_truncation)] // Guaranteed to fit due to crypto_bigint::Uint
     pub const BITS: u32 = LIMBS as u32 * Limb::BITS;
     pub const LIMBS: usize = Mod::LIMBS;
+    /// The largest residue, `modulus - 1`.
+    pub const MAX: Self = Self(ConstMontyForm::new(
+        &Mod::PARAMS
+            .modulus()
+            .as_ref()
+            .wrapping_sub(&crypto_bigint::Uint::ONE),
+    ));
 
     #[inline(always)]
     pub const fn new(value: Uint<LIMBS>) -> Self {
@@ -575,16 +582,16 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Wrapper for ConstMontyField<Mod, LI
 // Semiring, Ring and Field
 //
 
-impl<Mod: Params<LIMBS>, const LIMBS: usize> Semiring for ConstMontyField<Mod, LIMBS> {}
+impl<Mod: Params<LIMBS>, const LIMBS: usize> Bounded for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
+    fn min_value() -> Self {
+        Self::ZERO
+    }
 
-impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstSemiring for ConstMontyField<Mod, LIMBS> {
-    const MAX: Self = Self(ConstMontyForm::new(
-        &Mod::PARAMS
-            .modulus()
-            .as_ref()
-            .wrapping_sub(&crypto_bigint::Uint::ONE),
-    ));
-    const MIN: Self = Self::ZERO;
+    #[inline(always)]
+    fn max_value() -> Self {
+        Self::MAX
+    }
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> IntSemiring for ConstMontyField<Mod, LIMBS> {
@@ -600,10 +607,6 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> IntSemiring for ConstMontyField<Mod
         self.lift().is_even()
     }
 }
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> Ring for ConstMontyField<Mod, LIMBS> {}
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> FixedField for ConstMontyField<Mod, LIMBS> {}
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstBaseField for ConstMontyField<Mod, LIMBS> {
     const MODULUS: Self::Integer = *Uint::new_ref(Mod::PARAMS.modulus().as_ref());
@@ -621,8 +624,8 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> WithAssociatedInteger for ConstMont
     type Integer = Uint<LIMBS>;
 }
 
-impl<Mod: Params<LIMBS>, const LIMBS: usize>
-    LiftElementStatic<<Self as WithAssociatedInteger>::Integer> for ConstMontyField<Mod, LIMBS>
+impl<Mod: Params<LIMBS>, const LIMBS: usize> LiftElement<<Self as WithAssociatedInteger>::Integer>
+    for ConstMontyField<Mod, LIMBS>
 {
     #[inline(always)]
     fn lift(&self) -> <Self as WithAssociatedInteger>::Integer {
@@ -778,7 +781,7 @@ pub type F32768<Mod> = ConstMontyField<Mod, { 512 * WORD_FACTOR }>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ConstIntRing, FixedBaseField, ensure_type_implements_trait};
+    use crate::{ConstField, ensure_type_implements_trait};
     use crypto_bigint::{Square, U64, U256, const_monty_params};
     use num_traits::{One, Zero};
 
@@ -793,7 +796,7 @@ mod tests {
     #[test]
     fn ensure_traits() {
         ensure_type_implements_trait!(F, Wrapper);
-        ensure_type_implements_trait!(F, ConstIntRing);
+        ensure_type_implements_trait!(F, ConstField);
         ensure_type_implements_trait!(F, ConstBaseField);
     }
 
@@ -805,7 +808,7 @@ mod tests {
         ));
         assert_eq!(F::new(x), F::one());
 
-        assert_eq!(F::from(<F as FixedBaseField>::modulus()), F::zero());
+        assert_eq!(F::from(<F as BaseField>::modulus()), F::zero());
 
         // Lifting to integer and projecting back yields the original element.
         for x in [F::zero(), F::one(), F::from(2_u64), F::from(123456789_u64)] {
@@ -910,7 +913,6 @@ mod tests {
 
     #[test]
     fn min_max() {
-        assert_eq!(F::MIN, F::zero());
         assert_eq!(
             F::MAX,
             F::from_str("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2e")
@@ -918,7 +920,7 @@ mod tests {
         );
 
         assert_eq!(F::MAX + F::one(), F::zero());
-        assert_eq!(F::MIN - F::one(), F::MAX);
+        assert_eq!(F::ZERO - F::one(), F::MAX);
         assert_eq!(F::MAX * F::MAX, F::one());
     }
 

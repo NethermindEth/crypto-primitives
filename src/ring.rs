@@ -1,43 +1,34 @@
+//! This module defines **rings** - [`semirings`](crate::semiring) where every
+//! element has an additive inverse (and hence negation is defined).
+//!
+//! See the [crate-level documentation](crate) for the overall element/config
+//! structure.
+//!
+//! This module additionally defines several specialized flavors of rings for
+//! working with integers.
+
 #[cfg(feature = "crypto_bigint")]
 pub mod crypto_bigint_int;
 
 use crate::{
-    ConstIntSemiring, ConstSemiring, FixedSemiring, IntSemiring, IntSemiringWithShifts, Semiring,
+    ConstIntSemiring, ConstIntSemiringConfig, ConstSemiring, FixedConfig, IntSemiring,
+    IntSemiringConfig, IntSemiringWithDivRem, IntSemiringWithShifts, Semiring, SemiringConfig,
+    SetElement,
 };
-use core::ops::{Neg, Rem, RemAssign};
-use num_traits::{CheckedNeg, CheckedRem};
+use core::ops::Neg;
+use num_traits::{CheckedNeg, Signed};
 
-/// A ring is a semiring with subtraction, meaning it has an additive inverse
-/// for every element.
-pub trait Ring: Semiring + Neg<Output = Self> + CheckedNeg {}
+/// See [module-level documentation](crate::ring).
+pub trait Ring: SetElement + Semiring + Neg<Output = Self> + CheckedNeg {}
+impl<T> Ring for T where T: SetElement + Semiring + Neg<Output = Self> + CheckedNeg {}
 
-/// Ring whose zero and one elements can be constructed from the type alone.
-pub trait FixedRing: Ring + FixedSemiring {}
-impl<T> FixedRing for T where T: Ring + FixedSemiring {}
-
-/// Ring with a bunch of values known at compile time.
-pub trait ConstRing: FixedRing + ConstSemiring {}
-impl<T> ConstRing for T where T: FixedRing + ConstSemiring {}
+/// [`Ring`] with a bunch of values known at compile time.
+pub trait ConstRing: Ring + ConstSemiring {}
+impl<T> ConstRing for T where T: Ring + ConstSemiring {}
 
 /// Ring of integers, usually denoted as `Z`.
-pub trait IntRing: Ring + IntSemiring {
-    /// Checked absolute value. Computes `self.abs()`, returning `None` if `self
-    /// == MIN`.
-    fn checked_abs(&self) -> Option<Self>;
-
-    fn is_positive(&self) -> bool;
-
-    fn is_negative(&self) -> bool;
-}
-
-pub trait IntRingWithRem:
-    IntRing + CheckedRem + RemAssign + for<'a> Rem<&'a Self> + for<'a> RemAssign<&'a Self>
-{
-}
-impl<T> IntRingWithRem for T where
-    T: IntRing + CheckedRem + RemAssign + for<'a> Rem<&'a Self> + for<'a> RemAssign<&'a Self>
-{
-}
+pub trait IntRing: Ring + IntSemiringWithDivRem + Signed {}
+impl<T> IntRing for T where T: Ring + IntSemiringWithDivRem + Signed {}
 
 pub trait IntRingWithShifts: IntRing + IntSemiringWithShifts {}
 impl<T> IntRingWithShifts for T where T: IntRing + IntSemiringWithShifts {}
@@ -45,27 +36,86 @@ impl<T> IntRingWithShifts for T where T: IntRing + IntSemiringWithShifts {}
 pub trait ConstIntRing: IntRing + ConstIntSemiring + From<i8> {}
 impl<T> ConstIntRing for T where T: IntRing + ConstIntSemiring + From<i8> {}
 
-macro_rules! primitive_int_ring {
-    ($t:ident) => {
-        impl Ring for $t {}
-        impl IntRing for $t {
-            fn checked_abs(&self) -> Option<Self> {
-                $t::checked_abs(*self)
-            }
+/// See [module-level documentation](crate::ring).
+pub trait RingConfig: SemiringConfig {
+    /// -x
+    fn neg(&self, x: &Self::Element) -> Self::Element;
 
-            fn is_positive(&self) -> bool {
-                *self > 0
-            }
+    /// -x;
+    fn checked_neg(&self, x: &Self::Element) -> Option<Self::Element>;
 
-            fn is_negative(&self) -> bool {
-                *self < 0
-            }
-        }
-    };
+    /// x = -x;
+    fn neg_assign(&self, x: &mut Self::Element) {
+        *x = self.neg(x);
+    }
 }
 
-primitive_int_ring!(i8);
-primitive_int_ring!(i16);
-primitive_int_ring!(i32);
-primitive_int_ring!(i64);
-primitive_int_ring!(i128);
+pub trait IntRingConfig: RingConfig + IntSemiringConfig {}
+impl<R> IntRingConfig for R where R: RingConfig + IntSemiringConfig {}
+
+pub trait ConstIntRingConfig: IntRingConfig + ConstIntSemiringConfig {
+    /// |x|
+    fn abs(&self, x: &Self::Element) -> Self::Element;
+
+    /// Checked absolute value. Returns `None` if the result cannot be
+    /// represented.
+    fn checked_abs(&self, x: &Self::Element) -> Option<Self::Element>;
+
+    fn signum(&self, x: &Self::Element) -> Self::Element;
+
+    fn is_positive(&self, x: &Self::Element) -> bool;
+
+    fn is_negative(&self, x: &Self::Element) -> bool;
+}
+
+impl<R: Ring> RingConfig for FixedConfig<R> {
+    #[inline(always)]
+    fn neg(&self, x: &Self::Element) -> Self::Element {
+        x.clone().neg()
+    }
+
+    fn checked_neg(&self, x: &Self::Element) -> Option<Self::Element> {
+        x.checked_neg()
+    }
+}
+
+impl<R: ConstIntRing> ConstIntRingConfig for FixedConfig<R> {
+    fn abs(&self, x: &Self::Element) -> Self::Element {
+        x.abs()
+    }
+
+    fn checked_abs(&self, x: &Self::Element) -> Option<Self::Element> {
+        if *x == R::min_value() {
+            None
+        } else {
+            Some(x.abs())
+        }
+    }
+
+    fn signum(&self, x: &Self::Element) -> Self::Element {
+        x.signum()
+    }
+
+    fn is_positive(&self, x: &Self::Element) -> bool {
+        x.is_positive()
+    }
+
+    fn is_negative(&self, x: &Self::Element) -> bool {
+        x.is_negative()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ensure_type_implements_trait;
+
+    #[test]
+    fn ensure_traits() {
+        ensure_type_implements_trait!(i8, ConstIntRing);
+        ensure_type_implements_trait!(i128, ConstIntRing);
+
+        ensure_type_implements_trait!(FixedConfig<i8>, ConstIntRingConfig);
+        ensure_type_implements_trait!(FixedConfig<i128>, ConstIntRingConfig);
+    }
+}

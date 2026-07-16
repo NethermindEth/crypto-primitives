@@ -1,5 +1,5 @@
 use super::*;
-use crate::{IntSemiring, Semiring, Wrapper, boolean::Boolean};
+use crate::{IntSemiring, LiftElement, Wrapper, boolean::Boolean};
 use ark_ff::{
     AdditiveGroup, BigInteger, FftField, FpConfig, LegendreSymbol, MontBackend, MontConfig,
     SqrtPrecomputation,
@@ -19,7 +19,8 @@ use core::{
 };
 use crypto_primitives_proc_macros::InfallibleCheckedOp;
 use num_traits::{
-    CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Pow, Zero,
+    Bounded, CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One,
+    Pow, Zero,
 };
 
 use crate::ark_ff_bigint::BigInt;
@@ -46,6 +47,22 @@ impl<P: FpConfig<N>, const N: usize> Fp<P, N> {
 impl<T: MontConfig<N>, const N: usize> Fp<MontBackend<T, N>, N> {
     #[doc(hidden)]
     pub const INV: u64 = T::INV;
+    /// The largest residue, `modulus - 1`.
+    pub const MAX: Self = {
+        let mut value = T::MODULUS;
+        // Subtract one in const context (can't use checked_sub)
+        let mut i = 0;
+        while i < N {
+            if value.0[i] > 0 {
+                value.0[i] -= 1;
+                break;
+            } else {
+                value.0[i] = u64::MAX;
+                i += 1;
+            }
+        }
+        Self(ArkWrappedFp::new(value))
+    };
     #[doc(hidden)]
     pub const R: BigInt<N> = BigInt::new(T::R);
     #[doc(hidden)]
@@ -498,28 +515,18 @@ impl<M: MontConfig<N>, const N: usize> Wrapper for Fp<MontBackend<M, N>, N> {
 // Semiring, Ring and Field
 //
 
-impl<P: FpConfig<N>, const N: usize> Semiring for Fp<P, N> {}
+impl<M: MontConfig<N>, const N: usize> Bounded for Fp<MontBackend<M, N>, N> {
+    #[inline(always)]
+    fn min_value() -> Self {
+        <Self as ConstZero>::ZERO
+    }
 
-impl<T: MontConfig<N>, const N: usize> ConstSemiring for Fp<MontBackend<T, N>, N> {
-    const MAX: Self = {
-        let mut value = T::MODULUS;
-        // Subtract one in const context (can't use checked_sub)
-        let mut i = 0;
-        while i < N {
-            if value.0[i] > 0 {
-                value.0[i] -= 1;
-                break;
-            } else {
-                value.0[i] = u64::MAX;
-                i += 1;
-            }
-        }
-        Self(ArkWrappedFp::new(value))
-    };
-    const MIN: Self = <Self as ConstZero>::ZERO;
+    /// The largest residue, `modulus - 1`.
+    #[inline(always)]
+    fn max_value() -> Self {
+        Self::MAX
+    }
 }
-
-impl<P: FpConfig<N>, const N: usize> Ring for Fp<P, N> {}
 
 impl<P: FpConfig<N>, const N: usize> IntSemiring for Fp<P, N> {
     #[inline(always)]
@@ -535,9 +542,7 @@ impl<P: FpConfig<N>, const N: usize> IntSemiring for Fp<P, N> {
     }
 }
 
-impl<M: MontConfig<N>, const N: usize> FixedField for Fp<MontBackend<M, N>, N> {}
-
-/// ConstPrimeField is only implemented for MontConfig and MontBackend
+/// ConstBaseField is only implemented for MontConfig and MontBackend
 impl<M: MontConfig<N>, const N: usize> ConstBaseField for Fp<MontBackend<M, N>, N> {
     const MODULUS: Self::Integer = BigInt::new(M::MODULUS);
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Integer = BigInt::new(
@@ -549,7 +554,7 @@ impl<P: FpConfig<N>, const N: usize> WithAssociatedInteger for Fp<P, N> {
     type Integer = BigInt<N>;
 }
 
-impl<P: FpConfig<N>, const N: usize> LiftElementStatic<<Self as WithAssociatedInteger>::Integer>
+impl<P: FpConfig<N>, const N: usize> LiftElement<<Self as WithAssociatedInteger>::Integer>
     for Fp<P, N>
 {
     #[inline(always)]
@@ -783,7 +788,7 @@ macro_rules! mont_fp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ConstIntRing, ensure_type_implements_trait};
+    use crate::{ConstField, ensure_type_implements_trait};
     use alloc::{format, vec::Vec};
     use ark_ff::{MontBackend, MontConfig};
     use core::str::FromStr;
@@ -799,7 +804,7 @@ mod tests {
     #[test]
     fn ensure_traits() {
         ensure_type_implements_trait!(F, Wrapper);
-        ensure_type_implements_trait!(F, ConstIntRing);
+        ensure_type_implements_trait!(F, ConstField);
         ensure_type_implements_trait!(F, ConstBaseField);
         ensure_type_implements_trait!(F, From<BigInt<4>>);
     }
@@ -812,7 +817,7 @@ mod tests {
         assert!(!o.is_zero());
         assert_ne!(z, o);
 
-        assert_eq!(F::from(<F as FixedBaseField>::modulus()), z);
+        assert_eq!(F::from(<F as BaseField>::modulus()), z);
 
         // Lifting to integer and projecting back yields the original element.
         for x in [z, o, F::from(2_u64), F::from(123456789_u64)] {
@@ -822,18 +827,18 @@ mod tests {
 
     #[test]
     fn min_max() {
-        assert_eq!(F::MIN, F::zero());
+        assert_eq!(F::min_value(), F::zero());
         assert_eq!(
-            F::MAX,
+            F::max_value(),
             F::from_str(
                 "115792089237316195423570985008687907853269984665640564039457584007908834671662"
             )
             .unwrap()
         );
 
-        assert_eq!(F::MAX + F::one(), F::zero());
-        assert_eq!(F::MIN - F::one(), F::MAX);
-        assert_eq!(F::MAX * F::MAX, F::one());
+        assert_eq!(F::max_value() + F::one(), F::zero());
+        assert_eq!(F::min_value() - F::one(), F::max_value());
+        assert_eq!(F::max_value() * F::max_value(), F::one());
     }
 
     #[test]

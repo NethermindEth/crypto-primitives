@@ -41,3 +41,18 @@ macro_rules! ensure_type_implements_trait {
         _assert_impl::<$type_name>();
     }};
 }
+
+#[macro_export]
+macro_rules! delegate_to_ref_binary {
+    ($(#[$attr:meta])* $op:ident) => {
+        delegate_to_ref_binary!($(#[$attr])* $op(&Self::Element));
+    };
+    ($(#[$attr:meta])* $op:ident($rhs_type:ty)) => {
+        paste! {
+            $(#[$attr])*
+            fn [<$op _assign>](&self, x: &mut Self::Element, y: $rhs_type) {
+                *x = self.$op(x, y);
+            }
+        }
+    };
+}

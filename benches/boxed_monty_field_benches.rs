@@ -2,7 +2,7 @@ mod field_ops_bench_common;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use crypto_bigint::{Odd, modular::BoxedMontyParams};
-use crypto_primitives::{ProjectElementDynamic, crypto_bigint_boxed_monty::BoxedMontyField};
+use crypto_primitives::{ProjectElementWithConfig, crypto_bigint_boxed_monty::BoxedMontyField};
 
 use crate::field_ops_bench_common::field_benchmarks;
 

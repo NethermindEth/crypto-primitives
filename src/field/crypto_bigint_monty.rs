@@ -1,13 +1,14 @@
 use super::*;
 use crate::{
-    IntRing, Wrapper, boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint,
-    helpers::crypto_bigint as helpers,
+    IntSemiring, IntSemiringConfig, LiftElementWithConfig, Wrapper, boolean::Boolean,
+    crypto_bigint_int::Int, crypto_bigint_uint::Uint, helpers::crypto_bigint as helpers,
 };
 use core::fmt::{Display, Formatter, Result as FmtResult};
 use crypto_bigint::{
     BitOps, Limb, NonZero, Odd, Word,
     modular::{FixedMontyForm, FixedMontyParams},
 };
+use num_traits::Signed;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MontyField<const LIMBS: usize> {
@@ -109,9 +110,11 @@ impl<const LIMBS: usize> Display for MontyField<LIMBS> {
 // Field operations
 //
 
-impl<const LIMBS: usize> FieldConfig for MontyField<LIMBS> {
+impl<const LIMBS: usize> SetConfig for MontyField<LIMBS> {
     type Element = MontyFieldElement<LIMBS>;
+}
 
+impl<const LIMBS: usize> SemiringConfig for MontyField<LIMBS> {
     fn is_zero(&self, value: &Self::Element) -> bool {
         value.0.inner().is_zero_vartime()
     }
@@ -122,12 +125,6 @@ impl<const LIMBS: usize> FieldConfig for MontyField<LIMBS> {
 
     fn one(&self) -> Self::Element {
         (*self.params.one()).into()
-    }
-
-    fn neg(&self, x: &Self::Element) -> Self::Element {
-        x.0.inner()
-            .neg_mod(self.params.modulus().as_nz_ref())
-            .into()
     }
 
     fn add(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
@@ -142,6 +139,70 @@ impl<const LIMBS: usize> FieldConfig for MontyField<LIMBS> {
             .into()
     }
 
+    fn mul(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
+        helpers::mul::monty_mul(x.0.inner(), y.0.inner(), self.params.modulus().as_ref()).into()
+    }
+
+    fn pow_u32(&self, x: &Self::Element, y: u32) -> Self::Element {
+        helpers::pow::pow_u32(
+            x.0.inner(),
+            y,
+            *self.params.one(),
+            self.params.modulus().as_ref(),
+            self.params.mod_neg_inv(),
+        )
+        .into()
+    }
+
+    // Modular arithmetic cannot overflow, so the checked variants always
+    // succeed.
+
+    fn checked_add(&self, x: &Self::Element, y: &Self::Element) -> Option<Self::Element> {
+        Some(self.add(x, y))
+    }
+
+    fn checked_sub(&self, x: &Self::Element, y: &Self::Element) -> Option<Self::Element> {
+        Some(self.sub(x, y))
+    }
+
+    fn checked_mul(&self, x: &Self::Element, y: &Self::Element) -> Option<Self::Element> {
+        Some(self.mul(x, y))
+    }
+
+    fn checked_pow_u32(&self, x: &Self::Element, y: u32) -> Option<Self::Element> {
+        Some(self.pow_u32(x, y))
+    }
+
+    // Assign operations use the default implementations, which delegate to the
+    // operations above (`Uint` arithmetic is not in-place anyway)
+}
+
+impl<const LIMBS: usize> RingConfig for MontyField<LIMBS> {
+    fn neg(&self, x: &Self::Element) -> Self::Element {
+        x.0.inner()
+            .neg_mod(self.params.modulus().as_nz_ref())
+            .into()
+    }
+
+    fn checked_neg(&self, x: &Self::Element) -> Option<Self::Element> {
+        Some(self.neg(x))
+    }
+}
+
+impl<const LIMBS: usize> IntSemiringConfig for MontyField<LIMBS> {
+    // Parity is a property of the represented residue, so it requires leaving
+    // the Montgomery domain.
+
+    fn is_odd(&self, x: &Self::Element) -> bool {
+        IntSemiring::is_odd(&self.lift(x))
+    }
+
+    fn is_even(&self, x: &Self::Element) -> bool {
+        IntSemiring::is_even(&self.lift(x))
+    }
+}
+
+impl<const LIMBS: usize> FieldConfig for MontyField<LIMBS> {
     fn inv(&self, x: &Self::Element) -> Option<Self::Element> {
         // Follows FixedMontyForm::invert_vartime, but avoids the params copies
         // of assembling forms: invert the Montgomery representation directly,
@@ -158,10 +219,6 @@ impl<const LIMBS: usize> FieldConfig for MontyField<LIMBS> {
         Some(helpers::mul::monty_mul(&x_inv, r2, modulus.as_ref()).into())
     }
 
-    fn mul(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
-        helpers::mul::monty_mul(x.0.inner(), y.0.inner(), self.params.modulus().as_ref()).into()
-    }
-
     fn pow(&self, x: &Self::Element, y: &Self::Integer) -> Self::Element {
         helpers::pow::pow_bounded_exp(
             x.0.inner(),
@@ -173,20 +230,13 @@ impl<const LIMBS: usize> FieldConfig for MontyField<LIMBS> {
         )
         .into()
     }
+}
 
-    fn pow_u32(&self, x: &Self::Element, y: u32) -> Self::Element {
-        helpers::pow::pow_u32(
-            x.0.inner(),
-            y,
-            *self.params.one(),
-            self.params.modulus().as_ref(),
-            self.params.mod_neg_inv(),
-        )
-        .into()
+impl<const LIMBS: usize> WithExtensionDegree for MontyField<LIMBS> {
+    #[inline(always)]
+    fn extension_degree() -> u64 {
+        1
     }
-
-    // Assign operations use the default implementations, which delegate to the
-    // operations above (`Uint` arithmetic is not in-place anyway)
 }
 
 //
@@ -196,7 +246,7 @@ impl<const LIMBS: usize> FieldConfig for MontyField<LIMBS> {
 macro_rules! impl_from_unsigned {
     ($($t:ty),* $(,)?) => {
         $(
-            impl<const LIMBS: usize> ProjectElementDynamic<$t> for MontyField<LIMBS> {
+            impl<const LIMBS: usize> ProjectElementWithConfig<$t> for MontyField<LIMBS> {
                 fn project(&self, value: &$t) -> Self::Element {
                     let abs: crypto_bigint::Uint<LIMBS> = (*value).into();
                     self.project(&Uint::new(abs))
@@ -209,7 +259,7 @@ macro_rules! impl_from_unsigned {
 macro_rules! impl_from_signed {
     ($($t:ty),* $(,)?) => {
         $(
-            impl<const LIMBS: usize> ProjectElementDynamic<$t> for MontyField<LIMBS> {
+            impl<const LIMBS: usize> ProjectElementWithConfig<$t> for MontyField<LIMBS> {
                 fn project(&self, value: &$t) -> Self::Element {
                     let magnitude: crypto_bigint::Uint<LIMBS> = value.abs_diff(0).into();
                     let magnitude = self.project(&Uint::new(magnitude));
@@ -223,20 +273,20 @@ macro_rules! impl_from_signed {
 impl_from_unsigned!(u8, u16, u32, u64, u128);
 impl_from_signed!(i8, i16, i32, i64, i128);
 
-impl<const LIMBS: usize> ProjectElementDynamic<bool> for MontyField<LIMBS> {
+impl<const LIMBS: usize> ProjectElementWithConfig<bool> for MontyField<LIMBS> {
     fn project(&self, value: &bool) -> Self::Element {
         if *value { self.one() } else { self.zero() }
     }
 }
 
-impl<const LIMBS: usize> ProjectElementDynamic<Boolean> for MontyField<LIMBS> {
+impl<const LIMBS: usize> ProjectElementWithConfig<Boolean> for MontyField<LIMBS> {
     #[inline(always)]
     fn project(&self, value: &Boolean) -> Self::Element {
         self.project(value.inner())
     }
 }
 
-impl<const LIMBS: usize, const LIMBS2: usize> ProjectElementDynamic<Int<LIMBS2>>
+impl<const LIMBS: usize, const LIMBS2: usize> ProjectElementWithConfig<Int<LIMBS2>>
     for MontyField<LIMBS>
 {
     fn project(&self, value: &Int<LIMBS2>) -> Self::Element {
@@ -249,7 +299,7 @@ impl<const LIMBS: usize, const LIMBS2: usize> ProjectElementDynamic<Int<LIMBS2>>
     }
 }
 
-impl<const LIMBS: usize, const LIMBS2: usize> ProjectElementDynamic<Uint<LIMBS2>>
+impl<const LIMBS: usize, const LIMBS2: usize> ProjectElementWithConfig<Uint<LIMBS2>>
     for MontyField<LIMBS>
 {
     /// Convert the given integer into the Montgomery domain.
@@ -299,13 +349,13 @@ impl<const LIMBS: usize> WithAssociatedInteger for MontyField<LIMBS> {
     type Integer = Uint<LIMBS>;
 }
 
-impl<const LIMBS: usize> LiftElementDynamic<<Self as WithAssociatedInteger>::Integer>
+impl<const LIMBS: usize> LiftElementWithConfig<<Self as WithAssociatedInteger>::Integer>
     for MontyField<LIMBS>
 {
     /// Retrieves the integer currently encoded in this [`MontyField`],
     /// guaranteed to be reduced.
     #[inline(always)]
-    fn lift(&self, value: &Self::Element) -> Self::Integer {
+    fn lift(&self, value: &Self::Element) -> <Self as WithAssociatedInteger>::Integer {
         let mut out = crypto_bigint::Uint::<LIMBS>::ZERO;
         helpers::monty_retrieve_inner(
             value.0.inner().as_limbs(),

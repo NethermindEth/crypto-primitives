@@ -1,4 +1,4 @@
-use crate::{ConstSemiring, IntSemiring, Semiring, Wrapper, f2::F2};
+use crate::{IntSemiring, Wrapper, f2::F2};
 use core::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     hash::Hash,
@@ -6,7 +6,10 @@ use core::{
     ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
     str::FromStr,
 };
-use num_traits::{CheckedAdd, CheckedMul, CheckedSub, ConstOne, ConstZero, One, Pow, Zero};
+use num_traits::{
+    Bounded, CheckedAdd, CheckedMul, CheckedSub, ConstOne, ConstZero, FromBytes, One, Pow, ToBytes,
+    Zero,
+};
 
 #[cfg(feature = "rand")]
 use rand::{distr::StandardUniform, prelude::*};
@@ -393,11 +396,44 @@ impl Wrapper for Boolean {
 // Semiring
 //
 
-impl Semiring for Boolean {}
+impl Bounded for Boolean {
+    #[inline(always)]
+    fn min_value() -> Self {
+        Self::FALSE
+    }
 
-impl ConstSemiring for Boolean {
-    const MAX: Self = Self::TRUE;
-    const MIN: Self = Self::FALSE;
+    #[inline(always)]
+    fn max_value() -> Self {
+        Self::TRUE
+    }
+}
+
+impl ToBytes for Boolean {
+    type Bytes = [u8; 1];
+
+    #[inline(always)]
+    fn to_be_bytes(&self) -> Self::Bytes {
+        [self.to_u8()]
+    }
+
+    #[inline(always)]
+    fn to_le_bytes(&self) -> Self::Bytes {
+        [self.to_u8()]
+    }
+}
+
+impl FromBytes for Boolean {
+    type Bytes = [u8; 1];
+
+    #[inline(always)]
+    fn from_be_bytes(bytes: &Self::Bytes) -> Self {
+        Self::from_u8(bytes[0])
+    }
+
+    #[inline(always)]
+    fn from_le_bytes(bytes: &Self::Bytes) -> Self {
+        Self::from_u8(bytes[0])
+    }
 }
 
 impl IntSemiring for Boolean {

@@ -1,6 +1,5 @@
 use crate::{
-    ConstBaseField, ConstSemiring, FixedField, IntSemiring, LiftElementStatic, Ring, Semiring,
-    WithAssociatedInteger, Wrapper, boolean::Boolean,
+    ConstBaseField, IntSemiring, LiftElement, WithAssociatedInteger, Wrapper, boolean::Boolean,
 };
 use core::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
@@ -11,8 +10,8 @@ use core::{
 };
 use crypto_primitives_proc_macros::InfallibleCheckedOp;
 use num_traits::{
-    CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, Inv, One, Pow,
-    Zero,
+    Bounded, CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, Inv,
+    One, Pow, Zero,
 };
 
 #[cfg(feature = "rand")]
@@ -408,11 +407,16 @@ impl Wrapper for F2 {
 // Semiring, Ring and Field
 //
 
-impl Semiring for F2 {}
+impl Bounded for F2 {
+    #[inline(always)]
+    fn min_value() -> Self {
+        Self::ZERO
+    }
 
-impl ConstSemiring for F2 {
-    const MAX: Self = Self::ONE;
-    const MIN: Self = Self::ZERO;
+    #[inline(always)]
+    fn max_value() -> Self {
+        Self::ONE
+    }
 }
 
 impl IntSemiring for F2 {
@@ -427,10 +431,6 @@ impl IntSemiring for F2 {
     }
 }
 
-impl Ring for F2 {}
-
-impl FixedField for F2 {}
-
 impl ConstBaseField for F2 {
     const MODULUS: Self::Integer = 2;
     const MODULUS_MINUS_ONE_DIV_TWO: Self::Integer = 0;
@@ -440,7 +440,7 @@ impl WithAssociatedInteger for F2 {
     type Integer = u8;
 }
 
-impl LiftElementStatic<<Self as WithAssociatedInteger>::Integer> for F2 {
+impl LiftElement<<Self as WithAssociatedInteger>::Integer> for F2 {
     #[inline(always)]
     fn lift(&self) -> <Self as WithAssociatedInteger>::Integer {
         u8::from(self.0)
@@ -479,7 +479,7 @@ impl zeroize::DefaultIsZeroes for F2 {}
 mod tests {
     use super::*;
     use crate::{
-        BaseFieldConfig, ConstIntRing, FieldConfig, FixedBaseField, FixedFieldConfig,
+        BaseField, BaseFieldConfig, ConstField, FieldConfig, FixedConfig, SemiringConfig,
         ensure_type_implements_trait,
     };
     use alloc::format;
@@ -490,9 +490,10 @@ mod tests {
 
     #[test]
     fn ensure_traits() {
-        ensure_type_implements_trait!(F2, ConstIntRing);
-        ensure_type_implements_trait!(F2, FixedBaseField);
+        ensure_type_implements_trait!(F2, ConstField);
+        ensure_type_implements_trait!(F2, BaseField);
         ensure_type_implements_trait!(F2, ConstBaseField);
+        ensure_type_implements_trait!(FixedConfig<F2>, BaseFieldConfig);
     }
 
     #[test]
@@ -679,7 +680,7 @@ mod tests {
 
     #[test]
     fn config_pow() {
-        let cfg = FixedFieldConfig::<F2>::default();
+        let cfg = FixedConfig::<F2>::default();
 
         assert_eq!(cfg.pow_u32(&V0, 0), V1); // 0^0 = 1 by convention
         assert_eq!(cfg.pow_u32(&V0, 2), V0);
@@ -770,7 +771,7 @@ mod tests {
         assert_eq!(F2::modulus(), 2_u8);
         assert_eq!(F2::modulus_minus_one_div_two(), 0_u8);
 
-        type Cfg = FixedFieldConfig<F2>;
+        type Cfg = FixedConfig<F2>;
         assert!(Cfg::new(&2_u8).is_ok());
         assert!(Cfg::new(&0_u8).is_err());
         assert!(Cfg::new(&3_u8).is_err());

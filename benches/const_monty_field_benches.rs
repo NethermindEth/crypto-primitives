@@ -2,7 +2,7 @@ mod field_ops_bench_common;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use crypto_bigint::{U256, const_monty_params};
-use crypto_primitives::{FixedFieldConfig, crypto_bigint_const_monty::ConstMontyField};
+use crypto_primitives::{FixedConfig, crypto_bigint_const_monty::ConstMontyField};
 
 use crate::field_ops_bench_common::field_benchmarks;
 
@@ -18,7 +18,7 @@ pub fn const_monty_field_benches(c: &mut Criterion) {
     field_benchmarks(
         c,
         "Const Monty Field Arithmetic",
-        &FixedFieldConfig::<F>::default(),
+        &FixedConfig::<F>::default(),
         |_, num| F::from(num),
     );
 }

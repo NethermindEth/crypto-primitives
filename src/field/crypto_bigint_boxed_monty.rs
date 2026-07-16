@@ -1,7 +1,8 @@
 use super::*;
 use crate::{
-    IntRing, Wrapper, boolean::Boolean, crypto_bigint_boxed_uint::BoxedUint,
-    crypto_bigint_int::Int, crypto_bigint_uint::Uint, helpers::crypto_bigint as helpers,
+    IntSemiring, IntSemiringConfig, LiftElementWithConfig, Wrapper, boolean::Boolean,
+    crypto_bigint_boxed_uint::BoxedUint, crypto_bigint_int::Int, crypto_bigint_uint::Uint,
+    helpers::crypto_bigint as helpers,
 };
 use alloc::borrow::Cow;
 use core::fmt::{Debug, Display, Formatter, Result as FmtResult};
@@ -9,7 +10,7 @@ use crypto_bigint::{
     MontyForm, Odd,
     modular::{BoxedMontyForm, BoxedMontyParams},
 };
-use num_traits::One;
+use num_traits::{One, Signed};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoxedMontyField {
@@ -131,9 +132,11 @@ impl Display for BoxedMontyField {
 // Field operations
 //
 
-impl FieldConfig for BoxedMontyField {
+impl SetConfig for BoxedMontyField {
     type Element = BoxedMontyFieldElement;
+}
 
+impl SemiringConfig for BoxedMontyField {
     fn is_zero(&self, value: &Self::Element) -> bool {
         value.0.is_zero()
     }
@@ -146,12 +149,6 @@ impl FieldConfig for BoxedMontyField {
         self.params.as_ref().one().clone().into()
     }
 
-    fn neg(&self, x: &Self::Element) -> Self::Element {
-        x.0.inner()
-            .neg_mod(self.params.modulus().as_nz_ref())
-            .into()
-    }
-
     fn add(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
         x.0.inner()
             .add_mod(y.0.inner(), self.params.modulus().as_nz_ref())
@@ -162,19 +159,6 @@ impl FieldConfig for BoxedMontyField {
         x.0.inner()
             .sub_mod(y.0.inner(), self.params.modulus().as_nz_ref())
             .into()
-    }
-
-    fn inv(&self, x: &Self::Element) -> Option<Self::Element> {
-        // Follows BoxedMontyForm::invert_vartime
-        let inverted: Option<crypto_bigint::BoxedUint> =
-            x.0.inner()
-                .invert_odd_mod_vartime(self.params.modulus())
-                .into();
-        let inverted = BoxedUint::new(inverted?).into();
-
-        let r2 = BoxedUint::new_ref(self.params.as_ref().r2()).into();
-        let x_inv = self.mul(&inverted, r2);
-        Some(self.mul(&x_inv, r2))
     }
 
     /// Montgomery multiplication `x*y/R mod m`, fully reduced.
@@ -194,18 +178,6 @@ impl FieldConfig for BoxedMontyField {
         out.into()
     }
 
-    fn pow(&self, x: &Self::Element, y: &Self::Integer) -> Self::Element {
-        helpers::pow::pow_bounded_exp(
-            &x.0,
-            y.as_limbs(),
-            y.bits_precision(),
-            BoxedUint::new(self.params.as_ref().one().clone()),
-            BoxedUint::new_ref(self.params.modulus().as_ref()),
-            self.params.as_ref().mod_neg_inv(),
-        )
-        .into()
-    }
-
     fn pow_u32(&self, x: &Self::Element, y: u32) -> Self::Element {
         helpers::pow::pow_u32(
             &x.0,
@@ -215,6 +187,25 @@ impl FieldConfig for BoxedMontyField {
             self.params.as_ref().mod_neg_inv(),
         )
         .into()
+    }
+
+    // Modular arithmetic cannot overflow, so the checked variants always
+    // succeed.
+
+    fn checked_add(&self, x: &Self::Element, y: &Self::Element) -> Option<Self::Element> {
+        Some(self.add(x, y))
+    }
+
+    fn checked_sub(&self, x: &Self::Element, y: &Self::Element) -> Option<Self::Element> {
+        Some(self.sub(x, y))
+    }
+
+    fn checked_mul(&self, x: &Self::Element, y: &Self::Element) -> Option<Self::Element> {
+        Some(self.mul(x, y))
+    }
+
+    fn checked_pow_u32(&self, x: &Self::Element, y: u32) -> Option<Self::Element> {
+        Some(self.pow_u32(x, y))
     }
 
     fn add_assign(&self, x: &mut Self::Element, y: &Self::Element) {
@@ -230,6 +221,65 @@ impl FieldConfig for BoxedMontyField {
     // Original mul_assign's implementation delegates to mul, so we stick to that
 }
 
+impl RingConfig for BoxedMontyField {
+    fn neg(&self, x: &Self::Element) -> Self::Element {
+        x.0.inner()
+            .neg_mod(self.params.modulus().as_nz_ref())
+            .into()
+    }
+
+    fn checked_neg(&self, x: &Self::Element) -> Option<Self::Element> {
+        Some(self.neg(x))
+    }
+}
+
+impl IntSemiringConfig for BoxedMontyField {
+    // Parity is a property of the represented residue, so it requires leaving
+    // the Montgomery domain.
+
+    fn is_odd(&self, x: &Self::Element) -> bool {
+        IntSemiring::is_odd(&self.lift(x))
+    }
+
+    fn is_even(&self, x: &Self::Element) -> bool {
+        IntSemiring::is_even(&self.lift(x))
+    }
+}
+
+impl WithExtensionDegree for BoxedMontyField {
+    #[inline(always)]
+    fn extension_degree() -> u64 {
+        1
+    }
+}
+
+impl FieldConfig for BoxedMontyField {
+    fn inv(&self, x: &Self::Element) -> Option<Self::Element> {
+        // Follows BoxedMontyForm::invert_vartime
+        let inverted: Option<crypto_bigint::BoxedUint> =
+            x.0.inner()
+                .invert_odd_mod_vartime(self.params.modulus())
+                .into();
+        let inverted = BoxedUint::new(inverted?).into();
+
+        let r2 = BoxedUint::new_ref(self.params.as_ref().r2()).into();
+        let x_inv = self.mul(&inverted, r2);
+        Some(self.mul(&x_inv, r2))
+    }
+
+    fn pow(&self, x: &Self::Element, y: &Self::Integer) -> Self::Element {
+        helpers::pow::pow_bounded_exp(
+            &x.0,
+            y.as_limbs(),
+            y.bits_precision(),
+            BoxedUint::new(self.params.as_ref().one().clone()),
+            BoxedUint::new_ref(self.params.modulus().as_ref()),
+            self.params.as_ref().mod_neg_inv(),
+        )
+        .into()
+    }
+}
+
 //
 // Conversions
 //
@@ -237,7 +287,7 @@ impl FieldConfig for BoxedMontyField {
 macro_rules! impl_from_unsigned {
     ($($t:ty),* $(,)?) => {
         $(
-            impl ProjectElementDynamic<$t> for BoxedMontyField {
+            impl ProjectElementWithConfig<$t> for BoxedMontyField {
                 fn project(&self, value: &$t) -> Self::Element {
                     let abs: BoxedUint = value.into();
                     self.project(&abs.resize(self.modulus().bits_precision()))
@@ -250,7 +300,7 @@ macro_rules! impl_from_unsigned {
 macro_rules! impl_from_signed {
     ($($t:ty),* $(,)?) => {
         $(
-            impl ProjectElementDynamic<$t> for BoxedMontyField {
+            impl ProjectElementWithConfig<$t> for BoxedMontyField {
                 fn project(&self, value: &$t) -> Self::Element {
                     let magnitude = BoxedUint::from(value.abs_diff(0)).resize(self.modulus().bits_precision());
                     let magnitude = self.project(&magnitude);
@@ -264,20 +314,20 @@ macro_rules! impl_from_signed {
 impl_from_unsigned!(u8, u16, u32, u64, u128);
 impl_from_signed!(i8, i16, i32, i64, i128);
 
-impl ProjectElementDynamic<bool> for BoxedMontyField {
+impl ProjectElementWithConfig<bool> for BoxedMontyField {
     fn project(&self, value: &bool) -> Self::Element {
         if *value { self.one() } else { self.zero() }
     }
 }
 
-impl ProjectElementDynamic<Boolean> for BoxedMontyField {
+impl ProjectElementWithConfig<Boolean> for BoxedMontyField {
     #[inline(always)]
     fn project(&self, value: &Boolean) -> Self::Element {
         self.project(value.inner())
     }
 }
 
-impl<const LIMBS: usize> ProjectElementDynamic<Int<LIMBS>> for BoxedMontyField {
+impl<const LIMBS: usize> ProjectElementWithConfig<Int<LIMBS>> for BoxedMontyField {
     #[allow(clippy::arithmetic_side_effects)] // False alert
     fn project(&self, value: &Int<LIMBS>) -> Self::Element {
         let abs: BoxedUint = value.inner().abs().into();
@@ -290,7 +340,7 @@ impl<const LIMBS: usize> ProjectElementDynamic<Int<LIMBS>> for BoxedMontyField {
     }
 }
 
-impl ProjectElementDynamic<BoxedUint> for BoxedMontyField {
+impl ProjectElementWithConfig<BoxedUint> for BoxedMontyField {
     /// Convert the given integer into the Montgomery domain.
     fn project(&self, value: &BoxedUint) -> Self::Element {
         use crypto_bigint::Resize;
@@ -319,14 +369,14 @@ impl ProjectElementDynamic<BoxedUint> for BoxedMontyField {
     }
 }
 
-impl<const LIMBS: usize> ProjectElementDynamic<Uint<LIMBS>> for BoxedMontyField {
+impl<const LIMBS: usize> ProjectElementWithConfig<Uint<LIMBS>> for BoxedMontyField {
     #[inline(always)]
     fn project(&self, value: &Uint<LIMBS>) -> Self::Element {
         self.project(&BoxedUint::from(&value.0))
     }
 }
 
-impl<const LIMBS: usize> ProjectElementDynamic<crypto_bigint::Uint<LIMBS>> for BoxedMontyField {
+impl<const LIMBS: usize> ProjectElementWithConfig<crypto_bigint::Uint<LIMBS>> for BoxedMontyField {
     #[inline(always)]
     fn project(&self, value: &crypto_bigint::Uint<LIMBS>) -> Self::Element {
         self.project(Uint::new_ref(value))
@@ -359,11 +409,11 @@ impl WithAssociatedInteger for BoxedMontyField {
     type Integer = BoxedUint;
 }
 
-impl LiftElementDynamic<<Self as WithAssociatedInteger>::Integer> for BoxedMontyField {
+impl LiftElementWithConfig<<Self as WithAssociatedInteger>::Integer> for BoxedMontyField {
     /// Retrieves the integer currently encoded in this [`BoxedMontyField`],
     /// guaranteed to be reduced.
     #[inline(always)]
-    fn lift(&self, value: &Self::Element) -> Self::Integer {
+    fn lift(&self, value: &Self::Element) -> <Self as WithAssociatedInteger>::Integer {
         let mut out = BoxedUint::zero_with_precision(value.bits_precision());
         helpers::monty_retrieve_inner(
             value.0.as_limbs(),

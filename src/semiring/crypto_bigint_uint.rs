@@ -26,6 +26,8 @@ use rand::{distr::StandardUniform, prelude::*, rand_core::TryRng};
 pub struct Uint<const LIMBS: usize>(pub crypto_bigint::Uint<LIMBS>);
 
 impl<const LIMBS: usize> Uint<LIMBS> {
+    pub const MAX: Self = Self(crypto_bigint::Uint::MAX);
+
     /// Wraps a given value into this wrapper type
     #[inline(always)]
     pub const fn new(value: crypto_bigint::Uint<LIMBS>) -> Self {
@@ -615,11 +617,16 @@ impl<const LIMBS: usize> Wrapper for Uint<LIMBS> {
 // Semiring
 //
 
-impl<const LIMBS: usize> Semiring for Uint<LIMBS> {}
+impl<const LIMBS: usize> Bounded for Uint<LIMBS> {
+    #[inline(always)]
+    fn min_value() -> Self {
+        Self::ZERO
+    }
 
-impl<const LIMBS: usize> ConstSemiring for Uint<LIMBS> {
-    const MAX: Self = Self(crypto_bigint::Uint::MAX);
-    const MIN: Self = Self(crypto_bigint::Uint::ZERO);
+    #[inline(always)]
+    fn max_value() -> Self {
+        Self::MAX
+    }
 }
 
 impl<const LIMBS: usize> IntSemiring for Uint<LIMBS> {
@@ -726,7 +733,7 @@ impl<const LIMBS: usize> crypto_bigint::Bounded for Uint<LIMBS> {
 }
 
 impl<const LIMBS: usize> crypto_bigint::Constants for Uint<LIMBS> {
-    const MAX: Self = ConstSemiring::MAX;
+    const MAX: Self = Self::MAX;
 }
 
 //
@@ -839,7 +846,7 @@ mod tests {
 
         // MIN and MAX
         assert_eq!(Uint4::MAX.checked_add(&One::one()), None);
-        assert_eq!(Uint4::MIN.checked_sub(&One::one()), None);
+        assert_eq!(Uint4::ZERO.checked_sub(&One::one()), None);
     }
 
     #[allow(clippy::op_ref)]

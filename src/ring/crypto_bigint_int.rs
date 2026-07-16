@@ -1,22 +1,20 @@
 use super::*;
-use crate::{
-    ConstSemiring, Wrapper, boolean::Boolean, crypto_bigint_uint::Uint, pow_via_repeated_squaring,
-};
+use crate::{Wrapper, boolean::Boolean, crypto_bigint_uint::Uint, pow_via_repeated_squaring};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, LowerHex, Result as FmtResult, UpperHex},
     hash::{Hash, Hasher},
     iter::{Product, Sum},
     ops::{
-        Add, AddAssign, Mul, MulAssign, Neg, Rem, RemAssign, Shl, ShlAssign, Shr, ShrAssign, Sub,
-        SubAssign,
+        Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Shl, ShlAssign, Shr,
+        ShrAssign, Sub, SubAssign,
     },
     str::FromStr,
 };
 use crypto_bigint::{CheckedSub as CryptoCheckedSub, Integer, Word};
 use num_traits::{
-    CheckedAdd, CheckedMul, CheckedNeg, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow,
-    WrappingAdd, WrappingMul, WrappingSub, Zero,
+    Bounded, CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedRem, CheckedSub, ConstOne,
+    ConstZero, Num, One, Pow, Signed, WrappingAdd, WrappingMul, WrappingSub, Zero,
 };
 use pastey::paste;
 
@@ -89,6 +87,20 @@ impl<const LIMBS: usize> Int<LIMBS> {
         let (abs, _) = self.0.abs_sign();
         (Uint::new(abs), self.is_negative())
     }
+
+    /// Parses the absolute value from `s` and applies the sign.
+    fn parse_abs_radix(s: &str, radix: u32, neg: bool) -> Option<Self> {
+        use crypto_bigint::Uint;
+        let abs = Uint::<LIMBS>::from_str_radix_vartime(s, radix).ok()?;
+        match Self::try_from(abs) {
+            Ok(res) if neg => res.checked_neg(),
+            Ok(res) => Some(res),
+            // Corner case: value is exactly minimum Int<LIMBS>, whose
+            // magnitude is MIN's own bit pattern reinterpreted as unsigned
+            _ if neg && abs == Self::MIN.as_uint().0 => Some(Self::MIN),
+            _ => None,
+        }
+    }
 }
 
 const fn checked_resize<const SRC: usize, const DST: usize>(
@@ -124,7 +136,7 @@ impl<const LIMBS: usize> Int<LIMBS> {
     /// The number of limbs used on this platform.
     pub const LIMBS: usize = LIMBS;
 
-    define_consts!(MINUS_ONE, SIGN_MASK);
+    define_consts!(MAX, MIN, MINUS_ONE, SIGN_MASK);
 }
 
 //
@@ -187,7 +199,6 @@ impl<const LIMBS: usize> Hash for Int<LIMBS> {
 impl<const LIMBS: usize> FromStr for Int<LIMBS> {
     type Err = ();
 
-    #[allow(clippy::arithmetic_side_effects)] // False positive
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (neg, s) = if let Some(s) = s.strip_prefix('-') {
             (true, s)
@@ -199,16 +210,20 @@ impl<const LIMBS: usize> FromStr for Int<LIMBS> {
         } else {
             (10, s)
         };
-        use crypto_bigint::Uint;
-        let abs = Uint::<LIMBS>::from_str_radix_vartime(s, radix).map_err(|_| ())?;
-        let res: Result<Self, _> = abs.try_into();
-        match res {
-            Ok(res) if neg => res.checked_neg().ok_or(()),
-            Ok(res) => Ok(res),
-            // Corner case: value is exactly minimum Int<LIMBS>
-            _ if neg && abs == (Uint::MAX.shr(1) + Uint::one()) => Ok(Int::<LIMBS>::MIN),
-            _ => Err(()),
-        }
+        Self::parse_abs_radix(s, radix, neg).ok_or(())
+    }
+}
+
+impl<const LIMBS: usize> Num for Int<LIMBS> {
+    type FromStrRadixErr = ();
+
+    fn from_str_radix(s: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr> {
+        let (neg, s) = if let Some(s) = s.strip_prefix('-') {
+            (true, s)
+        } else {
+            (false, s)
+        };
+        Self::parse_abs_radix(s, radix, neg).ok_or(())
     }
 }
 
@@ -318,6 +333,25 @@ impl<'a, const LIMBS: usize> Rem<&'a Self> for Int<LIMBS> {
     }
 }
 
+impl<const LIMBS: usize> Div for Int<LIMBS> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn div(self, rhs: Self) -> Self::Output {
+        self.div(&rhs)
+    }
+}
+
+impl<'a, const LIMBS: usize> Div<&'a Self> for Int<LIMBS> {
+    type Output = Self;
+
+    /// Truncated division (mirrors primitive `/`), variable-time in `rhs`.
+    fn div(self, rhs: &'a Self) -> Self::Output {
+        let quotient: Option<crypto_bigint::Int<LIMBS>> = self.0.checked_div_vartime(&rhs.0).into();
+        Self(quotient.expect("division by zero or overflow"))
+    }
+}
+
 impl<const LIMBS: usize> Shl<u32> for Int<LIMBS> {
     type Output = Self;
 
@@ -382,6 +416,16 @@ impl<const LIMBS: usize> CheckedRem for Int<LIMBS> {
     }
 }
 
+impl<const LIMBS: usize> CheckedDiv for Int<LIMBS> {
+    /// Truncated division, variable-time in `other`. Returns [`None`] on
+    /// division by zero or `MIN / -1` overflow.
+    fn checked_div(&self, other: &Self) -> Option<Self> {
+        let quotient: Option<crypto_bigint::Int<LIMBS>> =
+            self.0.checked_div_vartime(&other.0).into();
+        quotient.map(Self)
+    }
+}
+
 //
 // Arithmetic assign operations
 //
@@ -407,6 +451,20 @@ macro_rules! impl_assign_op {
 impl_assign_op!(AddAssign, add_assign);
 impl_assign_op!(SubAssign, sub_assign);
 impl_assign_op!(MulAssign, mul_assign);
+
+impl<const LIMBS: usize> DivAssign for Int<LIMBS> {
+    #[inline(always)]
+    fn div_assign(&mut self, rhs: Self) {
+        self.div_assign(&rhs);
+    }
+}
+
+impl<'a, const LIMBS: usize> DivAssign<&'a Self> for Int<LIMBS> {
+    #![allow(clippy::arithmetic_side_effects)]
+    fn div_assign(&mut self, rhs: &'a Self) {
+        *self = (*self).div(rhs);
+    }
+}
 
 impl<const LIMBS: usize> RemAssign for Int<LIMBS> {
     #[inline(always)]
@@ -641,14 +699,17 @@ impl<const LIMBS: usize> Wrapper for Int<LIMBS> {
 // Semiring and Ring
 //
 
-impl<const LIMBS: usize> Semiring for Int<LIMBS> {}
+impl<const LIMBS: usize> Bounded for Int<LIMBS> {
+    #[inline(always)]
+    fn min_value() -> Self {
+        Self::MIN
+    }
 
-impl<const LIMBS: usize> ConstSemiring for Int<LIMBS> {
-    const MAX: Self = Self(crypto_bigint::Int::MAX);
-    const MIN: Self = Self(crypto_bigint::Int::MIN);
+    #[inline(always)]
+    fn max_value() -> Self {
+        Self::MAX
+    }
 }
-
-impl<const LIMBS: usize> Ring for Int<LIMBS> {}
 
 impl<const LIMBS: usize> IntSemiring for Int<LIMBS> {
     #[inline(always)]
@@ -662,16 +723,41 @@ impl<const LIMBS: usize> IntSemiring for Int<LIMBS> {
     }
 }
 
-impl<const LIMBS: usize> IntRing for Int<LIMBS> {
-    #[inline(always)]
-    fn is_positive(&self) -> bool {
-        self.0.is_positive().into()
+impl<const LIMBS: usize> Signed for Int<LIMBS> {
+    /// Mimics Rust's primitive behavior: panics in debug mode on `MIN` (whose
+    /// absolute value overflows), wraps in release mode.
+    #[allow(clippy::arithmetic_side_effects)]
+    fn abs(&self) -> Self {
+        if Signed::is_negative(self) {
+            -*self
+        } else {
+            *self
+        }
+    }
+
+    /// Mimics Rust's primitive overflow behavior for `self - other`.
+    #[allow(clippy::arithmetic_side_effects)]
+    fn abs_sub(&self, other: &Self) -> Self {
+        if self <= other {
+            Self::ZERO
+        } else {
+            *self - *other
+        }
+    }
+
+    fn signum(&self) -> Self {
+        if Signed::is_negative(self) {
+            Self::MINUS_ONE
+        } else if self.is_zero() {
+            Self::ZERO
+        } else {
+            Self::ONE
+        }
     }
 
     #[inline(always)]
-    fn checked_abs(&self) -> Option<Self> {
-        let result: Option<_> = self.0.abs().try_into_int().into();
-        result.map(Self)
+    fn is_positive(&self) -> bool {
+        self.0.is_positive().into()
     }
 
     #[inline(always)]
@@ -772,7 +858,7 @@ impl<const LIMBS: usize> crypto_bigint::Bounded for Int<LIMBS> {
 }
 
 impl<const LIMBS: usize> crypto_bigint::Constants for Int<LIMBS> {
-    const MAX: Self = ConstSemiring::MAX;
+    const MAX: Self = Self::MAX;
 }
 
 //
@@ -830,7 +916,6 @@ mod tests {
     fn ensure_traits() {
         ensure_type_implements_trait!(Int4, Wrapper);
         ensure_type_implements_trait!(Int4, ConstIntRing);
-        ensure_type_implements_trait!(Int4, IntRingWithRem);
         ensure_type_implements_trait!(Int4, IntRingWithShifts);
     }
 
@@ -1382,7 +1467,7 @@ mod tests {
         assert_eq!(<Int4 as Bounded>::BYTES, 32);
 
         // Test Constants trait
-        assert_eq!(<Int4 as Constants>::MAX, <Int4 as ConstSemiring>::MAX);
+        assert_eq!(<Int4 as Constants>::MAX, Int4::MAX);
     }
 
     #[test]

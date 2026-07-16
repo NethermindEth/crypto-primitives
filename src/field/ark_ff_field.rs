@@ -1,7 +1,7 @@
 use super::*;
-use crate::{Semiring, Wrapper, boolean::Boolean, semiring::ark_ff_bigint::BigInt};
+use crate::{IntSemiring, LiftElement, Wrapper, boolean::Boolean, semiring::ark_ff_bigint::BigInt};
 use ark_ff::{
-    AdditiveGroup, FftField, LegendreSymbol, SqrtPrecomputation,
+    AdditiveGroup, BigInteger, FftField, LegendreSymbol, SqrtPrecomputation,
     fields::{Field as ArkWrappedField, PrimeField as ArkWrappedPrimeField},
 };
 use ark_serialize::{
@@ -17,7 +17,8 @@ use core::{
 };
 use crypto_primitives_proc_macros::InfallibleCheckedOp;
 use num_traits::{
-    CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Pow, Zero,
+    Bounded, CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One,
+    Pow, Zero,
 };
 
 #[cfg(feature = "rand")]
@@ -462,17 +463,36 @@ impl<F: ArkWrappedPrimeField> Wrapper for ArkField<F> {
 // Semiring, Ring and Field
 //
 
-impl<F: ArkWrappedPrimeField> Semiring for ArkField<F> {}
+impl<F: ArkWrappedPrimeField> IntSemiring for ArkField<F> {
+    #[inline(always)]
+    fn is_odd(&self) -> bool {
+        // There's no way to check that efficiently
+        self.0.into_bigint().is_odd()
+    }
 
-impl<F: ArkWrappedPrimeField> Ring for ArkField<F> {}
-
-impl<F, const N: usize> FixedField for ArkField<F> where
-    F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>
-{
+    #[inline(always)]
+    fn is_even(&self) -> bool {
+        // There's no way to check that efficiently
+        self.0.into_bigint().is_even()
+    }
 }
 
-// TODO: Can be made into ConstField, but it's hard to compute MODULUS - 1
-impl<F, const N: usize> FixedBaseField for ArkField<F>
+impl<F: ArkWrappedPrimeField> Bounded for ArkField<F> {
+    #[inline(always)]
+    fn min_value() -> Self {
+        <Self as ConstZero>::ZERO
+    }
+
+    /// The largest residue, `modulus - 1`.
+    #[allow(clippy::arithmetic_side_effects)] // Negation in a field cannot fail
+    #[inline(always)]
+    fn max_value() -> Self {
+        -<Self as ConstOne>::ONE
+    }
+}
+
+// TODO: Can be made into ConstBaseField, but it's hard to compute MODULUS - 1
+impl<F, const N: usize> BaseField for ArkField<F>
 where
     F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
 {
@@ -492,7 +512,7 @@ where
     type Integer = BigInt<N>;
 }
 
-impl<F, const N: usize> LiftElementStatic<<Self as WithAssociatedInteger>::Integer> for ArkField<F>
+impl<F, const N: usize> LiftElement<<Self as WithAssociatedInteger>::Integer> for ArkField<F>
 where
     F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
 {
@@ -741,7 +761,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{FixedBaseField, FixedRing, ensure_type_implements_trait};
+    use crate::{BaseField, Ring, ensure_type_implements_trait};
     use alloc::vec::Vec;
     use ark_ff::{Fp64, Fp256, MontBackend, MontConfig};
     use core::str::FromStr;
@@ -758,10 +778,10 @@ mod tests {
     #[test]
     fn ensure_traits() {
         ensure_type_implements_trait!(F, Wrapper);
-        // Should be ConstRing, but it's hard to compute MODULUS - 1 for
+        // Should be ConstBaseField, but it's hard to compute MODULUS - 1 for
         // Self::BigInt
-        ensure_type_implements_trait!(F, FixedRing);
-        ensure_type_implements_trait!(F, FixedBaseField);
+        ensure_type_implements_trait!(F, Ring);
+        ensure_type_implements_trait!(F, BaseField);
     }
 
     #[test]

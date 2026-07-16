@@ -690,8 +690,6 @@ impl Wrapper for BoxedUint {
 // Semiring
 //
 
-impl Semiring for BoxedUint {}
-
 impl IntSemiring for BoxedUint {
     #[inline(always)]
     fn is_odd(&self) -> bool {
@@ -841,7 +839,7 @@ mod tests {
     #[test]
     fn ensure_traits() {
         ensure_type_implements_trait!(BoxedUint, Wrapper);
-        ensure_type_implements_trait!(BoxedUint, FixedSemiring);
+        ensure_type_implements_trait!(BoxedUint, Semiring);
         ensure_type_implements_trait!(BoxedUint, IntSemiring);
         ensure_type_implements_trait!(BoxedUint, IntSemiringWithShifts);
     }
