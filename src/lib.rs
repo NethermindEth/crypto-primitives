@@ -60,7 +60,7 @@ pub trait Wrapper {
 pub trait SetElement: Debug + Clone + Eq + Send + Sync + 'static {}
 impl<T> SetElement for T where T: Debug + Clone + Eq + Send + Sync + 'static {}
 
-pub trait SetConfig {
+pub trait SetConfig: Debug + Clone + Eq + Send + Sync {
     type Element: SetElement;
 }
 
