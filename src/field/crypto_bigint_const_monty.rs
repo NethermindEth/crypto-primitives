@@ -798,6 +798,7 @@ mod tests {
         ensure_type_implements_trait!(F, Wrapper);
         ensure_type_implements_trait!(F, ConstField);
         ensure_type_implements_trait!(F, ConstBaseField);
+        ensure_type_implements_trait!(FixedConfig<F>, ProjectPrimitiveIntegersWithConfig);
     }
 
     #[test]

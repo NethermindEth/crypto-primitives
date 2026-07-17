@@ -263,12 +263,16 @@ impl<F: BaseField> BaseFieldConfig for FixedConfig<F> {
     }
 }
 
-impl<F: SetElement + WithAssociatedInteger> WithAssociatedInteger for FixedConfig<F> {
+impl<F> WithAssociatedInteger for FixedConfig<F>
+where
+    F: SetElement + WithAssociatedInteger,
+{
     type Integer = F::Integer;
 }
 
-impl<F: Field + WithAssociatedInteger + LiftElement<F::Integer>> LiftElementWithConfig<F::Integer>
-    for FixedConfig<F>
+impl<F> LiftElementWithConfig<F::Integer> for FixedConfig<F>
+where
+    F: Field + WithAssociatedInteger + LiftElement<F::Integer>,
 {
     #[inline(always)]
     fn lift(&self, value: &F) -> F::Integer {
@@ -283,9 +287,12 @@ impl<F: Field> WithExtensionDegree for FixedConfig<F> {
     }
 }
 
-impl<F: BaseField> ProjectElementWithConfig<F::Integer> for FixedConfig<F> {
+impl<F, T> ProjectElementWithConfig<T> for FixedConfig<F>
+where
+    F: Field + for<'a> From<&'a T>,
+{
     #[inline(always)]
-    fn project(&self, value: &F::Integer) -> F {
+    fn project(&self, value: &T) -> F {
         F::from(value)
     }
 }
