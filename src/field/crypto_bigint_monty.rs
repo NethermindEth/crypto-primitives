@@ -368,6 +368,36 @@ impl<const LIMBS: usize> LiftElementWithConfig<<Self as WithAssociatedInteger>::
 }
 
 //
+// Serialization and Deserialization
+//
+
+#[cfg(feature = "serde")]
+impl<'de, const LIMBS: usize> serde::Deserialize<'de> for MontyFieldElement<LIMBS>
+where
+    crypto_bigint::Uint<LIMBS>: crypto_bigint::Encoding,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Uint::<LIMBS>::deserialize(deserializer).map(Self)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<const LIMBS: usize> serde::Serialize for MontyFieldElement<LIMBS>
+where
+    crypto_bigint::Uint<LIMBS>: crypto_bigint::Encoding,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+//
 // Zeroize
 //
 

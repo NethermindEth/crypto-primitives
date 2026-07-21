@@ -425,6 +425,30 @@ impl LiftElementWithConfig<<Self as WithAssociatedInteger>::Integer> for BoxedMo
 }
 
 //
+// Serialization and Deserialization
+//
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for BoxedMontyFieldElement {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        BoxedUint::deserialize(deserializer).map(Self)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for BoxedMontyFieldElement {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+//
 // Zeroize
 //
 

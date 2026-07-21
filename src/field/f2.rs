@@ -459,6 +459,30 @@ impl Distribution<F2> for StandardUniform {
 }
 
 //
+// Serialization and Deserialization
+//
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for F2 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        bool::deserialize(deserializer).map(Self)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for F2 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+//
 // Zeroize
 //
 
