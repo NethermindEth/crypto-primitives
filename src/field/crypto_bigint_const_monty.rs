@@ -121,6 +121,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Default for ConstMontyField<Mod, LI
     }
 }
 
+/// Compares Montgomery form, not values.
 impl<Mod: Params<LIMBS>, const LIMBS: usize> PartialOrd for ConstMontyField<Mod, LIMBS> {
     #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -128,6 +129,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> PartialOrd for ConstMontyField<Mod,
     }
 }
 
+/// Compares Montgomery form, not values.
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Ord for ConstMontyField<Mod, LIMBS> {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {

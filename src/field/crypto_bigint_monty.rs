@@ -3,7 +3,10 @@ use crate::{
     IntSemiring, IntSemiringConfig, LiftElementWithConfig, Wrapper, boolean::Boolean,
     crypto_bigint_int::Int, crypto_bigint_uint::Uint, helpers::crypto_bigint as helpers,
 };
-use core::fmt::{Display, Formatter, Result as FmtResult};
+use core::{
+    cmp::Ordering,
+    fmt::{Display, Formatter, Result as FmtResult},
+};
 use crypto_bigint::{
     BitOps, Limb, NonZero, Odd, Word,
     modular::{FixedMontyForm, FixedMontyParams},
@@ -50,9 +53,23 @@ impl<const LIMBS: usize> MontyField<LIMBS> {
 
 /// A wrapper around [`Uint`] to prevent accidentally calling math operations
 /// on it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct MontyFieldElement<const LIMBS: usize>(pub Uint<LIMBS>);
+
+/// Compares Montgomery form, not values.
+impl<const LIMBS: usize> PartialOrd for MontyFieldElement<LIMBS> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Compares Montgomery form, not values.
+impl<const LIMBS: usize> Ord for MontyFieldElement<LIMBS> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp(&other.0)
+    }
+}
 
 impl<const LIMBS: usize> From<Uint<LIMBS>> for MontyFieldElement<LIMBS> {
     #[inline(always)]

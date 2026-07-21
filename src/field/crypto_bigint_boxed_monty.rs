@@ -5,7 +5,10 @@ use crate::{
     helpers::crypto_bigint as helpers,
 };
 use alloc::borrow::Cow;
-use core::fmt::{Debug, Display, Formatter, Result as FmtResult};
+use core::{
+    cmp::Ordering,
+    fmt::{Debug, Display, Formatter, Result as FmtResult},
+};
 use crypto_bigint::{
     MontyForm, Odd,
     modular::{BoxedMontyForm, BoxedMontyParams},
@@ -56,7 +59,7 @@ impl BoxedMontyField {
 
 /// A wrapper around [`BoxedUint`] to prevent accidentally calling math
 /// operations on it.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct BoxedMontyFieldElement(pub BoxedUint);
 
@@ -64,6 +67,20 @@ impl BoxedMontyFieldElement {
     #[inline(always)]
     pub fn bits_precision(&self) -> u32 {
         self.0.bits_precision()
+    }
+}
+
+/// Compares Montgomery form, not values.
+impl PartialOrd for BoxedMontyFieldElement {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Compares Montgomery form, not values.
+impl Ord for BoxedMontyFieldElement {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp(&other.0)
     }
 }
 
