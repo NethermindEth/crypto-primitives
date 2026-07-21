@@ -1,5 +1,5 @@
 use super::*;
-use crate::{Wrapper, boolean::Boolean, pow_via_repeated_squaring};
+use crate::{Wrapper, boolean::Boolean, helpers::pow_via_repeated_squaring};
 use alloc::boxed::Box;
 use core::{
     cmp::Ordering,

@@ -42,7 +42,7 @@ pub mod f2;
 
 use crate::{
     ConstRing, FixedConfig, IntSemiring, Ring, RingConfig, SemiringConfig, SetConfig, SetElement,
-    delegate_to_ref_binary,
+    helpers::{define_blanket_trait, delegate_to_ref_binary},
 };
 use core::{
     fmt::Debug,
@@ -56,29 +56,29 @@ use thiserror::Error;
 // Field (static and const)
 //
 
-/// See [module-level documentation](crate::field).
-///
-/// This is a general trait for all fields, [base](BaseField) and extension.
-pub trait Field:
-    SetElement
-    + Ring
-    + WithAssociatedInteger
-    + WithExtensionDegree
-    + Inv<Output = Option<Self>>
-    // Arithmetic operations consuming rhs
-    + Pow<Self::Integer, Output=Self>
-    + Div<Output=Self>
-    + DivAssign
-    // Arithmetic operations with rhs reference
-    + for<'a> Pow<&'a Self::Integer, Output=Self>
-    + for<'a> Div<&'a Self, Output=Self>
-    + for<'a> DivAssign<&'a Self>
-    // Conversion
-    + From<u64>
-    + From<u128>
-    + From<Self::Integer>
-    + for<'a> From<&'a Self::Integer>
-{
+define_blanket_trait! {
+    /// See [module-level documentation](crate::field).
+    ///
+    /// This is a general trait for all fields, [base](BaseField) and extension.
+    pub trait Field:
+        SetElement
+        + Ring
+        + WithAssociatedInteger
+        + WithExtensionDegree
+        + Inv<Output = Option<Self>>
+        // Arithmetic operations consuming rhs
+        + Pow<Self::Integer, Output=Self>
+        + Div<Output=Self>
+        + DivAssign
+        // Arithmetic operations with rhs reference
+        + for<'a> Pow<&'a Self::Integer, Output=Self>
+        + for<'a> Div<&'a Self, Output=Self>
+        + for<'a> DivAssign<&'a Self>
+        // Conversion
+        + From<u64>
+        + From<u128>
+        + From<Self::Integer>
+        + for<'a> From<&'a Self::Integer>
 }
 
 /// The field's degree over its prime subfield; 1 for base fields.
@@ -91,31 +91,10 @@ pub trait WithExtensionDegree {
     fn extension_degree() -> u64;
 }
 
-impl<T> Field for T where
-    T: SetElement
-        + Ring
-        + WithAssociatedInteger
-        + WithExtensionDegree
-        + Inv<Output = Option<Self>>
-        // Arithmetic operations consuming rhs
-        + Pow<Self::Integer, Output = Self>
-        + Div<Output = Self>
-        + DivAssign
-        // Arithmetic operations with rhs reference
-        + for<'a> Pow<&'a Self::Integer, Output = Self>
-        + for<'a> Div<&'a Self, Output = Self>
-        + for<'a> DivAssign<&'a Self>
-        // Conversion
-        + From<u64>
-        + From<u128>
-        + From<Self::Integer>
-        + for<'a> From<&'a Self::Integer>
-{
+define_blanket_trait! {
+    /// [`Field`] with a bunch of values known at compile time.
+    pub trait ConstField: Field + ConstRing
 }
-
-/// [`Field`] with a bunch of values known at compile time.
-pub trait ConstField: Field + ConstRing {}
-impl<F: Field + ConstRing> ConstField for F {}
 
 /// Base (non-extension) prime field with elements being self-sufficient, but
 /// whose metadata like modulus is not necessarily known at compile-time.
@@ -342,26 +321,12 @@ pub trait ProjectElementWithConfig<T>: SetConfig {
     fn project(&self, value: &T) -> Self::Element;
 }
 
-/// The trait combines all `ProjectElementWithConfig<u*>` and
-/// `ProjectElementWithConfig<i*>` into one umbrella trait. Handy when one needs
-/// conversion functions for different primitive int types.
-pub trait ProjectPrimitiveIntegersWithConfig:
-    ProjectElementWithConfig<u8>
-    + ProjectElementWithConfig<u16>
-    + ProjectElementWithConfig<u32>
-    + ProjectElementWithConfig<u64>
-    + ProjectElementWithConfig<u128>
-    + ProjectElementWithConfig<i8>
-    + ProjectElementWithConfig<i16>
-    + ProjectElementWithConfig<i32>
-    + ProjectElementWithConfig<i64>
-    + ProjectElementWithConfig<i128>
-{
-}
-
-/// Blanket implementation.
-impl<
-    T: ProjectElementWithConfig<u8>
+define_blanket_trait! {
+    /// The trait combines all `ProjectElementWithConfig<u*>` and
+    /// `ProjectElementWithConfig<i*>` into one umbrella trait. Handy when one needs
+    /// conversion functions for different primitive int types.
+    pub trait ProjectPrimitiveIntegersWithConfig:
+        ProjectElementWithConfig<u8>
         + ProjectElementWithConfig<u16>
         + ProjectElementWithConfig<u32>
         + ProjectElementWithConfig<u64>
@@ -370,9 +335,7 @@ impl<
         + ProjectElementWithConfig<i16>
         + ProjectElementWithConfig<i32>
         + ProjectElementWithConfig<i64>
-        + ProjectElementWithConfig<i128>,
-> ProjectPrimitiveIntegersWithConfig for T
-{
+        + ProjectElementWithConfig<i128>
 }
 
 //

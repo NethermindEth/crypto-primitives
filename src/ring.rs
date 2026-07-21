@@ -13,28 +13,33 @@ pub mod crypto_bigint_int;
 use crate::{
     ConstIntSemiring, ConstIntSemiringConfig, ConstSemiring, FixedConfig, IntSemiring,
     IntSemiringConfig, IntSemiringWithDivRem, IntSemiringWithShifts, Semiring, SemiringConfig,
-    SetElement,
+    SetElement, helpers::define_blanket_trait,
 };
 use core::ops::Neg;
 use num_traits::{CheckedNeg, Signed};
 
-/// See [module-level documentation](crate::ring).
-pub trait Ring: SetElement + Semiring + Neg<Output = Self> + CheckedNeg {}
-impl<T> Ring for T where T: SetElement + Semiring + Neg<Output = Self> + CheckedNeg {}
+define_blanket_trait! {
+    /// See [module-level documentation](crate::ring).
+    pub trait Ring: SetElement + Semiring + Neg<Output = Self> + CheckedNeg
+}
 
-/// [`Ring`] with a bunch of values known at compile time.
-pub trait ConstRing: Ring + ConstSemiring {}
-impl<T> ConstRing for T where T: Ring + ConstSemiring {}
+define_blanket_trait! {
+    /// [`Ring`] with a bunch of values known at compile time.
+    pub trait ConstRing: Ring + ConstSemiring
+}
 
-/// Ring of integers, usually denoted as `Z`.
-pub trait IntRing: Ring + IntSemiringWithDivRem + Signed {}
-impl<T> IntRing for T where T: Ring + IntSemiringWithDivRem + Signed {}
+define_blanket_trait! {
+    /// Ring of integers, usually denoted as `Z`.
+    pub trait IntRing: Ring + IntSemiringWithDivRem + Signed
+}
 
-pub trait IntRingWithShifts: IntRing + IntSemiringWithShifts {}
-impl<T> IntRingWithShifts for T where T: IntRing + IntSemiringWithShifts {}
+define_blanket_trait! {
+    pub trait IntRingWithShifts: IntRing + IntSemiringWithShifts
+}
 
-pub trait ConstIntRing: IntRing + ConstIntSemiring + From<i8> {}
-impl<T> ConstIntRing for T where T: IntRing + ConstIntSemiring + From<i8> {}
+define_blanket_trait! {
+    pub trait ConstIntRing: IntRing + ConstIntSemiring + From<i8>
+}
 
 /// See [module-level documentation](crate::ring).
 pub trait RingConfig: SemiringConfig {
@@ -50,8 +55,9 @@ pub trait RingConfig: SemiringConfig {
     }
 }
 
-pub trait IntRingConfig: RingConfig + IntSemiringConfig {}
-impl<R> IntRingConfig for R where R: RingConfig + IntSemiringConfig {}
+define_blanket_trait! {
+    pub trait IntRingConfig: RingConfig + IntSemiringConfig
+}
 
 pub trait ConstIntRingConfig: IntRingConfig + ConstIntSemiringConfig {
     /// |x|

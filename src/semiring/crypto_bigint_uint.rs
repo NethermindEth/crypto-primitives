@@ -1,5 +1,7 @@
 use super::*;
-use crate::{Wrapper, boolean::Boolean, crypto_bigint_int::Int, pow_via_repeated_squaring};
+use crate::{
+    Wrapper, boolean::Boolean, crypto_bigint_int::Int, helpers::pow_via_repeated_squaring,
+};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, LowerHex, Result as FmtResult, UpperHex},

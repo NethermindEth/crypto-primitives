@@ -19,7 +19,10 @@ pub mod crypto_bigint_boxed_uint;
 #[cfg(feature = "crypto_bigint")]
 pub mod crypto_bigint_uint;
 
-use crate::{FixedConfig, ParseStrConfig, SetConfig, SetElement, delegate_to_ref_binary};
+use crate::{
+    FixedConfig, ParseStrConfig, SetConfig, SetElement,
+    helpers::{define_blanket_trait, delegate_to_ref_binary},
+};
 use core::{
     fmt::Display,
     hash::Hash,
@@ -36,42 +39,10 @@ use num_traits::{
 };
 use pastey::paste;
 
-/// See [module-level documentation](crate::semiring).
-pub trait Semiring:
-    SetElement
-    // Core traits
-    + Sized
-    + Display
-    + Hash
-    + Default
-    // Arithmetic operations consuming rhs
-    + CheckedAdd
-    + CheckedSub
-    + CheckedMul
-    + AddAssign
-    + SubAssign
-    + MulAssign
-    + Pow<u32, Output=Self>
-    // Arithmetic operations with rhs reference
-    + for<'a> Add<&'a Self, Output=Self>
-    + for<'a> Sub<&'a Self, Output=Self>
-    + for<'a> Mul<&'a Self, Output=Self>
-    + for<'a> AddAssign<&'a Self>
-    + for<'a> SubAssign<&'a Self>
-    + for<'a> MulAssign<&'a Self>
-    // Aggregate operations
-    + Sum
-    + Product
-    + for<'a> Sum<&'a Self>
-    + for<'a> Product<&'a Self>
-    // Other
-    + Zero
-    + One
-    + From<bool>
-    {}
-
-impl<T> Semiring for T where
-    T: SetElement
+define_blanket_trait! {
+    /// See [module-level documentation](crate::semiring).
+    pub trait Semiring:
+        SetElement
         // Core traits
         + Sized
         + Display
@@ -84,11 +55,11 @@ impl<T> Semiring for T where
         + AddAssign
         + SubAssign
         + MulAssign
-        + Pow<u32, Output = Self>
+        + Pow<u32, Output=Self>
         // Arithmetic operations with rhs reference
-        + for<'a> Add<&'a Self, Output = Self>
-        + for<'a> Sub<&'a Self, Output = Self>
-        + for<'a> Mul<&'a Self, Output = Self>
+        + for<'a> Add<&'a Self, Output=Self>
+        + for<'a> Sub<&'a Self, Output=Self>
+        + for<'a> Mul<&'a Self, Output=Self>
         + for<'a> AddAssign<&'a Self>
         + for<'a> SubAssign<&'a Self>
         + for<'a> MulAssign<&'a Self>
@@ -101,12 +72,12 @@ impl<T> Semiring for T where
         + Zero
         + One
         + From<bool>
-{
 }
 
-/// [`Semiring`] with a bunch of values known at compile time.
-pub trait ConstSemiring: Semiring + ConstZero + ConstOne {}
-impl<S: Semiring + ConstZero + ConstOne> ConstSemiring for S {}
+define_blanket_trait! {
+    /// [`Semiring`] with a bunch of values known at compile time.
+    pub trait ConstSemiring: Semiring + ConstZero + ConstOne
+}
 
 /// Semiring of integers.
 pub trait IntSemiring: Semiring + Ord {
@@ -115,22 +86,10 @@ pub trait IntSemiring: Semiring + Ord {
     fn is_even(&self) -> bool;
 }
 
-/// [`IntSemiring`] that defines (integer) division and remainder operations.
-pub trait IntSemiringWithDivRem:
-    IntSemiring
-    + CheckedDiv
-    + CheckedRem
-    + for<'a> Div<&'a Self, Output = Self>
-    + for<'a> Rem<&'a Self, Output = Self>
-    + DivAssign
-    + RemAssign
-    + for<'a> DivAssign<&'a Self>
-    + for<'a> RemAssign<&'a Self>
-{
-}
-
-impl<T> IntSemiringWithDivRem for T where
-    T: IntSemiring
+define_blanket_trait! {
+    /// [`IntSemiring`] that defines (integer) division and remainder operations.
+    pub trait IntSemiringWithDivRem:
+        IntSemiring
         + CheckedDiv
         + CheckedRem
         + for<'a> Div<&'a Self, Output = Self>
@@ -139,20 +98,16 @@ impl<T> IntSemiringWithDivRem for T where
         + RemAssign
         + for<'a> DivAssign<&'a Self>
         + for<'a> RemAssign<&'a Self>
-{
 }
 
-pub trait IntSemiringWithShifts:
-    IntSemiring + Shl<u32> + Shr<u32> + ShlAssign<u32> + ShrAssign<u32>
-{
-}
-impl<T> IntSemiringWithShifts for T where
-    T: IntSemiring + Shl<u32> + Shr<u32> + ShlAssign<u32> + ShrAssign<u32>
-{
+define_blanket_trait! {
+    pub trait IntSemiringWithShifts:
+        IntSemiring + Shl<u32> + Shr<u32> + ShlAssign<u32> + ShrAssign<u32>
 }
 
-pub trait ConstIntSemiring: IntSemiring + ConstSemiring + Bounded + FromStr {}
-impl<T> ConstIntSemiring for T where T: IntSemiring + ConstSemiring + Bounded + FromStr {}
+define_blanket_trait! {
+    pub trait ConstIntSemiring: IntSemiring + ConstSemiring + Bounded + FromStr
+}
 
 macro_rules! primitive_int_semiring {
     ($t:ident) => {

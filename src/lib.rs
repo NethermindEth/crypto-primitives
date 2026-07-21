@@ -31,6 +31,7 @@ pub use matrix::*;
 pub use ring::*;
 pub use semiring::*;
 
+use crate::helpers::define_blanket_trait;
 use core::{fmt::Debug, marker::PhantomData};
 
 /// A thin wrapper around some underlying representation.
@@ -55,10 +56,11 @@ pub trait Wrapper {
     fn new_unchecked(inner: Self::Inner) -> Self;
 }
 
-/// Base type we demand of all of our set elements - values that would be passed
-/// around.
-pub trait SetElement: Debug + Clone + Eq + Send + Sync + 'static {}
-impl<T> SetElement for T where T: Debug + Clone + Eq + Send + Sync + 'static {}
+define_blanket_trait! {
+    /// Base type we demand of all of our set elements - values that would be passed
+    /// around.
+    pub trait SetElement: Debug + Clone + Eq + Send + Sync + 'static
+}
 
 pub trait SetConfig: Debug + Clone + Eq + Send + Sync {
     type Element: SetElement;
