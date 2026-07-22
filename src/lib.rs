@@ -78,6 +78,12 @@ pub trait ParseStrConfig: SetConfig {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FixedConfig<T: SetElement>(PhantomData<T>);
 
+impl<T: SetElement> FixedConfig<T> {
+    pub const fn const_default() -> Self {
+        FixedConfig(PhantomData)
+    }
+}
+
 impl<T: SetElement> SetConfig for FixedConfig<T> {
     type Element = T;
 }
