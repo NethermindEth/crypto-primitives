@@ -1,29 +1,31 @@
 use super::*;
-use crate::{ConstSemiring, boolean::Boolean, crypto_bigint_uint::Uint, pow_via_repeated_squaring};
+use crate::{
+    Wrapper, boolean::Boolean, crypto_bigint_uint::Uint, helpers::pow_via_repeated_squaring,
+};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, LowerHex, Result as FmtResult, UpperHex},
     hash::{Hash, Hasher},
     iter::{Product, Sum},
     ops::{
-        Add, AddAssign, Mul, MulAssign, Neg, Rem, RemAssign, Shl, ShlAssign, Shr, ShrAssign, Sub,
-        SubAssign,
+        Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Shl, ShlAssign, Shr,
+        ShrAssign, Sub, SubAssign,
     },
     str::FromStr,
 };
 use crypto_bigint::{CheckedSub as CryptoCheckedSub, Integer, Word};
 use num_traits::{
-    CheckedAdd, CheckedMul, CheckedNeg, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow,
-    WrappingAdd, WrappingMul, WrappingSub, Zero,
+    Bounded, CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedRem, CheckedSub, ConstOne,
+    ConstZero, Num, One, Pow, Signed, WrappingAdd, WrappingMul, WrappingSub, Zero,
 };
 use pastey::paste;
 
 #[cfg(feature = "rand")]
 use rand::{distr::StandardUniform, prelude::*, rand_core::TryRng};
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct Int<const LIMBS: usize>(crypto_bigint::Int<LIMBS>);
+pub struct Int<const LIMBS: usize>(pub crypto_bigint::Int<LIMBS>);
 
 impl<const LIMBS: usize> Int<LIMBS> {
     /// Wraps a given value into this wrapper type
@@ -46,18 +48,6 @@ impl<const LIMBS: usize> Int<LIMBS> {
         unsafe { &mut *(value as *mut crypto_bigint::Int<LIMBS> as *mut Self) }
     }
 
-    /// Get the reference to the wrapped value
-    #[inline(always)]
-    pub const fn inner(&self) -> &crypto_bigint::Int<LIMBS> {
-        &self.0
-    }
-
-    /// Get the wrapped value, consuming self
-    #[inline(always)]
-    pub const fn into_inner(self) -> crypto_bigint::Int<LIMBS> {
-        self.0
-    }
-
     /// See [crypto_bigint::Int::from_words]
     #[inline(always)]
     pub const fn from_words(arr: [Word; LIMBS]) -> Self {
@@ -77,7 +67,8 @@ impl<const LIMBS: usize> Int<LIMBS> {
         }
     }
 
-    /// Multiply `self` by `rhs`, returning a concatenated "wide" result.
+    /// See [crypto_bigint::Int::concatenating_mul]
+    #[inline(always)]
     pub const fn concatenating_mul<const RHS_LIMBS: usize, const WIDE_LIMBS: usize>(
         &self,
         rhs: &Int<RHS_LIMBS>,
@@ -89,13 +80,28 @@ impl<const LIMBS: usize> Int<LIMBS> {
         Int(self.0.concatenating_mul(&rhs.0))
     }
 
-    /// See [crypto_bigint::Int::cmp_vartime]
-    pub const fn cmp_vartime(&self, rhs: &Self) -> Ordering {
-        self.0.cmp_vartime(&rhs.0)
-    }
-
     pub const fn as_uint(&self) -> &Uint<LIMBS> {
         Uint::new_ref(self.0.as_uint())
+    }
+
+    /// See [crypto_bigint::Int::abs_sign]
+    pub fn abs_sign(&self) -> (Uint<LIMBS>, bool) {
+        let (abs, _) = self.0.abs_sign();
+        (Uint::new(abs), self.is_negative())
+    }
+
+    /// Parses the absolute value from `s` and applies the sign.
+    fn parse_abs_radix(s: &str, radix: u32, neg: bool) -> Option<Self> {
+        use crypto_bigint::Uint;
+        let abs = Uint::<LIMBS>::from_str_radix_vartime(s, radix).ok()?;
+        match Self::try_from(abs) {
+            Ok(res) if neg => res.checked_neg(),
+            Ok(res) => Some(res),
+            // Corner case: value is exactly minimum Int<LIMBS>, whose
+            // magnitude is MIN's own bit pattern reinterpreted as unsigned
+            _ if neg && abs == Self::MIN.as_uint().0 => Some(Self::MIN),
+            _ => None,
+        }
     }
 }
 
@@ -132,7 +138,7 @@ impl<const LIMBS: usize> Int<LIMBS> {
     /// The number of limbs used on this platform.
     pub const LIMBS: usize = LIMBS;
 
-    define_consts!(MINUS_ONE, SIGN_MASK);
+    define_consts!(MAX, MIN, MINUS_ONE, SIGN_MASK);
 }
 
 //
@@ -158,19 +164,35 @@ impl<const LIMBS: usize> Default for Int<LIMBS> {
     }
 }
 
+impl<const LIMBS: usize> PartialOrd for Int<LIMBS> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Implemented manually to use `cmp_vartime`
+impl<const LIMBS: usize> Ord for Int<LIMBS> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp_vartime(&other.0)
+    }
+}
+
 impl<const LIMBS: usize> LowerHex for Int<LIMBS> {
+    #[inline(always)]
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         LowerHex::fmt(&self.0, f)
     }
 }
 
 impl<const LIMBS: usize> UpperHex for Int<LIMBS> {
+    #[inline(always)]
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         UpperHex::fmt(&self.0, f)
     }
 }
 
 impl<const LIMBS: usize> Hash for Int<LIMBS> {
+    #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state)
     }
@@ -179,7 +201,6 @@ impl<const LIMBS: usize> Hash for Int<LIMBS> {
 impl<const LIMBS: usize> FromStr for Int<LIMBS> {
     type Err = ();
 
-    #[allow(clippy::arithmetic_side_effects)] // False positive
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (neg, s) = if let Some(s) = s.strip_prefix('-') {
             (true, s)
@@ -191,16 +212,20 @@ impl<const LIMBS: usize> FromStr for Int<LIMBS> {
         } else {
             (10, s)
         };
-        use crypto_bigint::Uint;
-        let abs = Uint::<LIMBS>::from_str_radix_vartime(s, radix).map_err(|_| ())?;
-        let res: Result<Self, _> = abs.try_into();
-        match res {
-            Ok(res) if neg => res.checked_neg().ok_or(()),
-            Ok(res) => Ok(res),
-            // Corner case: value is exactly minimum Int<LIMBS>
-            _ if neg && abs == (Uint::MAX.shr(1) + Uint::one()) => Ok(Int::<LIMBS>::MIN),
-            _ => Err(()),
-        }
+        Self::parse_abs_radix(s, radix, neg).ok_or(())
+    }
+}
+
+impl<const LIMBS: usize> Num for Int<LIMBS> {
+    type FromStrRadixErr = ();
+
+    fn from_str_radix(s: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr> {
+        let (neg, s) = if let Some(s) = s.strip_prefix('-') {
+            (true, s)
+        } else {
+            (false, s)
+        };
+        Self::parse_abs_radix(s, radix, neg).ok_or(())
     }
 }
 
@@ -310,6 +335,25 @@ impl<'a, const LIMBS: usize> Rem<&'a Self> for Int<LIMBS> {
     }
 }
 
+impl<const LIMBS: usize> Div for Int<LIMBS> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn div(self, rhs: Self) -> Self::Output {
+        self.div(&rhs)
+    }
+}
+
+impl<'a, const LIMBS: usize> Div<&'a Self> for Int<LIMBS> {
+    type Output = Self;
+
+    /// Truncated division (mirrors primitive `/`), variable-time in `rhs`.
+    fn div(self, rhs: &'a Self) -> Self::Output {
+        let quotient: Option<crypto_bigint::Int<LIMBS>> = self.0.checked_div_vartime(&rhs.0).into();
+        Self(quotient.expect("division by zero or overflow"))
+    }
+}
+
 impl<const LIMBS: usize> Shl<u32> for Int<LIMBS> {
     type Output = Self;
 
@@ -374,6 +418,16 @@ impl<const LIMBS: usize> CheckedRem for Int<LIMBS> {
     }
 }
 
+impl<const LIMBS: usize> CheckedDiv for Int<LIMBS> {
+    /// Truncated division, variable-time in `other`. Returns [`None`] on
+    /// division by zero or `MIN / -1` overflow.
+    fn checked_div(&self, other: &Self) -> Option<Self> {
+        let quotient: Option<crypto_bigint::Int<LIMBS>> =
+            self.0.checked_div_vartime(&other.0).into();
+        quotient.map(Self)
+    }
+}
+
 //
 // Arithmetic assign operations
 //
@@ -399,6 +453,20 @@ macro_rules! impl_assign_op {
 impl_assign_op!(AddAssign, add_assign);
 impl_assign_op!(SubAssign, sub_assign);
 impl_assign_op!(MulAssign, mul_assign);
+
+impl<const LIMBS: usize> DivAssign for Int<LIMBS> {
+    #[inline(always)]
+    fn div_assign(&mut self, rhs: Self) {
+        self.div_assign(&rhs);
+    }
+}
+
+impl<'a, const LIMBS: usize> DivAssign<&'a Self> for Int<LIMBS> {
+    #![allow(clippy::arithmetic_side_effects)]
+    fn div_assign(&mut self, rhs: &'a Self) {
+        *self = (*self).div(rhs);
+    }
+}
 
 impl<const LIMBS: usize> RemAssign for Int<LIMBS> {
     #[inline(always)]
@@ -480,6 +548,20 @@ impl<const LIMBS: usize> From<Int<LIMBS>> for crypto_bigint::Int<LIMBS> {
     #[inline(always)]
     fn from(value: Int<LIMBS>) -> Self {
         value.0
+    }
+}
+
+impl<'a, const LIMBS: usize> From<&'a crypto_bigint::Int<LIMBS>> for &'a Int<LIMBS> {
+    #[inline(always)]
+    fn from(value: &'a crypto_bigint::Int<LIMBS>) -> Self {
+        Int::new_ref(value)
+    }
+}
+
+impl<'a, const LIMBS: usize> From<&'a Int<LIMBS>> for &'a crypto_bigint::Int<LIMBS> {
+    #[inline(always)]
+    fn from(value: &'a Int<LIMBS>) -> Self {
+        &value.0
     }
 }
 
@@ -588,38 +670,99 @@ impl<const LIMBS: usize, const LIMBS2: usize> TryFrom<&crypto_bigint::Uint<LIMBS
 }
 
 //
+// Wrapper
+//
+
+impl<const LIMBS: usize> Wrapper for Int<LIMBS> {
+    type Inner = crypto_bigint::Int<LIMBS>;
+
+    #[inline(always)]
+    fn inner(&self) -> &Self::Inner {
+        &self.0
+    }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        &mut self.0
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        self.0
+    }
+
+    #[inline(always)]
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(inner)
+    }
+}
+
+//
 // Semiring and Ring
 //
 
-impl<const LIMBS: usize> Semiring for Int<LIMBS> {}
+impl<const LIMBS: usize> Bounded for Int<LIMBS> {
+    #[inline(always)]
+    fn min_value() -> Self {
+        Self::MIN
+    }
 
-impl<const LIMBS: usize> ConstSemiring for Int<LIMBS> {
-    const MAX: Self = Self(crypto_bigint::Int::MAX);
-    const MIN: Self = Self(crypto_bigint::Int::MIN);
+    #[inline(always)]
+    fn max_value() -> Self {
+        Self::MAX
+    }
 }
 
-impl<const LIMBS: usize> Ring for Int<LIMBS> {}
-
 impl<const LIMBS: usize> IntSemiring for Int<LIMBS> {
+    #[inline(always)]
     fn is_odd(&self) -> bool {
         self.0.is_odd().into()
     }
 
+    #[inline(always)]
     fn is_even(&self) -> bool {
         self.0.is_even().into()
     }
 }
 
-impl<const LIMBS: usize> IntRing for Int<LIMBS> {
+impl<const LIMBS: usize> Signed for Int<LIMBS> {
+    /// Mimics Rust's primitive behavior: panics in debug mode on `MIN` (whose
+    /// absolute value overflows), wraps in release mode.
+    #[allow(clippy::arithmetic_side_effects)]
+    fn abs(&self) -> Self {
+        if Signed::is_negative(self) {
+            -*self
+        } else {
+            *self
+        }
+    }
+
+    /// Mimics Rust's primitive overflow behavior for `self - other`.
+    #[allow(clippy::arithmetic_side_effects)]
+    fn abs_sub(&self, other: &Self) -> Self {
+        if self <= other {
+            Self::ZERO
+        } else {
+            *self - *other
+        }
+    }
+
+    fn signum(&self) -> Self {
+        if Signed::is_negative(self) {
+            Self::MINUS_ONE
+        } else if self.is_zero() {
+            Self::ZERO
+        } else {
+            Self::ONE
+        }
+    }
+
+    #[inline(always)]
     fn is_positive(&self) -> bool {
         self.0.is_positive().into()
     }
 
-    fn checked_abs(&self) -> Option<Self> {
-        let result: Option<_> = self.0.abs().try_into_int().into();
-        result.map(Self)
-    }
-
+    #[inline(always)]
     fn is_negative(&self) -> bool {
         self.0.is_negative().into()
     }
@@ -717,8 +860,43 @@ impl<const LIMBS: usize> crypto_bigint::Bounded for Int<LIMBS> {
 }
 
 impl<const LIMBS: usize> crypto_bigint::Constants for Int<LIMBS> {
-    const MAX: Self = ConstSemiring::MAX;
+    const MAX: Self = Self::MAX;
 }
+
+//
+// Predefined ints of various sizes for convenience
+//
+
+use crate::helpers::crypto_bigint::WORD_FACTOR;
+pub type I64 = Int<{ WORD_FACTOR }>;
+pub type I128 = Int<{ 2 * WORD_FACTOR }>;
+pub type I192 = Int<{ 3 * WORD_FACTOR }>;
+pub type I256 = Int<{ 4 * WORD_FACTOR }>;
+pub type I320 = Int<{ 5 * WORD_FACTOR }>;
+pub type I384 = Int<{ 6 * WORD_FACTOR }>;
+pub type I448 = Int<{ 7 * WORD_FACTOR }>;
+pub type I512 = Int<{ 8 * WORD_FACTOR }>;
+pub type I576 = Int<{ 9 * WORD_FACTOR }>;
+pub type I640 = Int<{ 10 * WORD_FACTOR }>;
+pub type I704 = Int<{ 11 * WORD_FACTOR }>;
+pub type I768 = Int<{ 12 * WORD_FACTOR }>;
+pub type I832 = Int<{ 13 * WORD_FACTOR }>;
+pub type I896 = Int<{ 14 * WORD_FACTOR }>;
+pub type I960 = Int<{ 15 * WORD_FACTOR }>;
+pub type I1024 = Int<{ 16 * WORD_FACTOR }>;
+pub type I1280 = Int<{ 20 * WORD_FACTOR }>;
+pub type I1536 = Int<{ 24 * WORD_FACTOR }>;
+pub type I1792 = Int<{ 28 * WORD_FACTOR }>;
+pub type I2048 = Int<{ 32 * WORD_FACTOR }>;
+pub type I3072 = Int<{ 48 * WORD_FACTOR }>;
+pub type I3584 = Int<{ 56 * WORD_FACTOR }>;
+pub type I4096 = Int<{ 64 * WORD_FACTOR }>;
+pub type I4224 = Int<{ 66 * WORD_FACTOR }>;
+pub type I4352 = Int<{ 68 * WORD_FACTOR }>;
+pub type I6144 = Int<{ 96 * WORD_FACTOR }>;
+pub type I8192 = Int<{ 128 * WORD_FACTOR }>;
+pub type I16384 = Int<{ 256 * WORD_FACTOR }>;
+pub type I32768 = Int<{ 512 * WORD_FACTOR }>;
 
 #[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
 #[cfg(test)]
@@ -737,9 +915,9 @@ mod tests {
     type Int4 = Int<{ WORD_FACTOR * 4 }>;
 
     #[test]
-    fn ensure_blanket_traits() {
+    fn ensure_traits() {
+        ensure_type_implements_trait!(Int4, Wrapper);
         ensure_type_implements_trait!(Int4, ConstIntRing);
-        ensure_type_implements_trait!(Int4, IntRingWithRem);
         ensure_type_implements_trait!(Int4, IntRingWithShifts);
     }
 
@@ -1218,14 +1396,14 @@ mod tests {
     }
 
     #[test]
-    fn cmp_vartime() {
+    fn cmp() {
         let a = Int4::from(10_i64);
         let b = Int4::from(20_i64);
         let c = Int4::from(10_i64);
 
-        assert_eq!(a.cmp_vartime(&b), Ordering::Less);
-        assert_eq!(b.cmp_vartime(&a), Ordering::Greater);
-        assert_eq!(a.cmp_vartime(&c), Ordering::Equal);
+        assert_eq!(a.cmp(&b), Ordering::Less);
+        assert_eq!(b.cmp(&a), Ordering::Greater);
+        assert_eq!(a.cmp(&c), Ordering::Equal);
     }
 
     #[test]
@@ -1291,7 +1469,7 @@ mod tests {
         assert_eq!(<Int4 as Bounded>::BYTES, 32);
 
         // Test Constants trait
-        assert_eq!(<Int4 as Constants>::MAX, <Int4 as ConstSemiring>::MAX);
+        assert_eq!(<Int4 as Constants>::MAX, Int4::MAX);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use super::*;
-use crate::{Semiring, boolean::Boolean, semiring::ark_ff_bigint::BigInt};
+use crate::{IntSemiring, LiftElement, Wrapper, boolean::Boolean, semiring::ark_ff_bigint::BigInt};
 use ark_ff::{
-    AdditiveGroup, FftField, LegendreSymbol, SqrtPrecomputation,
+    AdditiveGroup, BigInteger, FftField, LegendreSymbol, SqrtPrecomputation,
     fields::{Field as ArkWrappedField, PrimeField as ArkWrappedPrimeField},
 };
 use ark_serialize::{
@@ -17,7 +17,8 @@ use core::{
 };
 use crypto_primitives_proc_macros::InfallibleCheckedOp;
 use num_traits::{
-    CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Pow, Zero,
+    Bounded, CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One,
+    Pow, Zero,
 };
 
 #[cfg(feature = "rand")]
@@ -29,26 +30,13 @@ use rand::distr::StandardUniform;
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
 #[repr(transparent)]
-pub struct ArkField<F: ArkWrappedPrimeField>(F);
+pub struct ArkField<F: ArkWrappedPrimeField>(pub F);
 
 impl<F: ArkWrappedPrimeField> ArkField<F> {
     /// Wraps a given value into this wrapper type
     #[inline(always)]
     pub const fn new(value: F) -> Self {
         Self(value)
-    }
-
-    /// Get the reference to the wrapped value
-    #[inline(always)]
-    #[must_use]
-    pub const fn inner(&self) -> &F {
-        &self.0
-    }
-
-    /// Get the wrapped value, consuming self
-    #[inline(always)]
-    pub const fn into_inner(self) -> F {
-        self.0
     }
 }
 
@@ -217,6 +205,29 @@ impl<F: ArkWrappedPrimeField> Pow<u32> for ArkField<F> {
 
     fn pow(self, rhs: u32) -> Self::Output {
         Self(self.0.pow([u64::from(rhs)]))
+    }
+}
+
+impl<F, const N: usize> Pow<BigInt<N>> for ArkField<F>
+where
+    F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
+{
+    type Output = Self;
+
+    #[inline(always)]
+    fn pow(self, rhs: BigInt<N>) -> Self::Output {
+        self.pow(&rhs)
+    }
+}
+
+impl<F, const N: usize> Pow<&BigInt<N>> for ArkField<F>
+where
+    F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
+{
+    type Output = Self;
+
+    fn pow(self, rhs: &BigInt<N>) -> Self::Output {
+        Self(self.0.pow(rhs.inner()))
     }
 }
 
@@ -421,19 +432,11 @@ impl<F: ArkWrappedPrimeField + Into<num_bigint::BigUint>> From<ArkField<F>>
 }
 
 //
-// Semiring, Ring and Field
+// Wrapper
 //
 
-impl<F: ArkWrappedPrimeField> Semiring for ArkField<F> {}
-
-impl<F: ArkWrappedPrimeField> Ring for ArkField<F> {}
-
-impl<F, const N: usize> Field for ArkField<F>
-where
-    F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
-{
+impl<F: ArkWrappedPrimeField> Wrapper for ArkField<F> {
     type Inner = F;
-    type Integer = BigInt<N>;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -451,51 +454,71 @@ where
     }
 
     #[inline(always)]
-    fn lift_to_integer(&self) -> Self::Integer {
-        BigInt::new(self.0.into_bigint())
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(inner)
     }
 }
 
-impl<F: ArkWrappedPrimeField> HasPrimeFieldConfig for ArkField<F> {
-    type Config = ();
+//
+// Semiring, Ring and Field
+//
 
-    fn cfg(&self) -> &Self::Config {
-        &()
+impl<F: ArkWrappedPrimeField> IntSemiring for ArkField<F> {
+    #[inline(always)]
+    fn is_odd(&self) -> bool {
+        // There's no way to check that efficiently
+        self.0.into_bigint().is_odd()
+    }
+
+    #[inline(always)]
+    fn is_even(&self) -> bool {
+        // There's no way to check that efficiently
+        self.0.into_bigint().is_even()
     }
 }
 
-// TODO: Can be made into ConstPrimeField, but it's hard to compute MODULUS - 1
-impl<F, const N: usize> PrimeField for ArkField<F>
+impl<F: ArkWrappedPrimeField> Bounded for ArkField<F> {
+    #[inline(always)]
+    fn min_value() -> Self {
+        <Self as ConstZero>::ZERO
+    }
+
+    /// The largest residue, `modulus - 1`.
+    #[allow(clippy::arithmetic_side_effects)] // Negation in a field cannot fail
+    #[inline(always)]
+    fn max_value() -> Self {
+        -<Self as ConstOne>::ONE
+    }
+}
+
+// TODO: Can be made into ConstBaseField, but it's hard to compute MODULUS - 1
+impl<F, const N: usize> BaseField for ArkField<F>
 where
     F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
 {
-    fn modulus(_cfg: &Self::Config) -> Self::Integer {
+    fn modulus() -> Self::Integer {
         BigInt::new(Self::MODULUS)
     }
 
-    fn modulus_minus_one_div_two(_cfg: &Self::Config) -> Self::Integer {
+    fn modulus_minus_one_div_two() -> Self::Integer {
         BigInt::new(Self::MODULUS_MINUS_ONE_DIV_TWO)
     }
+}
 
-    fn make_cfg(modulus: &Self::Integer) -> Result<Self::Config, FieldError> {
-        debug_assert_eq!(*modulus.inner(), Self::MODULUS);
-        Ok(())
-    }
+impl<F, const N: usize> WithAssociatedInteger for ArkField<F>
+where
+    F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
+{
+    type Integer = BigInt<N>;
+}
 
-    fn new_unchecked_with_cfg(inner: Self::Inner, _cfg: &Self::Config) -> Self {
-        Self(inner)
-    }
-
-    fn is_zero(value: &Self) -> bool {
-        Zero::is_zero(value)
-    }
-
-    fn zero_with_cfg(_cfg: &Self::Config) -> Self {
-        Zero::zero()
-    }
-
-    fn one_with_cfg(_cfg: &Self::Config) -> Self {
-        todo!()
+impl<F, const N: usize> LiftElement<<Self as WithAssociatedInteger>::Integer> for ArkField<F>
+where
+    F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
+{
+    #[inline(always)]
+    fn lift(&self) -> <Self as WithAssociatedInteger>::Integer {
+        BigInt::new(self.0.into_bigint())
     }
 }
 
@@ -738,7 +761,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{FixedRing, ensure_type_implements_trait};
+    use crate::{BaseField, Ring, ensure_type_implements_trait};
     use alloc::vec::Vec;
     use ark_ff::{Fp64, Fp256, MontBackend, MontConfig};
     use core::str::FromStr;
@@ -753,11 +776,12 @@ mod tests {
     type F = ArkField<ArkFp>;
 
     #[test]
-    fn ensure_blanket_traits() {
-        // Should be ConstRing, but it's hard to compute MODULUS - 1 for
+    fn ensure_traits() {
+        ensure_type_implements_trait!(F, Wrapper);
+        // Should be ConstBaseField, but it's hard to compute MODULUS - 1 for
         // Self::BigInt
-        ensure_type_implements_trait!(F, FixedRing);
-        ensure_type_implements_trait!(F, PrimeField);
+        ensure_type_implements_trait!(F, Ring);
+        ensure_type_implements_trait!(F, BaseField);
     }
 
     #[test]
@@ -768,11 +792,11 @@ mod tests {
         assert!(!o.is_zero());
         assert_ne!(z, o);
 
-        assert_eq!(F::from(<F as PrimeField>::modulus(&())), z);
+        assert_eq!(F::from(F::modulus()), z);
 
         // Lifting to integer and projecting back yields the original element.
         for x in [z, o, F::from(2_u64), F::from(123456789_u64)] {
-            assert_eq!(F::from(x.lift_to_integer()), x);
+            assert_eq!(F::from(x.lift()), x);
         }
     }
 
@@ -926,31 +950,37 @@ mod tests {
         let base = F::from(2_u64);
 
         // 2^0 = 1
-        assert_eq!(base.pow(0), F::one());
+        assert_eq!(base.pow(0_u32), F::one());
 
         // 2^1 = 2
-        assert_eq!(base.pow(1), base);
+        assert_eq!(base.pow(1_u32), base);
 
         // 2^3 = 8
-        assert_eq!(base.pow(3), F::from(8_u64));
+        assert_eq!(base.pow(3_u32), F::from(8_u64));
 
         // 2^10 = 1024
-        assert_eq!(base.pow(10), F::from(1024_u64));
+        assert_eq!(base.pow(10_u32), F::from(1024_u64));
 
         // Test with different base
         let base = F::from(3_u64);
 
         // 3^4 = 81
-        assert_eq!(base.pow(4), F::from(81_u64));
+        assert_eq!(base.pow(4_u32), F::from(81_u64));
 
         // Test with base 1
         let base = F::from(1_u64);
-        assert_eq!(base.pow(1000), F::from(1_u64));
+        assert_eq!(base.pow(1000_u32), F::from(1_u64));
 
         // Test with base 0
         let base = F::from(0_u64);
-        assert_eq!(base.pow(0), F::one()); // 0^0 = 1 by convention
-        assert_eq!(base.pow(10), F::zero()); // 0^n = 0 for n > 0
+        assert_eq!(base.pow(0_u32), F::one()); // 0^0 = 1 by convention
+        assert_eq!(base.pow(10_u32), F::zero()); // 0^n = 0 for n > 0
+
+        // Same checks via `BigInt` (`Self::Integer`) exponents
+        let base = F::from(2_u64);
+        assert_eq!(base.pow(BigInt::from(0_u64)), F::one());
+        assert_eq!(base.pow(&BigInt::from(3_u64)), F::from(8_u64));
+        assert_eq!(base.pow(BigInt::from(10_u64)), F::from(1024_u64));
     }
 
     #[test]

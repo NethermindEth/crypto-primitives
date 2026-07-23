@@ -1,4 +1,6 @@
-use crate::{ConstPrimeField, ConstSemiring, Field, Ring, Semiring, boolean::Boolean};
+use crate::{
+    ConstBaseField, IntSemiring, LiftElement, WithAssociatedInteger, Wrapper, boolean::Boolean,
+};
 use core::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     hash::Hash,
@@ -8,8 +10,8 @@ use core::{
 };
 use crypto_primitives_proc_macros::InfallibleCheckedOp;
 use num_traits::{
-    CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, Inv, One, Pow,
-    Zero,
+    Bounded, CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, Inv,
+    One, Pow, Zero,
 };
 
 #[cfg(feature = "rand")]
@@ -22,25 +24,13 @@ use rand::{distr::StandardUniform, prelude::*};
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
 #[repr(transparent)]
-pub struct F2(bool);
+pub struct F2(pub bool);
 
 impl F2 {
     /// Creates a new F2 element from a bool value.
     #[inline(always)]
     pub const fn new(value: bool) -> Self {
         Self(value)
-    }
-
-    /// Get the inner bool value.
-    #[inline(always)]
-    pub const fn inner(&self) -> &bool {
-        &self.0
-    }
-
-    /// Convert to the inner bool value.
-    #[inline(always)]
-    pub const fn into_inner(self) -> bool {
-        self.0
     }
 }
 
@@ -183,6 +173,24 @@ impl Pow<u32> for F2 {
         } else {
             Self::ZERO
         }
+    }
+}
+
+impl Pow<u8> for F2 {
+    type Output = Self;
+
+    #[inline(always)]
+    fn pow(self, rhs: u8) -> Self::Output {
+        self.pow(u32::from(rhs))
+    }
+}
+
+impl Pow<&u8> for F2 {
+    type Output = Self;
+
+    #[inline(always)]
+    fn pow(self, rhs: &u8) -> Self::Output {
+        self.pow(u32::from(*rhs))
     }
 }
 
@@ -368,21 +376,11 @@ impl_from_unsigned!(u8, u16, u32, u64, u128);
 impl_from_signed!(i8, i16, i32, i64, i128);
 
 //
-// Semiring, Ring and Field
+// Wrapper
 //
 
-impl Semiring for F2 {}
-
-impl ConstSemiring for F2 {
-    const MAX: Self = Self::ONE;
-    const MIN: Self = Self::ZERO;
-}
-
-impl Ring for F2 {}
-
-impl Field for F2 {
+impl Wrapper for F2 {
     type Inner = bool;
-    type Integer = u8;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -400,18 +398,52 @@ impl Field for F2 {
     }
 
     #[inline(always)]
-    fn lift_to_integer(&self) -> Self::Integer {
-        u8::from(self.0)
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(inner)
     }
 }
 
-impl ConstPrimeField for F2 {
-    const MODULUS: Self::Integer = 2;
-    const MODULUS_MINUS_ONE_DIV_TWO: Self::Integer = 0;
+//
+// Semiring, Ring and Field
+//
+
+impl Bounded for F2 {
+    #[inline(always)]
+    fn min_value() -> Self {
+        Self::ZERO
+    }
 
     #[inline(always)]
-    fn new_unchecked(inner: Self::Inner) -> Self {
-        Self(inner)
+    fn max_value() -> Self {
+        Self::ONE
+    }
+}
+
+impl IntSemiring for F2 {
+    #[inline(always)]
+    fn is_odd(&self) -> bool {
+        !self.is_zero()
+    }
+
+    #[inline(always)]
+    fn is_even(&self) -> bool {
+        self.is_zero()
+    }
+}
+
+impl ConstBaseField for F2 {
+    const MODULUS: Self::Integer = 2;
+    const MODULUS_MINUS_ONE_DIV_TWO: Self::Integer = 0;
+}
+
+impl WithAssociatedInteger for F2 {
+    type Integer = u8;
+}
+
+impl LiftElement<<Self as WithAssociatedInteger>::Integer> for F2 {
+    #[inline(always)]
+    fn lift(&self) -> <Self as WithAssociatedInteger>::Integer {
+        u8::from(self.0)
     }
 }
 
@@ -423,6 +455,30 @@ impl ConstPrimeField for F2 {
 impl Distribution<F2> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> F2 {
         F2::new(rng.random())
+    }
+}
+
+//
+// Serialization and Deserialization
+//
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for F2 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        bool::deserialize(deserializer).map(Self)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for F2 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
     }
 }
 
@@ -447,7 +503,8 @@ impl zeroize::DefaultIsZeroes for F2 {}
 mod tests {
     use super::*;
     use crate::{
-        ConstPrimeField, FromPrimitiveWithConfig, PrimeField, ensure_type_implements_trait,
+        BaseField, BaseFieldConfig, ConstField, FieldConfig, FixedConfig, SemiringConfig,
+        ensure_type_implements_trait,
     };
     use alloc::format;
     use num_traits::{One, Zero};
@@ -456,9 +513,11 @@ mod tests {
     const V1: F2 = F2::ONE;
 
     #[test]
-    fn ensure_blanket_traits() {
-        // NB: this ensures `PrimeField` implementation too!
-        ensure_type_implements_trait!(F2, FromPrimitiveWithConfig);
+    fn ensure_traits() {
+        ensure_type_implements_trait!(F2, ConstField);
+        ensure_type_implements_trait!(F2, BaseField);
+        ensure_type_implements_trait!(F2, ConstBaseField);
+        ensure_type_implements_trait!(FixedConfig<F2>, BaseFieldConfig);
     }
 
     #[test]
@@ -472,16 +531,14 @@ mod tests {
     #[test]
     fn zero_one_basics() {
         assert!(V0.is_zero());
-        assert!(PrimeField::is_zero(&V0));
         assert!(!V1.is_zero());
-        assert!(!PrimeField::is_zero(&V1));
         assert_ne!(V0, V1);
 
-        assert_eq!(F2::from(F2::modulus(&())), V0);
+        assert_eq!(F2::from(F2::modulus()), V0);
 
         // Lifting to integer and projecting back yields the original element.
         for x in [V0, V1] {
-            assert_eq!(F2::from(x.lift_to_integer()), x);
+            assert_eq!(F2::from(x.lift()), x);
         }
     }
 
@@ -625,18 +682,38 @@ mod tests {
     #[test]
     fn pow_operation() {
         // 0^0 = 1 by convention
-        assert_eq!(V0.pow(0), V1);
+        assert_eq!(V0.pow(0_u32), V1);
 
         // 0^n = 0 for n > 0
-        assert_eq!(V0.pow(1), V0);
-        assert_eq!(V0.pow(2), V0);
-        assert_eq!(V0.pow(100), V0);
+        assert_eq!(V0.pow(1_u32), V0);
+        assert_eq!(V0.pow(2_u32), V0);
+        assert_eq!(V0.pow(100_u32), V0);
 
         // 1^n = 1 for all n
-        assert_eq!(V1.pow(0), V1);
-        assert_eq!(V1.pow(1), V1);
-        assert_eq!(V1.pow(2), V1);
-        assert_eq!(V1.pow(100), V1);
+        assert_eq!(V1.pow(0_u32), V1);
+        assert_eq!(V1.pow(1_u32), V1);
+        assert_eq!(V1.pow(2_u32), V1);
+        assert_eq!(V1.pow(100_u32), V1);
+
+        // Same checks via `u8` (`Self::Integer`) exponents
+        assert_eq!(V0.pow(0_u8), V1);
+        assert_eq!(V0.pow(&2_u8), V0);
+        assert_eq!(V1.pow(0_u8), V1);
+        assert_eq!(V1.pow(&100_u8), V1);
+    }
+
+    #[test]
+    fn config_pow() {
+        let cfg = FixedConfig::<F2>::default();
+
+        assert_eq!(cfg.pow_u32(&V0, 0), V1); // 0^0 = 1 by convention
+        assert_eq!(cfg.pow_u32(&V0, 2), V0);
+        assert_eq!(cfg.pow_u32(&V1, 100), V1);
+
+        assert_eq!(cfg.pow(&V0, &0_u8), V1); // 0^0 = 1 by convention
+        assert_eq!(cfg.pow(&V0, &1_u8), V0);
+        assert_eq!(cfg.pow(&V1, &0_u8), V1);
+        assert_eq!(cfg.pow(&V1, &1_u8), V1);
     }
 
     #[test]
@@ -704,8 +781,8 @@ mod tests {
 
     #[test]
     fn const_prime_field() {
-        assert_eq!(<F2 as ConstPrimeField>::MODULUS, 2_u8);
-        assert_eq!(<F2 as ConstPrimeField>::MODULUS_MINUS_ONE_DIV_TWO, 0_u8);
+        assert_eq!(<F2 as ConstBaseField>::MODULUS, 2_u8);
+        assert_eq!(<F2 as ConstBaseField>::MODULUS_MINUS_ONE_DIV_TWO, 0_u8);
 
         assert_eq!(F2::new(true), V1);
         assert_eq!(F2::new(false), V0);
@@ -715,11 +792,13 @@ mod tests {
 
     #[test]
     fn prime_field_methods() {
-        assert_eq!(F2::modulus(&()), 2_u8);
-        assert_eq!(F2::modulus_minus_one_div_two(&()), 0_u8);
-        assert_eq!(F2::make_cfg(&2_u8), Ok(()));
-        assert!(F2::make_cfg(&0_u8).is_err());
-        assert!(F2::make_cfg(&3_u8).is_err());
+        assert_eq!(F2::modulus(), 2_u8);
+        assert_eq!(F2::modulus_minus_one_div_two(), 0_u8);
+
+        type Cfg = FixedConfig<F2>;
+        assert!(Cfg::new(&2_u8).is_ok());
+        assert!(Cfg::new(&0_u8).is_err());
+        assert!(Cfg::new(&3_u8).is_err());
     }
 
     #[test]
@@ -776,13 +855,13 @@ mod tests {
         assert_eq!(V1.into_inner(), true);
         assert_eq!(V0.into_inner(), false);
 
-        // Field::inner
-        assert_eq!(*Field::inner(&V1), true);
-        assert_eq!(*Field::inner(&V0), false);
+        // Wrapper::inner
+        assert_eq!(*Wrapper::inner(&V1), true);
+        assert_eq!(*Wrapper::inner(&V0), false);
 
-        // Field::inner_mut
+        // Wrapper::inner_mut
         let mut x = V0;
-        *Field::inner_mut(&mut x) = true;
+        *Wrapper::inner_mut(&mut x) = true;
         assert_eq!(x, V1);
     }
 }

@@ -1,3 +1,5 @@
+//! WARNING: This module has not been stabilized!
+
 use alloc::vec::Vec;
 use core::mem::{ManuallyDrop, MaybeUninit};
 

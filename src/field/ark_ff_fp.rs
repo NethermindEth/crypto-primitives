@@ -1,5 +1,5 @@
 use super::*;
-use crate::{IntRing, IntSemiring, Semiring, boolean::Boolean};
+use crate::{IntSemiring, LiftElement, Wrapper, boolean::Boolean};
 use ark_ff::{
     AdditiveGroup, BigInteger, FftField, FpConfig, LegendreSymbol, MontBackend, MontConfig,
     SqrtPrecomputation,
@@ -19,7 +19,8 @@ use core::{
 };
 use crypto_primitives_proc_macros::InfallibleCheckedOp;
 use num_traits::{
-    CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Pow, Zero,
+    Bounded, CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One,
+    Pow, Zero,
 };
 
 use crate::ark_ff_bigint::BigInt;
@@ -33,7 +34,7 @@ use rand::distr::StandardUniform;
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
 #[repr(transparent)]
-pub struct Fp<P: FpConfig<N>, const N: usize>(ArkWrappedFp<P, N>);
+pub struct Fp<P: FpConfig<N>, const N: usize>(pub ArkWrappedFp<P, N>);
 
 impl<P: FpConfig<N>, const N: usize> Fp<P, N> {
     /// Wraps a given value into this wrapper type
@@ -41,23 +42,27 @@ impl<P: FpConfig<N>, const N: usize> Fp<P, N> {
     pub const fn new(value: ArkWrappedFp<P, N>) -> Self {
         Self(value)
     }
-
-    /// Get the reference to the wrapped value
-    #[inline(always)]
-    pub const fn inner(&self) -> &ArkWrappedFp<P, N> {
-        &self.0
-    }
-
-    /// Get the wrapped value, consuming self
-    #[inline(always)]
-    pub const fn into_inner(self) -> ArkWrappedFp<P, N> {
-        self.0
-    }
 }
 
 impl<T: MontConfig<N>, const N: usize> Fp<MontBackend<T, N>, N> {
     #[doc(hidden)]
     pub const INV: u64 = T::INV;
+    /// The largest residue, `modulus - 1`.
+    pub const MAX: Self = {
+        let mut value = T::MODULUS;
+        // Subtract one in const context (can't use checked_sub)
+        let mut i = 0;
+        while i < N {
+            if value.0[i] > 0 {
+                value.0[i] -= 1;
+                break;
+            } else {
+                value.0[i] = u64::MAX;
+                i += 1;
+            }
+        }
+        Self(ArkWrappedFp::new(value))
+    };
     #[doc(hidden)]
     pub const R: BigInt<N> = BigInt::new(T::R);
     #[doc(hidden)]
@@ -65,9 +70,7 @@ impl<T: MontConfig<N>, const N: usize> Fp<MontBackend<T, N>, N> {
 
     #[inline(always)]
     pub const fn new_from_bigint(element: BigInt<N>) -> Self {
-        Self(ArkWrappedFp::<MontBackend<T, N>, N>::new(
-            element.into_inner(),
-        ))
+        Self(ArkWrappedFp::<MontBackend<T, N>, N>::new(element.0))
     }
 }
 
@@ -99,7 +102,7 @@ impl<P: FpConfig<N>, const N: usize> Deref for Fp<P, N> {
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        self.inner()
+        &self.0
     }
 }
 
@@ -113,6 +116,7 @@ impl<P: FpConfig<N>, const N: usize> Clone for Fp<P, N> {
 impl<P: FpConfig<N>, const N: usize> Copy for Fp<P, N> {}
 
 impl<P: FpConfig<N>, const N: usize> PartialEq for Fp<P, N> {
+    #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.0.eq(&other.0)
     }
@@ -121,18 +125,21 @@ impl<P: FpConfig<N>, const N: usize> PartialEq for Fp<P, N> {
 impl<P: FpConfig<N>, const N: usize> Eq for Fp<P, N> {}
 
 impl<P: FpConfig<N>, const N: usize> PartialOrd for Fp<P, N> {
+    #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<P: FpConfig<N>, const N: usize> Ord for Fp<P, N> {
+    #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
         Ord::cmp(&self.0, &other.0)
     }
 }
 
 impl<P: FpConfig<N>, const N: usize> Hash for Fp<P, N> {
+    #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state)
     }
@@ -275,6 +282,23 @@ impl<P: FpConfig<N>, const N: usize> Pow<u32> for Fp<P, N> {
 
     fn pow(self, rhs: u32) -> Self::Output {
         Self(self.0.pow([u64::from(rhs)]))
+    }
+}
+
+impl<P: FpConfig<N>, const N: usize> Pow<BigInt<N>> for Fp<P, N> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn pow(self, rhs: BigInt<N>) -> Self::Output {
+        self.pow(&rhs)
+    }
+}
+
+impl<P: FpConfig<N>, const N: usize> Pow<&BigInt<N>> for Fp<P, N> {
+    type Output = Self;
+
+    fn pow(self, rhs: &BigInt<N>) -> Self::Output {
+        Self(self.0.pow(rhs.inner()))
     }
 }
 
@@ -460,59 +484,11 @@ impl<P: FpConfig<N>, const N: usize> From<Fp<P, N>> for num_bigint::BigUint {
 }
 
 //
-// Semiring, Ring and Field
+// Wrapper
 //
 
-impl<P: FpConfig<N>, const N: usize> Semiring for Fp<P, N> {}
-
-impl<T: MontConfig<N>, const N: usize> ConstSemiring for Fp<MontBackend<T, N>, N> {
-    const MAX: Self = {
-        let mut value = T::MODULUS;
-        // Subtract one in const context (can't use checked_sub)
-        let mut i = 0;
-        while i < N {
-            if value.0[i] > 0 {
-                value.0[i] -= 1;
-                break;
-            } else {
-                value.0[i] = u64::MAX;
-                i += 1;
-            }
-        }
-        Self(ArkWrappedFp::new(value))
-    };
-    const MIN: Self = <Self as ConstZero>::ZERO;
-}
-
-impl<P: FpConfig<N>, const N: usize> Ring for Fp<P, N> {}
-
-impl<P: FpConfig<N>, const N: usize> IntSemiring for Fp<P, N> {
-    fn is_odd(&self) -> bool {
-        self.0.into_bigint().is_odd()
-    }
-
-    fn is_even(&self) -> bool {
-        self.0.into_bigint().is_even()
-    }
-}
-
-impl<P: FpConfig<N>, const N: usize> IntRing for Fp<P, N> {
-    fn checked_abs(&self) -> Option<Self> {
-        Some(*self)
-    }
-
-    fn is_positive(&self) -> bool {
-        !self.is_zero()
-    }
-
-    fn is_negative(&self) -> bool {
-        false
-    }
-}
-
-impl<P: FpConfig<N>, const N: usize> Field for Fp<P, N> {
+impl<M: MontConfig<N>, const N: usize> Wrapper for Fp<MontBackend<M, N>, N> {
     type Inner = BigInt<N>;
-    type Integer = BigInt<N>;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -530,20 +506,60 @@ impl<P: FpConfig<N>, const N: usize> Field for Fp<P, N> {
     }
 
     #[inline(always)]
-    fn lift_to_integer(&self) -> Self::Integer {
-        BigInt::new(self.0.into_bigint())
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(ArkWrappedFp::new_unchecked(inner.into_inner()))
     }
 }
 
-/// ConstPrimeField is only implemented for MontConfig and MontBackend
-impl<M: MontConfig<N>, const N: usize> ConstPrimeField for Fp<MontBackend<M, N>, N> {
+//
+// Semiring, Ring and Field
+//
+
+impl<M: MontConfig<N>, const N: usize> Bounded for Fp<MontBackend<M, N>, N> {
+    #[inline(always)]
+    fn min_value() -> Self {
+        <Self as ConstZero>::ZERO
+    }
+
+    /// The largest residue, `modulus - 1`.
+    #[inline(always)]
+    fn max_value() -> Self {
+        Self::MAX
+    }
+}
+
+impl<P: FpConfig<N>, const N: usize> IntSemiring for Fp<P, N> {
+    #[inline(always)]
+    fn is_odd(&self) -> bool {
+        // There's no way to check that efficiently
+        self.0.into_bigint().is_odd()
+    }
+
+    #[inline(always)]
+    fn is_even(&self) -> bool {
+        // There's no way to check that efficiently
+        self.0.into_bigint().is_even()
+    }
+}
+
+/// ConstBaseField is only implemented for MontConfig and MontBackend
+impl<M: MontConfig<N>, const N: usize> ConstBaseField for Fp<MontBackend<M, N>, N> {
     const MODULUS: Self::Integer = BigInt::new(M::MODULUS);
-    const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner = BigInt::new(
+    const MODULUS_MINUS_ONE_DIV_TWO: Self::Integer = BigInt::new(
         <ArkWrappedFp<MontBackend<M, N>, N> as ArkPrimeField>::MODULUS_MINUS_ONE_DIV_TWO,
     );
+}
 
-    fn new_unchecked(inner: Self::Inner) -> Self {
-        Self(ArkWrappedFp::new_unchecked(inner.into_inner()))
+impl<P: FpConfig<N>, const N: usize> WithAssociatedInteger for Fp<P, N> {
+    type Integer = BigInt<N>;
+}
+
+impl<P: FpConfig<N>, const N: usize> LiftElement<<Self as WithAssociatedInteger>::Integer>
+    for Fp<P, N>
+{
+    #[inline(always)]
+    fn lift(&self) -> <Self as WithAssociatedInteger>::Integer {
+        BigInt::new(self.0.into_bigint())
     }
 }
 
@@ -742,7 +758,7 @@ impl<P: FpConfig<N>, const N: usize> ArkPrimeField for Fp<P, N> {
     }
 
     fn into_bigint(self) -> Self::BigInt {
-        self.lift_to_integer()
+        self.lift()
     }
 }
 
@@ -772,7 +788,7 @@ macro_rules! mont_fp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ConstIntRing, ensure_type_implements_trait};
+    use crate::{ConstField, ensure_type_implements_trait};
     use alloc::{format, vec::Vec};
     use ark_ff::{MontBackend, MontConfig};
     use core::str::FromStr;
@@ -786,9 +802,11 @@ mod tests {
     type F = Fp<MontBackend<TestFpConfig, 4>, 4>;
 
     #[test]
-    fn ensure_blanket_traits() {
-        ensure_type_implements_trait!(F, ConstIntRing);
-        ensure_type_implements_trait!(F, FromPrimitiveWithConfig);
+    fn ensure_traits() {
+        ensure_type_implements_trait!(F, Wrapper);
+        ensure_type_implements_trait!(F, ConstField);
+        ensure_type_implements_trait!(F, ConstBaseField);
+        ensure_type_implements_trait!(F, From<BigInt<4>>);
     }
 
     #[test]
@@ -799,28 +817,28 @@ mod tests {
         assert!(!o.is_zero());
         assert_ne!(z, o);
 
-        assert_eq!(F::from(<F as PrimeField>::modulus(&())), z);
+        assert_eq!(F::from(<F as BaseField>::modulus()), z);
 
         // Lifting to integer and projecting back yields the original element.
         for x in [z, o, F::from(2_u64), F::from(123456789_u64)] {
-            assert_eq!(F::from(x.lift_to_integer()), x);
+            assert_eq!(F::from(x.lift()), x);
         }
     }
 
     #[test]
     fn min_max() {
-        assert_eq!(F::MIN, F::zero());
+        assert_eq!(F::min_value(), F::zero());
         assert_eq!(
-            F::MAX,
+            F::max_value(),
             F::from_str(
                 "115792089237316195423570985008687907853269984665640564039457584007908834671662"
             )
             .unwrap()
         );
 
-        assert_eq!(F::MAX + F::one(), F::zero());
-        assert_eq!(F::MIN - F::one(), F::MAX);
-        assert_eq!(F::MAX * F::MAX, F::one());
+        assert_eq!(F::max_value() + F::one(), F::zero());
+        assert_eq!(F::min_value() - F::one(), F::max_value());
+        assert_eq!(F::max_value() * F::max_value(), F::one());
     }
 
     #[test]
@@ -972,31 +990,37 @@ mod tests {
         let base = F::from(2_u64);
 
         // 2^0 = 1
-        assert_eq!(base.pow(0), F::one());
+        assert_eq!(base.pow(0_u32), F::one());
 
         // 2^1 = 2
-        assert_eq!(base.pow(1), base);
+        assert_eq!(base.pow(1_u32), base);
 
         // 2^3 = 8
-        assert_eq!(base.pow(3), F::from(8_u64));
+        assert_eq!(base.pow(3_u32), F::from(8_u64));
 
         // 2^10 = 1024
-        assert_eq!(base.pow(10), F::from(1024_u64));
+        assert_eq!(base.pow(10_u32), F::from(1024_u64));
 
         // Test with different base
         let base = F::from(3_u64);
 
         // 3^4 = 81
-        assert_eq!(base.pow(4), F::from(81_u64));
+        assert_eq!(base.pow(4_u32), F::from(81_u64));
 
         // Test with base 1
         let base = F::from(1_u64);
-        assert_eq!(base.pow(1000), F::from(1_u64));
+        assert_eq!(base.pow(1000_u32), F::from(1_u64));
 
         // Test with base 0
         let base = F::from(0_u64);
-        assert_eq!(base.pow(0), F::one()); // 0^0 = 1 by convention
-        assert_eq!(base.pow(10), F::zero()); // 0^n = 0 for n > 0
+        assert_eq!(base.pow(0_u32), F::one()); // 0^0 = 1 by convention
+        assert_eq!(base.pow(10_u32), F::zero()); // 0^n = 0 for n > 0
+
+        // Same checks via `BigInt` (`Self::Integer`) exponents
+        let base = F::from(2_u64);
+        assert_eq!(base.pow(BigInt::from(0_u64)), F::one());
+        assert_eq!(base.pow(&BigInt::from(3_u64)), F::from(8_u64));
+        assert_eq!(base.pow(BigInt::from(10_u64)), F::from(1024_u64));
     }
 
     #[test]
@@ -1183,11 +1207,13 @@ mod tests {
         let wrapped = F::new(inner);
         assert_eq!(wrapped, F::from(123_u64));
 
-        // Test inner() and into_inner()
+        // Test Wrapper::inner()/into_inner()/new_unchecked: the inner
+        // representation is the Montgomery-form BigInt
         let value = F::from(456_u64);
-        let inner_ref = value.inner();
-        assert_eq!(*inner_ref, ark_ff::MontFp!("456"));
-        assert_eq!(value.into_inner(), ark_ff::MontFp!("456"));
+        let expected: F = F::new(ark_ff::MontFp!("456"));
+        assert_eq!(*value.inner(), BigInt::new(expected.0.0));
+        assert_eq!(value.into_inner(), BigInt::new(expected.0.0));
+        assert_eq!(F::new_unchecked(value.into_inner()), value);
     }
 
     #[test]

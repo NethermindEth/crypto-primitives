@@ -1,5 +1,8 @@
 use super::*;
-use crate::{Semiring, boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint};
+use crate::{
+    IntSemiring, LiftElement, Wrapper, boolean::Boolean, crypto_bigint_int::Int,
+    crypto_bigint_uint::Uint, helpers::crypto_bigint as helpers,
+};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, Result as FmtResult},
@@ -16,6 +19,7 @@ use crypto_primitives_proc_macros::InfallibleCheckedOp;
 use num_traits::{
     CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One, Pow, Zero,
 };
+use pastey::paste;
 
 #[cfg(feature = "rand")]
 use rand::{distr::StandardUniform, prelude::*, rand_core::TryRng};
@@ -24,31 +28,28 @@ use rand::{distr::StandardUniform, prelude::*, rand_core::TryRng};
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
 #[repr(transparent)]
-pub struct ConstMontyField<Mod: Params<LIMBS>, const LIMBS: usize>(ConstMontyForm<Mod, LIMBS>);
+pub struct ConstMontyField<Mod: Params<LIMBS>, const LIMBS: usize>(pub ConstMontyForm<Mod, LIMBS>);
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstMontyField<Mod, LIMBS> {
     #[allow(clippy::cast_possible_truncation)] // Guaranteed to fit due to crypto_bigint::Uint
     pub const BITS: u32 = LIMBS as u32 * Limb::BITS;
     pub const LIMBS: usize = Mod::LIMBS;
+    /// The largest residue, `modulus - 1`.
+    pub const MAX: Self = Self(ConstMontyForm::new(
+        &Mod::PARAMS
+            .modulus()
+            .as_ref()
+            .wrapping_sub(&crypto_bigint::Uint::ONE),
+    ));
 
     #[inline(always)]
     pub const fn new(value: Uint<LIMBS>) -> Self {
-        Self(ConstMontyForm::new(value.inner()))
+        Self(ConstMontyForm::new(&value.0))
     }
 
     #[inline(always)]
     pub const fn new_unchecked(inner: Uint<LIMBS>) -> Self {
-        Self(ConstMontyForm::from_montgomery(inner.into_inner()))
-    }
-
-    #[inline(always)]
-    pub const fn inner(&self) -> &Uint<LIMBS> {
-        Uint::new_ref(self.0.as_montgomery())
-    }
-
-    #[inline(always)]
-    pub const fn into_inner(self) -> Uint<LIMBS> {
-        Uint::new(self.0.to_montgomery())
+        Self(ConstMontyForm::from_montgomery(inner.0))
     }
 
     /// Retrieves the integer currently encoded in this [`ConstMontyForm`],
@@ -69,7 +70,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstMontyField<Mod, LIMBS> {
 
     /// Create a `ConstMontyForm` from a value in Montgomery form.
     pub const fn from_montgomery(integer: Uint<LIMBS>) -> Self {
-        Self(ConstMontyForm::from_montgomery(integer.into_inner()))
+        Self(ConstMontyForm::from_montgomery(integer.0))
     }
 
     /// Extract the value from the `ConstMontyForm` in Montgomery form.
@@ -93,7 +94,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstMontyField<Mod, LIMBS> {
         exponent: &Uint<RHS_LIMBS>,
         exponent_bits: u32,
     ) -> Self {
-        Self(self.0.pow_bounded_exp(exponent.inner(), exponent_bits))
+        Self(self.0.pow_bounded_exp(&exponent.0, exponent_bits))
     }
 }
 
@@ -120,19 +121,24 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Default for ConstMontyField<Mod, LI
     }
 }
 
+/// Compares Montgomery form, not values.
 impl<Mod: Params<LIMBS>, const LIMBS: usize> PartialOrd for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
+/// Compares Montgomery form, not values.
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Ord for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
         Ord::cmp(self.0.as_montgomery(), other.0.as_montgomery())
     }
 }
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> Hash for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.as_montgomery().hash(state)
     }
@@ -196,7 +202,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Neg for ConstMontyField<Mod, LIMBS>
 }
 
 macro_rules! impl_basic_op_forward_to_assign {
-    ($trait:ident, $method:ident, $assign_method:ident) => {
+    ($trait:ident, $method:ident, $assign_method:ident) => { paste! {
         impl<Mod: Params<LIMBS>, const LIMBS: usize> $trait for ConstMontyField<Mod, LIMBS> {
             type Output = ConstMontyField<Mod, LIMBS>;
 
@@ -211,7 +217,7 @@ macro_rules! impl_basic_op_forward_to_assign {
 
             #[inline(always)]
             fn $method(mut self, rhs: &ConstMontyField<Mod, LIMBS>) -> Self::Output {
-                self.$assign_method(rhs);
+                [<$trait Assign>]::$assign_method(&mut self, rhs);
                 self
             }
         }
@@ -235,7 +241,7 @@ macro_rules! impl_basic_op_forward_to_assign {
                 self.clone().$method(rhs)
             }
         }
-    };
+    }};
 }
 
 impl_basic_op_forward_to_assign!(Add, add, add_assign);
@@ -248,6 +254,23 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Pow<u32> for ConstMontyField<Mod, L
 
     fn pow(self, rhs: u32) -> Self::Output {
         Self(self.0.pow(&crypto_bigint::U64::from_u32(rhs)))
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> Pow<Uint<LIMBS>> for ConstMontyField<Mod, LIMBS> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn pow(self, rhs: Uint<LIMBS>) -> Self::Output {
+        self.pow(&rhs)
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> Pow<&Uint<LIMBS>> for ConstMontyField<Mod, LIMBS> {
+    type Output = Self;
+
+    fn pow(self, rhs: &Uint<LIMBS>) -> Self::Output {
+        Self(self.0.pow(rhs.inner()))
     }
 }
 
@@ -267,7 +290,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Inv for ConstMontyField<Mod, LIMBS>
 impl<Mod: Params<LIMBS>, const LIMBS: usize> CheckedDiv for ConstMontyField<Mod, LIMBS> {
     #[allow(clippy::arithmetic_side_effects)] // False alert
     fn checked_div(&self, rhs: &Self) -> Option<Self> {
-        Some(self * rhs.inv()?)
+        Some(self * Inv::inv(*rhs)?)
     }
 }
 
@@ -314,7 +337,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> SubAssign<&Self> for ConstMontyFiel
 impl<Mod: Params<LIMBS>, const LIMBS: usize> MulAssign<&Self> for ConstMontyField<Mod, LIMBS> {
     #[inline(always)]
     fn mul_assign(&mut self, rhs: &Self) {
-        let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+        let monty_mul = helpers::mul::monty_mul(
             self.0.as_montgomery(),
             rhs.0.as_montgomery(),
             Mod::PARAMS.modulus().as_ref(),
@@ -326,7 +349,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> MulAssign<&Self> for ConstMontyFiel
 impl<Mod: Params<LIMBS>, const LIMBS: usize> DivAssign<&Self> for ConstMontyField<Mod, LIMBS> {
     #[inline(always)]
     fn div_assign(&mut self, rhs: &Self) {
-        self.mul_assign(rhs.inv().expect("Division by zero"));
+        self.mul_assign(Inv::inv(*rhs).expect("Division by zero"));
     }
 }
 
@@ -399,7 +422,7 @@ macro_rules! impl_from_unsigned {
             impl<Mod: Params<LIMBS>, const LIMBS: usize> From<$t> for ConstMontyField<Mod, LIMBS> {
                 fn from(value: $t) -> Self {
                     let value = Uint::from(value);
-                    let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+                    let monty_mul = helpers::mul::monty_mul(
                         value.inner(),
                         Mod::PARAMS.r2(),
                         Mod::PARAMS.modulus().as_ref(),
@@ -425,7 +448,7 @@ macro_rules! impl_from_signed {
                 #![allow(clippy::arithmetic_side_effects)]
                 fn from(value: $t) -> Self {
                     let magnitude = Uint::from(value.abs_diff(0));
-                    let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+                    let monty_mul = helpers::mul::monty_mul(
                         magnitude.inner(),
                         Mod::PARAMS.r2(),
                         Mod::PARAMS.modulus().as_ref(),
@@ -473,7 +496,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> From<Uint<LIMBS>> for ConstMontyFie
 
 impl<Mod: Params<LIMBS>, const LIMBS: usize> From<&Uint<LIMBS>> for ConstMontyField<Mod, LIMBS> {
     fn from(value: &Uint<LIMBS>) -> Self {
-        let monty_mul = crypto_bigint_helpers::mul::monty_mul(
+        let monty_mul = helpers::mul::monty_mul(
             value.inner(),
             Mod::PARAMS.r2(),
             Mod::PARAMS.modulus().as_ref(),
@@ -518,11 +541,8 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize, const LIMBS2: usize> From<&crypto_b
         let value = value.resize();
         // Note: abs() returns Uint so it's guaranteed to fit
         let abs = value.abs();
-        let monty_mul = crypto_bigint_helpers::mul::monty_mul(
-            &abs,
-            Mod::PARAMS.r2(),
-            Mod::PARAMS.modulus().as_ref(),
-        );
+        let monty_mul =
+            helpers::mul::monty_mul(&abs, Mod::PARAMS.r2(), Mod::PARAMS.modulus().as_ref());
         let result = ConstMontyField(ConstMontyForm::from_montgomery(monty_mul));
         if value.is_negative().into() {
             -result
@@ -533,26 +553,11 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize, const LIMBS2: usize> From<&crypto_b
 }
 
 //
-// Semiring, Ring and Field
+// Wrapper
 //
 
-impl<Mod: Params<LIMBS>, const LIMBS: usize> Semiring for ConstMontyField<Mod, LIMBS> {}
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstSemiring for ConstMontyField<Mod, LIMBS> {
-    const MAX: Self = Self(ConstMontyForm::new(
-        &Mod::PARAMS
-            .modulus()
-            .as_ref()
-            .wrapping_sub(&crypto_bigint::Uint::ONE),
-    ));
-    const MIN: Self = Self::ZERO;
-}
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> Ring for ConstMontyField<Mod, LIMBS> {}
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> Field for ConstMontyField<Mod, LIMBS> {
+impl<Mod: Params<LIMBS>, const LIMBS: usize> Wrapper for ConstMontyField<Mod, LIMBS> {
     type Inner = Uint<LIMBS>;
-    type Integer = Uint<LIMBS>;
 
     #[inline(always)]
     fn inner(&self) -> &Self::Inner {
@@ -570,25 +575,63 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Field for ConstMontyField<Mod, LIMB
     }
 
     #[inline(always)]
-    fn lift_to_integer(&self) -> Self::Integer {
-        Uint::new(self.0.retrieve())
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(ConstMontyForm::from_montgomery(inner.into_inner()))
     }
 }
 
-impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstPrimeField for ConstMontyField<Mod, LIMBS> {
+//
+// Semiring, Ring and Field
+//
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> Bounded for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
+    fn min_value() -> Self {
+        Self::ZERO
+    }
+
+    #[inline(always)]
+    fn max_value() -> Self {
+        Self::MAX
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> IntSemiring for ConstMontyField<Mod, LIMBS> {
+    #[inline(always)]
+    fn is_odd(&self) -> bool {
+        // There's no way to check that efficiently
+        self.lift().is_odd()
+    }
+
+    #[inline(always)]
+    fn is_even(&self) -> bool {
+        // There's no way to check that efficiently
+        self.lift().is_even()
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> ConstBaseField for ConstMontyField<Mod, LIMBS> {
     const MODULUS: Self::Integer = *Uint::new_ref(Mod::PARAMS.modulus().as_ref());
-    const MODULUS_MINUS_ONE_DIV_TWO: Self::Inner = {
-        let m_minus_one = CBUint::wrapping_sub(Self::MODULUS.inner(), &CBUint::ONE);
+    const MODULUS_MINUS_ONE_DIV_TWO: Self::Integer = {
+        let m_minus_one = CBUint::wrapping_sub(&Self::MODULUS.0, &CBUint::ONE);
         let two = CBUint::<LIMBS>::wrapping_add(&CBUint::ONE, &CBUint::ONE);
         Uint::new(CBUint::wrapping_div(
             &m_minus_one,
             &NonZeroUint::new_unwrap(two),
         ))
     };
+}
 
+impl<Mod: Params<LIMBS>, const LIMBS: usize> WithAssociatedInteger for ConstMontyField<Mod, LIMBS> {
+    type Integer = Uint<LIMBS>;
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> LiftElement<<Self as WithAssociatedInteger>::Integer>
+    for ConstMontyField<Mod, LIMBS>
+{
     #[inline(always)]
-    fn new_unchecked(inner: Self::Inner) -> Self {
-        Self(ConstMontyForm::from_montgomery(inner.into_inner()))
+    fn lift(&self) -> <Self as WithAssociatedInteger>::Integer {
+        Uint::new(self.0.retrieve())
     }
 }
 
@@ -708,7 +751,8 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Retrieve for ConstMontyField<Mod, L
 // Predefined fields of various sizes for convenience
 //
 
-pub type F64<Mod> = ConstMontyField<Mod, { crypto_bigint::U64::LIMBS }>;
+use helpers::WORD_FACTOR;
+pub type F64<Mod> = ConstMontyField<Mod, { WORD_FACTOR }>;
 pub type F128<Mod> = ConstMontyField<Mod, { 2 * WORD_FACTOR }>;
 pub type F192<Mod> = ConstMontyField<Mod, { 3 * WORD_FACTOR }>;
 pub type F256<Mod> = ConstMontyField<Mod, { 4 * WORD_FACTOR }>;
@@ -739,7 +783,7 @@ pub type F32768<Mod> = ConstMontyField<Mod, { 512 * WORD_FACTOR }>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ensure_type_implements_trait;
+    use crate::{ConstField, ensure_type_implements_trait};
     use crypto_bigint::{Square, U64, U256, const_monty_params};
     use num_traits::{One, Zero};
 
@@ -752,9 +796,11 @@ mod tests {
     type F = ConstMontyField<ModP, { U256::LIMBS }>;
 
     #[test]
-    fn ensure_blanket_traits() {
-        // NB: this ensures `PrimeField` implementation too!
-        ensure_type_implements_trait!(F, FromPrimitiveWithConfig);
+    fn ensure_traits() {
+        ensure_type_implements_trait!(F, Wrapper);
+        ensure_type_implements_trait!(F, ConstField);
+        ensure_type_implements_trait!(F, ConstBaseField);
+        ensure_type_implements_trait!(FixedConfig<F>, ProjectPrimitiveIntegersWithConfig);
     }
 
     #[test]
@@ -765,11 +811,11 @@ mod tests {
         ));
         assert_eq!(F::new(x), F::one());
 
-        assert_eq!(F::from(<F as PrimeField>::modulus(&())), F::zero());
+        assert_eq!(F::from(<F as BaseField>::modulus()), F::zero());
 
         // Lifting to integer and projecting back yields the original element.
         for x in [F::zero(), F::one(), F::from(2_u64), F::from(123456789_u64)] {
-            assert_eq!(F::from(x.lift_to_integer()), x);
+            assert_eq!(F::from(x.lift()), x);
         }
     }
 
@@ -777,10 +823,8 @@ mod tests {
     fn zero_one_basics() {
         let z = F::zero();
         assert!(z.is_zero());
-        assert!(PrimeField::is_zero(&z));
         let o = F::one();
         assert!(!o.is_zero());
-        assert!(!PrimeField::is_zero(&o));
         assert_ne!(z, o);
     }
 
@@ -872,7 +916,6 @@ mod tests {
 
     #[test]
     fn min_max() {
-        assert_eq!(F::MIN, F::zero());
         assert_eq!(
             F::MAX,
             F::from_str("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2e")
@@ -880,7 +923,7 @@ mod tests {
         );
 
         assert_eq!(F::MAX + F::one(), F::zero());
-        assert_eq!(F::MIN - F::one(), F::MAX);
+        assert_eq!(F::ZERO - F::one(), F::MAX);
         assert_eq!(F::MAX * F::MAX, F::one());
     }
 
@@ -1228,14 +1271,20 @@ mod tests {
         let base: F = 2_u64.into();
 
         // Test basic exponentiation
-        assert_eq!(base.pow(0), F::one());
-        assert_eq!(base.pow(1), base);
-        assert_eq!(base.pow(3), F::from(8_u64));
-        assert_eq!(base.pow(10), F::from(1024_u64));
+        assert_eq!(base.pow(0_u32), F::one());
+        assert_eq!(base.pow(1_u32), base);
+        assert_eq!(base.pow(3_u32), F::from(8_u64));
+        assert_eq!(base.pow(10_u32), F::from(1024_u64));
 
         // Test with different base
         let base3: F = 3_u64.into();
-        assert_eq!(base3.pow(4), F::from(81_u64));
+        assert_eq!(base3.pow(4_u32), F::from(81_u64));
+
+        // Same checks via `Uint` (`Self::Integer`) exponents
+        assert_eq!(base.pow(Uint::from(0_u64)), F::one());
+        assert_eq!(base.pow(&Uint::from(3_u64)), F::from(8_u64));
+        assert_eq!(base.pow(Uint::from(10_u64)), F::from(1024_u64));
+        assert_eq!(base3.pow(&Uint::from(4_u64)), F::from(81_u64));
     }
 
     #[test]

@@ -1,5 +1,7 @@
 use super::*;
-use crate::{boolean::Boolean, crypto_bigint_int::Int, pow_via_repeated_squaring};
+use crate::{
+    Wrapper, boolean::Boolean, crypto_bigint_int::Int, helpers::pow_via_repeated_squaring,
+};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, LowerHex, Result as FmtResult, UpperHex},
@@ -11,7 +13,7 @@ use core::{
     },
     str::FromStr,
 };
-use crypto_bigint::{DivVartime, Integer, Limb, Word};
+use crypto_bigint::{DivVartime, Integer, Limb, UintRef, Word};
 use num_traits::{
     CheckedAdd, CheckedMul, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow, WrappingAdd,
     WrappingMul, WrappingSub, Zero,
@@ -21,11 +23,13 @@ use pastey::paste;
 #[cfg(feature = "rand")]
 use rand::{distr::StandardUniform, prelude::*, rand_core::TryRng};
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct Uint<const LIMBS: usize>(crypto_bigint::Uint<LIMBS>);
+pub struct Uint<const LIMBS: usize>(pub crypto_bigint::Uint<LIMBS>);
 
 impl<const LIMBS: usize> Uint<LIMBS> {
+    pub const MAX: Self = Self(crypto_bigint::Uint::MAX);
+
     /// Wraps a given value into this wrapper type
     #[inline(always)]
     pub const fn new(value: crypto_bigint::Uint<LIMBS>) -> Self {
@@ -44,18 +48,6 @@ impl<const LIMBS: usize> Uint<LIMBS> {
         // Safety: Uint<LIMBS> is #[repr(transparent)] and is guaranteed to have the
         // same memory layout as crypto_bigint::Uint
         unsafe { &mut *(value as *mut crypto_bigint::Uint<LIMBS> as *mut Self) }
-    }
-
-    /// Get the reference to the wrapped value
-    #[inline(always)]
-    pub const fn inner(&self) -> &crypto_bigint::Uint<LIMBS> {
-        &self.0
-    }
-
-    /// Get the wrapped value, consuming self
-    #[inline(always)]
-    pub const fn into_inner(self) -> crypto_bigint::Uint<LIMBS> {
-        self.0
     }
 
     /// See [crypto_bigint::Uint::from_words]
@@ -108,11 +100,6 @@ impl<const LIMBS: usize> Uint<LIMBS> {
         }
     }
 
-    /// See [crypto_bigint::Uint::cmp_vartime]
-    pub const fn cmp_vartime(&self, rhs: &Self) -> Ordering {
-        self.0.cmp_vartime(&rhs.0)
-    }
-
     /// See [crypto_bigint::Uint::as_int]
     pub const fn as_int(&self) -> &Int<LIMBS> {
         Int::new_ref(self.0.as_int())
@@ -155,6 +142,20 @@ impl<const LIMBS: usize> Uint<LIMBS> {
 // Core traits
 //
 
+impl<const LIMBS: usize> AsRef<UintRef> for Uint<LIMBS> {
+    #[inline(always)]
+    fn as_ref(&self) -> &UintRef {
+        self.inner().as_ref()
+    }
+}
+
+impl<const LIMBS: usize> AsMut<UintRef> for Uint<LIMBS> {
+    #[inline(always)]
+    fn as_mut(&mut self) -> &mut UintRef {
+        self.inner_mut().as_mut()
+    }
+}
+
 impl<const LIMBS: usize> Debug for Uint<LIMBS> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         Debug::fmt(&self.0, f)
@@ -174,7 +175,23 @@ impl<const LIMBS: usize> Default for Uint<LIMBS> {
     }
 }
 
+impl<const LIMBS: usize> PartialOrd for Uint<LIMBS> {
+    #[inline(always)]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Implemented manually to use `cmp_vartime`
+impl<const LIMBS: usize> Ord for Uint<LIMBS> {
+    #[inline(always)]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp_vartime(&other.0)
+    }
+}
+
 impl<const LIMBS: usize> LowerHex for Uint<LIMBS> {
+    #[inline(always)]
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         LowerHex::fmt(&self.0, f)
     }
@@ -187,6 +204,7 @@ impl<const LIMBS: usize> UpperHex for Uint<LIMBS> {
 }
 
 impl<const LIMBS: usize> Hash for Uint<LIMBS> {
+    #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state)
     }
@@ -499,6 +517,20 @@ impl<const LIMBS: usize> From<Uint<LIMBS>> for crypto_bigint::Uint<LIMBS> {
     }
 }
 
+impl<'a, const LIMBS: usize> From<&'a crypto_bigint::Uint<LIMBS>> for &'a Uint<LIMBS> {
+    #[inline(always)]
+    fn from(value: &'a crypto_bigint::Uint<LIMBS>) -> Self {
+        Uint::new_ref(value)
+    }
+}
+
+impl<'a, const LIMBS: usize> From<&'a Uint<LIMBS>> for &'a crypto_bigint::Uint<LIMBS> {
+    #[inline(always)]
+    fn from(value: &'a Uint<LIMBS>) -> Self {
+        &value.0
+    }
+}
+
 impl<const LIMBS: usize> From<bool> for Uint<LIMBS> {
     #[inline(always)]
     fn from(value: bool) -> Self {
@@ -556,21 +588,56 @@ impl<const LIMBS: usize, const LIMBS2: usize> TryFrom<&crypto_bigint::Uint<LIMBS
 }
 
 //
+// Wrapper
+//
+
+impl<const LIMBS: usize> Wrapper for Uint<LIMBS> {
+    type Inner = crypto_bigint::Uint<LIMBS>;
+
+    #[inline(always)]
+    fn inner(&self) -> &Self::Inner {
+        &self.0
+    }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        &mut self.0
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        self.0
+    }
+
+    #[inline(always)]
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(inner)
+    }
+}
+
+//
 // Semiring
 //
 
-impl<const LIMBS: usize> Semiring for Uint<LIMBS> {}
+impl<const LIMBS: usize> Bounded for Uint<LIMBS> {
+    #[inline(always)]
+    fn min_value() -> Self {
+        Self::ZERO
+    }
 
-impl<const LIMBS: usize> ConstSemiring for Uint<LIMBS> {
-    const MAX: Self = Self(crypto_bigint::Uint::MAX);
-    const MIN: Self = Self(crypto_bigint::Uint::ZERO);
+    #[inline(always)]
+    fn max_value() -> Self {
+        Self::MAX
+    }
 }
 
 impl<const LIMBS: usize> IntSemiring for Uint<LIMBS> {
+    #[inline(always)]
     fn is_odd(&self) -> bool {
         self.0.is_odd().into()
     }
 
+    #[inline(always)]
     fn is_even(&self) -> bool {
         self.0.is_even().into()
     }
@@ -668,8 +735,43 @@ impl<const LIMBS: usize> crypto_bigint::Bounded for Uint<LIMBS> {
 }
 
 impl<const LIMBS: usize> crypto_bigint::Constants for Uint<LIMBS> {
-    const MAX: Self = ConstSemiring::MAX;
+    const MAX: Self = Self::MAX;
 }
+
+//
+// Predefined uints of various sizes for convenience
+//
+
+use crate::helpers::crypto_bigint::WORD_FACTOR;
+pub type U64 = Uint<{ WORD_FACTOR }>;
+pub type U128 = Uint<{ 2 * WORD_FACTOR }>;
+pub type U192 = Uint<{ 3 * WORD_FACTOR }>;
+pub type U256 = Uint<{ 4 * WORD_FACTOR }>;
+pub type U320 = Uint<{ 5 * WORD_FACTOR }>;
+pub type U384 = Uint<{ 6 * WORD_FACTOR }>;
+pub type U448 = Uint<{ 7 * WORD_FACTOR }>;
+pub type U512 = Uint<{ 8 * WORD_FACTOR }>;
+pub type U576 = Uint<{ 9 * WORD_FACTOR }>;
+pub type U640 = Uint<{ 10 * WORD_FACTOR }>;
+pub type U704 = Uint<{ 11 * WORD_FACTOR }>;
+pub type U768 = Uint<{ 12 * WORD_FACTOR }>;
+pub type U832 = Uint<{ 13 * WORD_FACTOR }>;
+pub type U896 = Uint<{ 14 * WORD_FACTOR }>;
+pub type U960 = Uint<{ 15 * WORD_FACTOR }>;
+pub type U1024 = Uint<{ 16 * WORD_FACTOR }>;
+pub type U1280 = Uint<{ 20 * WORD_FACTOR }>;
+pub type U1536 = Uint<{ 24 * WORD_FACTOR }>;
+pub type U1792 = Uint<{ 28 * WORD_FACTOR }>;
+pub type U2048 = Uint<{ 32 * WORD_FACTOR }>;
+pub type U3072 = Uint<{ 48 * WORD_FACTOR }>;
+pub type U3584 = Uint<{ 56 * WORD_FACTOR }>;
+pub type U4096 = Uint<{ 64 * WORD_FACTOR }>;
+pub type U4224 = Uint<{ 66 * WORD_FACTOR }>;
+pub type U4352 = Uint<{ 68 * WORD_FACTOR }>;
+pub type U6144 = Uint<{ 96 * WORD_FACTOR }>;
+pub type U8192 = Uint<{ 128 * WORD_FACTOR }>;
+pub type U16384 = Uint<{ 256 * WORD_FACTOR }>;
+pub type U32768 = Uint<{ 512 * WORD_FACTOR }>;
 
 #[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
 #[cfg(test)]
@@ -688,7 +790,8 @@ mod tests {
     type Uint4 = Uint<{ WORD_FACTOR * 4 }>;
 
     #[test]
-    fn ensure_blanket_traits() {
+    fn ensure_traits() {
+        ensure_type_implements_trait!(Uint4, Wrapper);
         ensure_type_implements_trait!(Uint4, ConstIntSemiring);
         ensure_type_implements_trait!(Uint4, IntSemiringWithShifts);
     }
@@ -745,7 +848,7 @@ mod tests {
 
         // MIN and MAX
         assert_eq!(Uint4::MAX.checked_add(&One::one()), None);
-        assert_eq!(Uint4::MIN.checked_sub(&One::one()), None);
+        assert_eq!(Uint4::ZERO.checked_sub(&One::one()), None);
     }
 
     #[allow(clippy::op_ref)]
@@ -1092,14 +1195,14 @@ mod tests {
     }
 
     #[test]
-    fn cmp_vartime() {
+    fn cmp() {
         let a = Uint4::from(10_u64);
         let b = Uint4::from(20_u64);
         let c = Uint4::from(10_u64);
 
-        assert_eq!(a.cmp_vartime(&b), Ordering::Less);
-        assert_eq!(b.cmp_vartime(&a), Ordering::Greater);
-        assert_eq!(a.cmp_vartime(&c), Ordering::Equal);
+        assert_eq!(a.cmp(&b), Ordering::Less);
+        assert_eq!(b.cmp(&a), Ordering::Greater);
+        assert_eq!(a.cmp(&c), Ordering::Equal);
     }
 
     #[test]

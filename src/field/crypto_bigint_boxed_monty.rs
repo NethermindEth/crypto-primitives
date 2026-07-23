@@ -1,32 +1,137 @@
 use super::*;
 use crate::{
-    IntRing, Semiring, boolean::Boolean, crypto_bigint_boxed_uint::BoxedUint,
-    crypto_bigint_int::Int,
+    IntSemiring, IntSemiringConfig, LiftElementWithConfig, Wrapper, boolean::Boolean,
+    crypto_bigint_boxed_uint::BoxedUint, crypto_bigint_int::Int, crypto_bigint_uint::Uint,
+    helpers::crypto_bigint as helpers,
 };
+use alloc::borrow::Cow;
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, Result as FmtResult},
-    hash::{Hash, Hasher},
-    iter::{Product, Sum},
-    ops::{Add, AddAssign, DivAssign, Mul, MulAssign, Sub, SubAssign},
 };
 use crypto_bigint::{
-    Odd,
+    MontyForm, Odd,
     modular::{BoxedMontyForm, BoxedMontyParams},
 };
-use crypto_primitives_proc_macros::InfallibleCheckedOp;
-use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, One, Pow};
+use num_traits::{One, Signed};
 
-#[derive(Clone, PartialEq, Eq, InfallibleCheckedOp)]
-#[infallible_checked_unary_op((CheckedNeg, neg))]
-#[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
-#[repr(transparent)]
-pub struct BoxedMontyField(BoxedMontyForm);
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoxedMontyField {
+    pub params: BoxedMontyParams,
+    pub modulus_minus_one_div_two: BoxedUint,
+}
 
 impl BoxedMontyField {
-    /// Creates a new `BoxedMontyField` from a `BoxedMontyForm`.
-    pub const fn new(form: BoxedMontyForm) -> Self {
-        Self(form)
+    /// Creates a new [`BoxedMontyField`] from [`BoxedMontyParams`].
+    #[inline(always)]
+    #[allow(clippy::arithmetic_side_effects)] // False alert
+    pub fn wrap(params: BoxedMontyParams) -> Self {
+        let two = BoxedUint::from(2_u8).into_inner();
+        let two = two.as_nz_vartime().expect("Can't fail");
+        let modulus_minus_one_div_two =
+            (params.modulus().as_ref() - BoxedUint::one().into_inner()).div(two);
+        let modulus_minus_one_div_two = BoxedUint::new(modulus_minus_one_div_two);
+        Self {
+            params,
+            modulus_minus_one_div_two,
+        }
+    }
+
+    /// Unwrap the [`BoxedMontyForm`] into a field config and a field element.
+    #[inline(always)]
+    pub fn unwrap_monty(el: BoxedMontyForm) -> (Self, BoxedUint) {
+        let params = el.params().clone();
+        (Self::wrap(params), BoxedUint::new(el.into_montgomery()))
+    }
+
+    /// Reassemble the `crypto-bigint`'s [`BoxedMontyForm`] from a raw
+    /// Montgomery value.
+    #[inline(always)]
+    pub fn form(&self, el: &BoxedMontyFieldElement) -> BoxedMontyForm {
+        BoxedMontyForm::from_montgomery(el.0.inner().clone(), &self.params)
+    }
+
+    #[inline(always)]
+    pub fn bits_precision(&self) -> u32 {
+        self.params.bits_precision()
+    }
+}
+
+/// A wrapper around [`BoxedUint`] to prevent accidentally calling math
+/// operations on it.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct BoxedMontyFieldElement(pub BoxedUint);
+
+impl BoxedMontyFieldElement {
+    #[inline(always)]
+    pub fn bits_precision(&self) -> u32 {
+        self.0.bits_precision()
+    }
+}
+
+/// Compares Montgomery form, not values.
+impl PartialOrd for BoxedMontyFieldElement {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Compares Montgomery form, not values.
+impl Ord for BoxedMontyFieldElement {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl From<BoxedUint> for BoxedMontyFieldElement {
+    #[inline(always)]
+    fn from(value: BoxedUint) -> Self {
+        Self(value)
+    }
+}
+
+impl From<&BoxedUint> for &BoxedMontyFieldElement {
+    #[inline(always)]
+    fn from(value: &BoxedUint) -> Self {
+        // Safety: BoxedMontyFieldElement is #[repr(transparent)] and is guaranteed to
+        // have the same memory layout.
+        unsafe { &*(value as *const BoxedUint as *const BoxedMontyFieldElement) }
+    }
+}
+
+impl From<crypto_bigint::BoxedUint> for BoxedMontyFieldElement {
+    #[inline(always)]
+    fn from(value: crypto_bigint::BoxedUint) -> Self {
+        Self(BoxedUint::new(value))
+    }
+}
+
+//
+// Wrapper
+//
+
+impl Wrapper for BoxedMontyFieldElement {
+    type Inner = BoxedUint;
+
+    #[inline(always)]
+    fn inner(&self) -> &Self::Inner {
+        &self.0
+    }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        &mut self.0
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        self.0
+    }
+
+    #[inline(always)]
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(inner)
     }
 }
 
@@ -34,224 +139,160 @@ impl BoxedMontyField {
 // Core traits
 //
 
-impl Debug for BoxedMontyField {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        Debug::fmt(&self.0, f)
-    }
-}
-
 impl Display for BoxedMontyField {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(
-            f,
-            "{} (mod {})",
-            self.0.retrieve(),
-            self.0.params().modulus()
+        write!(f, "F_{}", self.params.modulus())
+    }
+}
+
+//
+// Field operations
+//
+
+impl SetConfig for BoxedMontyField {
+    type Element = BoxedMontyFieldElement;
+}
+
+impl SemiringConfig for BoxedMontyField {
+    fn is_zero(&self, value: &Self::Element) -> bool {
+        value.0.is_zero()
+    }
+
+    fn zero(&self) -> Self::Element {
+        BoxedUint::zero_with_precision(self.params.bits_precision()).into()
+    }
+
+    fn one(&self) -> Self::Element {
+        self.params.as_ref().one().clone().into()
+    }
+
+    fn add(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
+        x.0.inner()
+            .add_mod(y.0.inner(), self.params.modulus().as_nz_ref())
+            .into()
+    }
+
+    fn sub(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
+        x.0.inner()
+            .sub_mod(y.0.inner(), self.params.modulus().as_nz_ref())
+            .into()
+    }
+
+    /// Montgomery multiplication `x*y/R mod m`, fully reduced.
+    fn mul(&self, x: &Self::Element, y: &Self::Element) -> Self::Element {
+        // Note: CIOS multiplication is worse for this
+        let modulus = BoxedUint::new_ref(self.params.modulus().as_ref());
+        let mut out = BoxedUint::zero_with_precision(self.bits_precision());
+        let carry = helpers::mul::monty_mul_limbs(
+            x.0.as_limbs(),
+            y.0.as_limbs(),
+            out.as_mut_limbs(),
+            modulus.as_limbs(),
+            self.params.as_ref().mod_neg_inv(),
+        );
+
+        out.sub_assign_mod_with_carry(carry, modulus, modulus);
+        out.into()
+    }
+
+    fn pow_u32(&self, x: &Self::Element, y: u32) -> Self::Element {
+        helpers::pow::pow_u32(
+            &x.0,
+            y,
+            BoxedUint::new(self.params.as_ref().one().clone()),
+            BoxedUint::new_ref(self.params.modulus().as_ref()),
+            self.params.as_ref().mod_neg_inv(),
         )
+        .into()
+    }
+
+    // Modular arithmetic cannot overflow, so the checked variants always
+    // succeed.
+
+    fn checked_add(&self, x: &Self::Element, y: &Self::Element) -> Option<Self::Element> {
+        Some(self.add(x, y))
+    }
+
+    fn checked_sub(&self, x: &Self::Element, y: &Self::Element) -> Option<Self::Element> {
+        Some(self.sub(x, y))
+    }
+
+    fn checked_mul(&self, x: &Self::Element, y: &Self::Element) -> Option<Self::Element> {
+        Some(self.mul(x, y))
+    }
+
+    fn checked_pow_u32(&self, x: &Self::Element, y: u32) -> Option<Self::Element> {
+        Some(self.pow_u32(x, y))
+    }
+
+    fn add_assign(&self, x: &mut Self::Element, y: &Self::Element) {
+        x.0.inner_mut()
+            .add_mod_assign(y.0.inner(), self.params.modulus().as_nz_ref());
+    }
+
+    fn sub_assign(&self, x: &mut Self::Element, y: &Self::Element) {
+        let modulus_ref = BoxedUint::new_ref(self.params.modulus().as_ref());
+        x.0.sub_assign_mod_with_carry(crypto_bigint::Limb::ZERO, &y.0, modulus_ref);
+    }
+
+    // Original mul_assign's implementation delegates to mul, so we stick to that
+}
+
+impl RingConfig for BoxedMontyField {
+    fn neg(&self, x: &Self::Element) -> Self::Element {
+        x.0.inner()
+            .neg_mod(self.params.modulus().as_nz_ref())
+            .into()
+    }
+
+    fn checked_neg(&self, x: &Self::Element) -> Option<Self::Element> {
+        Some(self.neg(x))
     }
 }
 
-impl PartialOrd for BoxedMontyField {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self.cfg().modulus() != other.cfg().modulus() {
-            return None;
-        }
-        Some(Ord::cmp(self.0.as_montgomery(), other.0.as_montgomery()))
+impl IntSemiringConfig for BoxedMontyField {
+    // Parity is a property of the represented residue, so it requires leaving
+    // the Montgomery domain.
+
+    fn is_odd(&self, x: &Self::Element) -> bool {
+        IntSemiring::is_odd(&self.lift(x))
+    }
+
+    fn is_even(&self, x: &Self::Element) -> bool {
+        IntSemiring::is_even(&self.lift(x))
     }
 }
 
-impl Hash for BoxedMontyField {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.as_montgomery().as_limbs().hash(state)
+impl WithExtensionDegree for BoxedMontyField {
+    fn extension_degree() -> u64 {
+        1
     }
 }
 
-//
-// Basic arithmetic operations
-//
+impl FieldConfig for BoxedMontyField {
+    fn inv(&self, x: &Self::Element) -> Option<Self::Element> {
+        // Follows BoxedMontyForm::invert_vartime
+        let inverted: Option<crypto_bigint::BoxedUint> =
+            x.0.inner()
+                .invert_odd_mod_vartime(self.params.modulus())
+                .into();
+        let inverted = BoxedUint::new(inverted?).into();
 
-impl Neg for BoxedMontyField {
-    type Output = Self;
-
-    fn neg(self) -> Self::Output {
-        Self(self.0.neg())
+        let r2 = BoxedUint::new_ref(self.params.as_ref().r2()).into();
+        let x_inv = self.mul(&inverted, r2);
+        Some(self.mul(&x_inv, r2))
     }
-}
 
-macro_rules! impl_basic_op_boilerplate {
-    ($trait:ident, $method:ident) => {
-        impl $trait for BoxedMontyField {
-            type Output = Self;
-
-            #[inline(always)]
-            fn $method(self, rhs: Self) -> Self::Output {
-                (&self).$method(&rhs)
-            }
-        }
-
-        impl $trait<&Self> for BoxedMontyField {
-            type Output = Self;
-
-            #[inline(always)]
-            fn $method(self, rhs: &Self) -> Self::Output {
-                (&self).$method(rhs)
-            }
-        }
-
-        impl $trait<BoxedMontyField> for &BoxedMontyField {
-            type Output = BoxedMontyField;
-
-            #[inline(always)]
-            fn $method(self, rhs: BoxedMontyField) -> Self::Output {
-                self.$method(&rhs)
-            }
-        }
-    };
-}
-
-macro_rules! impl_basic_op_forward {
-    ($trait:ident, $method:ident) => {
-        impl $trait for &BoxedMontyField {
-            type Output = BoxedMontyField;
-
-            #[inline(always)]
-            fn $method(self, rhs: Self) -> Self::Output {
-                BoxedMontyField(BoxedMontyForm::$method(&self.0, &rhs.0))
-            }
-        }
-    };
-}
-
-impl_basic_op_boilerplate!(Add, add);
-impl_basic_op_boilerplate!(Sub, sub);
-impl_basic_op_boilerplate!(Mul, mul);
-impl_basic_op_boilerplate!(Div, div);
-
-impl_basic_op_forward!(Add, add);
-impl_basic_op_forward!(Sub, sub);
-impl_basic_op_forward!(Mul, mul); // Note: CIOS multiplication is worse for this
-
-impl Div for &BoxedMontyField {
-    type Output = BoxedMontyField;
-
-    #[inline(always)]
-    fn div(self, rhs: &BoxedMontyField) -> Self::Output {
-        self.checked_div(rhs).expect("Division by zero")
-    }
-}
-
-impl Pow<u32> for BoxedMontyField {
-    type Output = Self;
-
-    fn pow(self, rhs: u32) -> Self::Output {
-        Self(self.0.pow(BoxedUint::from(rhs).inner()))
-    }
-}
-
-impl Inv for BoxedMontyField {
-    type Output = Option<Self>;
-
-    fn inv(self) -> Self::Output {
-        Some(Self(Option::from(self.0.invert_vartime())?))
-    }
-}
-
-impl Inv for &BoxedMontyField {
-    type Output = Option<BoxedMontyField>;
-
-    fn inv(self) -> Self::Output {
-        Some(BoxedMontyField(Option::from(self.0.invert_vartime())?))
-    }
-}
-
-//
-// Checked arithmetic operations
-// (Note: Field operations do not overflow)
-//
-
-impl CheckedDiv for BoxedMontyField {
-    #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn checked_div(&self, rhs: &Self) -> Option<Self> {
-        Some(self * rhs.inv()?)
-    }
-}
-
-//
-// Arithmetic assign operations
-//
-
-macro_rules! impl_op_assign {
-    ($trait:ident, $method:ident, $inner:ident) => {
-        impl $trait for BoxedMontyField {
-            #[inline(always)]
-            fn $method(&mut self, rhs: Self) {
-                *self = (&*self).$inner(&rhs);
-            }
-        }
-        impl $trait<&Self> for BoxedMontyField {
-            #[inline(always)]
-            fn $method(&mut self, rhs: &Self) {
-                *self = (&*self).$inner(rhs);
-            }
-        }
-    };
-}
-
-impl_op_assign!(AddAssign, add_assign, add);
-impl_op_assign!(SubAssign, sub_assign, sub);
-impl_op_assign!(MulAssign, mul_assign, mul);
-
-impl DivAssign for BoxedMontyField {
-    fn div_assign(&mut self, rhs: Self) {
-        self.div_assign(&rhs);
-    }
-}
-
-impl DivAssign<&Self> for BoxedMontyField {
-    fn div_assign(&mut self, rhs: &Self) {
-        self.0.mul_assign(rhs.0.invert().expect("Division by zero"))
-    }
-}
-
-//
-// Aggregate operations
-//
-
-impl Sum for BoxedMontyField {
-    fn sum<I: Iterator<Item = Self>>(mut iter: I) -> Self {
-        let Some(BoxedMontyField(first)) = iter.next() else {
-            panic!("Sum of an empty iterator is not defined for BoxedMontyField");
-        };
-        Self(iter.fold(first, |acc, x| BoxedMontyForm::add(&acc, &x.0)))
-    }
-}
-
-impl<'a> Sum<&'a Self> for BoxedMontyField {
-    fn sum<I: Iterator<Item = &'a Self>>(mut iter: I) -> Self {
-        let Some(BoxedMontyField(first)) = iter.next() else {
-            panic!("Sum of an empty iterator is not defined for BoxedMontyField");
-        };
-        Self(iter.fold(first.clone(), |acc, x| BoxedMontyForm::add(&acc, &x.0)))
-    }
-}
-
-impl Product for BoxedMontyField {
-    #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn product<I: Iterator<Item = Self>>(mut iter: I) -> Self {
-        let Some(first) = iter.next() else {
-            panic!("Product of an empty iterator is not defined for BoxedMontyField");
-        };
-        iter.fold(first, |acc, x| acc * x)
-    }
-}
-
-impl<'a> Product<&'a Self> for BoxedMontyField {
-    #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn product<I: Iterator<Item = &'a Self>>(mut iter: I) -> Self {
-        let Some(first) = iter.next() else {
-            panic!("Product of an empty iterator is not defined for BoxedMontyField");
-        };
-        iter.fold(first.clone(), |acc, x| acc * x)
+    fn pow(&self, x: &Self::Element, y: &Self::Integer) -> Self::Element {
+        helpers::pow::pow_bounded_exp(
+            &x.0,
+            y.as_limbs(),
+            y.bits_precision(),
+            BoxedUint::new(self.params.as_ref().one().clone()),
+            BoxedUint::new_ref(self.params.modulus().as_ref()),
+            self.params.as_ref().mod_neg_inv(),
+        )
+        .into()
     }
 }
 
@@ -259,40 +300,13 @@ impl<'a> Product<&'a Self> for BoxedMontyField {
 // Conversions
 //
 
-impl From<BoxedMontyForm> for BoxedMontyField {
-    #[inline(always)]
-    fn from(value: BoxedMontyForm) -> Self {
-        Self(value)
-    }
-}
-
-impl From<BoxedMontyField> for BoxedMontyForm {
-    #[inline(always)]
-    fn from(value: BoxedMontyField) -> Self {
-        value.0
-    }
-}
-
-impl From<&BoxedMontyField> for BoxedMontyField {
-    fn from(value: &Self) -> Self {
-        value.clone()
-    }
-}
-
 macro_rules! impl_from_unsigned {
     ($($t:ty),* $(,)?) => {
         $(
-            impl FromWithConfig<$t> for BoxedMontyField {
-                fn from_with_cfg(value: $t, cfg: &Self::Config) -> Self {
+            impl ProjectElementWithConfig<$t> for BoxedMontyField {
+                fn project(&self, value: &$t) -> Self::Element {
                     let abs: BoxedUint = value.into();
-                    let abs = abs.resize(cfg.modulus().bits_precision());
-                    Self(BoxedMontyForm::new(abs.into_inner(), cfg))
-                }
-            }
-
-            impl FromWithConfig<&$t> for BoxedMontyField {
-                fn from_with_cfg(value: &$t, cfg: &Self::Config) -> Self {
-                    Self::from_with_cfg(*value, cfg)
+                    self.project(&abs.resize(self.modulus().bits_precision()))
                 }
             }
         )*
@@ -302,18 +316,11 @@ macro_rules! impl_from_unsigned {
 macro_rules! impl_from_signed {
     ($($t:ty),* $(,)?) => {
         $(
-            #[allow(clippy::arithmetic_side_effects)] // False alert
-            impl FromWithConfig<$t> for BoxedMontyField {
-                fn from_with_cfg(value: $t, cfg: &Self::Config) -> Self {
-                    let magnitude = BoxedUint::from(value.abs_diff(0)).resize(cfg.modulus().bits_precision());
-                    let form = BoxedMontyForm::new(magnitude.into_inner(), cfg);
-                    Self(if value.is_negative() { -form } else { form })
-                }
-            }
-
-            impl FromWithConfig<&$t> for BoxedMontyField {
-                fn from_with_cfg(value: &$t, cfg: &Self::Config) -> Self {
-                    Self::from_with_cfg(*value, cfg)
+            impl ProjectElementWithConfig<$t> for BoxedMontyField {
+                fn project(&self, value: &$t) -> Self::Element {
+                    let magnitude = BoxedUint::from(value.abs_diff(0)).resize(self.modulus().bits_precision());
+                    let magnitude = self.project(&magnitude);
+                    if value.is_negative() { self.neg(&magnitude) } else { magnitude }
                 }
             }
         )*
@@ -323,161 +330,138 @@ macro_rules! impl_from_signed {
 impl_from_unsigned!(u8, u16, u32, u64, u128);
 impl_from_signed!(i8, i16, i32, i64, i128);
 
-impl FromWithConfig<bool> for BoxedMontyField {
-    fn from_with_cfg(value: bool, cfg: &Self::Config) -> Self {
-        let magnitude: BoxedUint = if value {
-            BoxedUint::one()
-        } else {
-            BoxedUint::zero()
-        };
-        let magnitude = magnitude.resize(cfg.modulus().bits_precision());
-        Self(BoxedMontyForm::new(magnitude.into_inner(), cfg))
+impl ProjectElementWithConfig<bool> for BoxedMontyField {
+    fn project(&self, value: &bool) -> Self::Element {
+        if *value { self.one() } else { self.zero() }
     }
 }
 
-impl FromWithConfig<&bool> for BoxedMontyField {
-    fn from_with_cfg(value: &bool, cfg: &Self::Config) -> Self {
-        Self::from_with_cfg(*value, cfg)
+impl ProjectElementWithConfig<Boolean> for BoxedMontyField {
+    #[inline(always)]
+    fn project(&self, value: &Boolean) -> Self::Element {
+        self.project(value.inner())
     }
 }
 
-impl FromWithConfig<Boolean> for BoxedMontyField {
-    fn from_with_cfg(value: Boolean, cfg: &Self::Config) -> Self {
-        Self::from_with_cfg(*value, cfg)
-    }
-}
-
-impl FromWithConfig<&Boolean> for BoxedMontyField {
-    fn from_with_cfg(value: &Boolean, cfg: &Self::Config) -> Self {
-        Self::from_with_cfg(*value, cfg)
-    }
-}
-
-impl<const LIMBS: usize> FromWithConfig<Int<LIMBS>> for BoxedMontyField {
-    fn from_with_cfg(value: Int<LIMBS>, cfg: &Self::Config) -> Self {
-        Self::from_with_cfg(&value, cfg)
-    }
-}
-
-impl<const LIMBS: usize> FromWithConfig<&Int<LIMBS>> for BoxedMontyField {
+impl<const LIMBS: usize> ProjectElementWithConfig<Int<LIMBS>> for BoxedMontyField {
     #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn from_with_cfg(value: &Int<LIMBS>, cfg: &Self::Config) -> Self {
+    fn project(&self, value: &Int<LIMBS>) -> Self::Element {
         let abs: BoxedUint = value.inner().abs().into();
-        let abs = abs.resize(cfg.modulus().bits_precision());
-
-        let result = Self(BoxedMontyForm::new(abs.into_inner(), cfg));
-
-        if value.is_negative() { -result } else { result }
+        let abs = self.project(&abs.resize(self.modulus().bits_precision()));
+        if value.is_negative() {
+            self.neg(&abs)
+        } else {
+            abs
+        }
     }
 }
 
-impl FromWithConfig<BoxedUint> for BoxedMontyField {
-    fn from_with_cfg(value: BoxedUint, cfg: &Self::Config) -> Self {
-        Self::from_with_cfg(&value, cfg)
-    }
-}
+impl ProjectElementWithConfig<BoxedUint> for BoxedMontyField {
+    /// Convert the given integer into the Montgomery domain.
+    fn project(&self, value: &BoxedUint) -> Self::Element {
+        use crypto_bigint::Resize;
 
-impl FromWithConfig<&BoxedUint> for BoxedMontyField {
-    fn from_with_cfg(value: &BoxedUint, cfg: &Self::Config) -> Self {
-        let value = value.resize(cfg.modulus().bits_precision());
-        Self(BoxedMontyForm::new(value.into_inner(), cfg))
-    }
-}
+        let value = if value.bits_precision() < self.bits_precision() {
+            Cow::Owned(value.resize(self.bits_precision()))
+        } else if value.bits_precision() > self.bits_precision() {
+            // The value is wider than the modulus: reduce it first, so that
+            // the resize below cannot truncate.
+            let modulus = self
+                .params
+                .modulus()
+                .as_ref()
+                .resize(value.bits_precision());
+            let modulus = modulus.into_nz().expect("modulus should be non-zero");
+            let rem = value.0.rem_vartime(&modulus);
+            Cow::Owned(BoxedUint::new(rem).resize(self.bits_precision()))
+        } else {
+            Cow::Borrowed(value)
+        };
 
-impl<const LIMBS: usize> FromWithConfig<crypto_bigint::Uint<LIMBS>> for BoxedMontyField {
-    fn from_with_cfg(value: crypto_bigint::Uint<LIMBS>, cfg: &Self::Config) -> Self {
-        Self::from_with_cfg(&value, cfg)
-    }
-}
-
-impl<const LIMBS: usize> FromWithConfig<&crypto_bigint::Uint<LIMBS>> for BoxedMontyField {
-    #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn from_with_cfg(value: &crypto_bigint::Uint<LIMBS>, cfg: &Self::Config) -> Self {
-        let value: BoxedUint = value.into();
-        let value = value.resize(cfg.modulus().bits_precision());
-        Self(BoxedMontyForm::new(value.into_inner(), cfg))
-    }
-}
-
-//
-// Semiring, Ring and Field
-//
-
-impl Semiring for BoxedMontyField {}
-
-impl Ring for BoxedMontyField {}
-
-impl Field for BoxedMontyField {
-    type Inner = BoxedUint;
-    type Integer = BoxedUint;
-
-    #[inline(always)]
-    fn inner(&self) -> &Self::Inner {
-        BoxedUint::new_ref(self.0.as_montgomery())
-    }
-
-    #[inline(always)]
-    fn inner_mut(&mut self) -> &mut Self::Inner {
-        // TODO: address this once possible.
-        unimplemented!(
-            "For now we keep this unimplemented. \
-            The method was introduced in crypto-bigint in this PR:\
-            https://github.com/RustCrypto/crypto-bigint/pull/1014\
-            but not yet available in the latest RC from the craits.io."
+        self.mul(
+            value.as_ref().into(),
+            BoxedUint::new_ref(self.params.as_ref().r2()).into(),
         )
     }
+}
 
+impl<const LIMBS: usize> ProjectElementWithConfig<Uint<LIMBS>> for BoxedMontyField {
     #[inline(always)]
-    fn into_inner(self) -> Self::Inner {
-        BoxedUint::new(self.0.to_montgomery())
-    }
-
-    #[inline(always)]
-    fn lift_to_integer(&self) -> Self::Integer {
-        BoxedUint::new(self.0.retrieve())
+    fn project(&self, value: &Uint<LIMBS>) -> Self::Element {
+        self.project(&BoxedUint::from(&value.0))
     }
 }
 
-impl HasPrimeFieldConfig for BoxedMontyField {
-    type Config = BoxedMontyParams;
-
-    fn cfg(&self) -> &Self::Config {
-        self.0.params()
+impl<const LIMBS: usize> ProjectElementWithConfig<crypto_bigint::Uint<LIMBS>> for BoxedMontyField {
+    #[inline(always)]
+    fn project(&self, value: &crypto_bigint::Uint<LIMBS>) -> Self::Element {
+        self.project(Uint::new_ref(value))
     }
 }
 
-impl PrimeField for BoxedMontyField {
-    fn modulus(cfg: &Self::Config) -> Self::Integer {
-        BoxedUint::new(cfg.modulus().clone().get())
-    }
+//
+// Field stuff
+//
 
-    #[allow(clippy::arithmetic_side_effects)] // False alert
-    fn modulus_minus_one_div_two(cfg: &Self::Config) -> Self::Inner {
-        let value = BoxedUint::new(cfg.modulus().clone().get());
-        (value - BoxedUint::one()) / BoxedUint::from(2_u8)
-    }
-
-    fn make_cfg(modulus: &Self::Integer) -> Result<Self::Config, FieldError> {
+impl BaseFieldConfig for BoxedMontyField {
+    fn new(modulus: &Self::Integer) -> Result<Self, FieldError> {
         let Some(modulus) = Odd::new(modulus.clone().into_inner()).into_option() else {
             return Err(FieldError::InvalidModulus);
         };
-        Ok(BoxedMontyParams::new(modulus))
+        Ok(Self::wrap(BoxedMontyParams::new(modulus)))
     }
 
-    fn new_unchecked_with_cfg(inner: Self::Inner, cfg: &Self::Config) -> Self {
-        Self(BoxedMontyForm::from_montgomery(inner.into_inner(), cfg))
+    fn modulus(&self) -> Self::Integer {
+        BoxedUint::new(self.params.modulus().clone().get())
     }
 
-    fn is_zero(value: &Self) -> bool {
-        value.0.is_zero().into()
+    #[allow(clippy::arithmetic_side_effects)] // False alert
+    fn modulus_minus_one_div_two(&self) -> Self::Integer {
+        self.modulus_minus_one_div_two.clone()
     }
+}
 
-    fn zero_with_cfg(cfg: &Self::Config) -> Self {
-        Self(BoxedMontyForm::zero(cfg))
+impl WithAssociatedInteger for BoxedMontyField {
+    type Integer = BoxedUint;
+}
+
+impl LiftElementWithConfig<<Self as WithAssociatedInteger>::Integer> for BoxedMontyField {
+    /// Retrieves the integer currently encoded in this [`BoxedMontyField`],
+    /// guaranteed to be reduced.
+    #[inline(always)]
+    fn lift(&self, value: &Self::Element) -> <Self as WithAssociatedInteger>::Integer {
+        let mut out = BoxedUint::zero_with_precision(value.bits_precision());
+        helpers::monty_retrieve_inner(
+            value.0.as_limbs(),
+            out.as_mut_limbs(),
+            self.modulus().as_limbs(),
+            self.params.as_ref().mod_neg_inv(),
+        );
+        out
     }
+}
 
-    fn one_with_cfg(cfg: &Self::Config) -> Self {
-        Self(BoxedMontyForm::one(cfg))
+//
+// Serialization and Deserialization
+//
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for BoxedMontyFieldElement {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        BoxedUint::deserialize(deserializer).map(Self)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for BoxedMontyFieldElement {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
     }
 }
 
@@ -486,11 +470,13 @@ impl PrimeField for BoxedMontyField {
 //
 
 #[cfg(feature = "zeroize")]
-impl zeroize::Zeroize for BoxedMontyField {
+impl zeroize::Zeroize for BoxedMontyFieldElement {
     fn zeroize(&mut self) {
         self.0.zeroize()
     }
 }
+
+// TODO: Do we want to zeroize the modulus?
 
 #[allow(
     clippy::arithmetic_side_effects,
@@ -502,20 +488,20 @@ mod tests {
     use super::*;
     use crate::ensure_type_implements_trait;
     use alloc::vec;
-    use num_traits::Pow;
+    use core::cmp::Ordering;
 
     type F = BoxedMontyField;
 
     #[test]
-    fn ensure_blanket_traits() {
-        // NB: this ensures `PrimeField` implementation too!
-        ensure_type_implements_trait!(F, FromPrimitiveWithConfig);
+    fn ensure_traits() {
+        ensure_type_implements_trait!(F, BaseFieldConfig);
     }
 
     //
     // Test helpers
     //
-    fn test_config() -> BoxedMontyParams {
+
+    fn make_f() -> F {
         // Using a 256-bit prime 2^256 - 2^32 - 977 (secp256k1 field prime)
         let modulus = BoxedUint::from_be_hex(
             "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
@@ -523,28 +509,12 @@ mod tests {
         )
         .unwrap();
         let modulus = Odd::new(modulus.into_inner()).expect("modulus should be odd");
-        BoxedMontyParams::new(modulus)
-    }
-
-    fn from_u64(value: u64) -> F {
-        F::from_with_cfg(value, &test_config())
-    }
-
-    fn from_i64(value: i64) -> F {
-        F::from_with_cfg(value, &test_config())
-    }
-
-    fn zero() -> F {
-        F::zero_with_cfg(&test_config())
-    }
-
-    fn one() -> F {
-        F::one_with_cfg(&test_config())
+        F::wrap(BoxedMontyParams::new(modulus))
     }
 
     #[test]
-    fn new_with_cfg_correct() {
-        let cfg = test_config();
+    fn encoding() {
+        let f = make_f();
 
         // `modulus + 1` should reduce to one.
         let x = BoxedUint::from_be_hex(
@@ -552,156 +522,133 @@ mod tests {
             256,
         )
         .unwrap();
-        assert_eq!(F::from_with_cfg(x, &cfg), F::one_with_cfg(&cfg));
+        assert_eq!(f.project(&x), f.one());
 
         // `modulus` itself should reduce to zero.
-        let modulus = F::modulus(&cfg);
-        assert_eq!(F::from_with_cfg(modulus, &cfg), F::zero_with_cfg(&cfg));
+        let modulus = F::modulus(&f);
+        assert_eq!(f.project(&modulus), f.zero());
 
         // Lifting to integer and projecting back yields the original element.
         for x in [
-            F::zero_with_cfg(&cfg),
-            F::one_with_cfg(&cfg),
-            F::from_with_cfg(2_u64, &cfg),
-            F::from_with_cfg(123456789_u64, &cfg),
+            f.zero(),
+            f.one(),
+            f.project(&2_u64),
+            f.project(&123456789_u64),
         ] {
-            assert_eq!(F::from_with_cfg(x.lift_to_integer(), &cfg), x);
+            assert_eq!(f.project(&f.lift(&x)), x);
         }
     }
 
     #[test]
     fn zero_one_basics() {
-        let z = zero();
-        assert!(F::is_zero(&z));
-        let o = one();
-        assert!(!F::is_zero(&o));
+        let f = make_f();
+        let z = f.zero();
+        assert!(f.is_zero(&z));
+        let o = f.one();
+        assert!(!f.is_zero(&o));
         assert_ne!(z, o);
     }
 
     #[test]
     fn basic_operations() {
-        // Negation
-        let a = from_u64(9);
-        let neg_a = -a.clone();
-        assert_eq!(&a + &neg_a, zero());
+        let f = make_f();
 
-        let a = from_u64(10);
-        let b = from_u64(5);
+        // Negation
+        let a = f.project(&9);
+        let neg_a = f.neg(&a);
+        assert_eq!(f.add(&a, &neg_a), f.zero());
+
+        let a = f.project(&10);
+        let b = f.project(&5);
 
         // Addition
-        let c = a.clone() + b.clone();
-        assert_eq!(c, from_u64(15));
+        let c = f.add(&a, &b);
+        assert_eq!(c, f.project(&15));
 
         // Subtraction
-        let d = a.clone() - b.clone();
-        assert_eq!(d, from_u64(5));
+        let d = f.sub(&a, &b);
+        assert_eq!(d, f.project(&5));
 
         // Multiplication
-        let e = a.clone() * b.clone();
-        assert_eq!(e, from_u64(50));
+        let e = f.mul(&a, &b);
+        assert_eq!(e, f.project(&50));
 
         // Division
-        let num = from_u64(11);
-        let den = from_u64(5);
-        let q = num.clone() / den.clone();
-        assert_eq!(&q * &den, num);
+        let num = f.project(&11);
+        let den = f.project(&5);
+        let q = f.div(&num, &den);
+        assert_eq!(f.mul(&q, &den), num);
     }
 
     #[test]
     fn basic_operations_overflow() {
-        let params = test_config();
-        let mod_minus_one = BoxedUint::new(params.modulus().as_ref().clone()) - BoxedUint::one();
-        let mod_minus_one = F::from_with_cfg(mod_minus_one, &params);
+        let f = make_f();
+
+        let mod_minus_one = f.modulus() - BoxedUint::one();
+        let mod_minus_one = f.project(&mod_minus_one);
 
         // Negation
-        let res = -mod_minus_one.clone();
-        assert_eq!(res, one());
+        let res = f.neg(&mod_minus_one);
+        assert_eq!(res, f.one());
 
         // Addition
-        let res = mod_minus_one.clone() + one();
-        assert_eq!(res, zero());
+        let res = f.add(&mod_minus_one, &f.one());
+        assert_eq!(res, f.zero());
 
         // Subtraction
-        let res = zero() - one();
+        let res = f.sub(&f.zero(), &f.one());
         assert_eq!(res, mod_minus_one);
 
         // Multiplication
-        let res = mod_minus_one.clone() * from_u64(2);
-        assert_eq!(res, mod_minus_one.clone() - one());
+        let res = f.mul(&mod_minus_one, &f.project(&2));
+        assert_eq!(res, f.sub(&mod_minus_one, &f.one()));
 
-        let res = mod_minus_one.clone() * mod_minus_one.clone();
-        assert_eq!(res, one());
+        let res = f.mul(&mod_minus_one, &mod_minus_one);
+        assert_eq!(res, f.one());
 
         // Division
-        let res = one() / mod_minus_one.clone();
+        let res = f.div(&f.one(), &mod_minus_one);
         assert_eq!(res, mod_minus_one);
     }
 
     #[test]
     fn add_wrapping() {
-        let a = from_i64(-100);
-        let b = from_u64(105);
-        let c = a + b;
-        let d = from_u64(5);
+        let f = make_f();
+
+        let a = f.project(&-100);
+        let b = f.project(&105);
+        let c = f.add(&a, &b);
+        let d = f.project(&5);
         assert_eq!(c, d);
-    }
-
-    #[allow(clippy::op_ref)]
-    #[test]
-    fn reference_operations() {
-        let a = from_u64(10);
-        let b = from_u64(5);
-
-        // Addition
-        let c = &a + &b;
-        assert_eq!(c, from_u64(15));
-
-        // Subtraction
-        let d = &a - &b;
-        assert_eq!(d, from_u64(5));
-
-        // Multiplication
-        let e = &a * &b;
-        assert_eq!(e, from_u64(50));
-
-        // Division
-        let num = from_u64(11);
-        let den = from_u64(5);
-        let q = &num / &den;
-        assert_eq!(&q * &den, num);
     }
 
     #[test]
     fn from_bool() {
-        let cfg = test_config();
-        assert_eq!(F::from_with_cfg(true, &cfg), one());
-        assert_eq!(F::from_with_cfg(false, &cfg), zero());
+        let f = make_f();
 
-        let t = F::from_with_cfg(true, &cfg);
-        let f = F::from_with_cfg(false, &cfg);
-        assert_eq!(t, one());
-        assert_eq!(f, zero());
+        assert_eq!(f.project(&true), f.one());
+        assert_eq!(f.project(&false), f.zero());
     }
 
     #[test]
     fn from_unsigned_and_signed() {
-        let cfg = {
+        let f = {
             // Using a 64-bit prime 10064419296686275259
             let modulus = BoxedUint::from_be_hex("8bac0006d9927abb", 64).unwrap();
             let modulus = Odd::new(modulus.into_inner()).expect("modulus should be odd");
-            BoxedMontyParams::new(modulus)
+            F::wrap(BoxedMontyParams::new(modulus))
         };
         macro_rules! to_field {
             ($x:expr) => {
-                F::from_with_cfg($x, &cfg)
+                f.project(&$x)
             };
         }
-        let zero = F::zero_with_cfg(&cfg);
-        let one = F::one_with_cfg(&cfg);
+        let zero = f.zero();
+        let one = f.one();
         assert_eq!(to_field!(0), zero);
         assert_eq!(to_field!(1), one);
-        assert_eq!(to_field!(-1) + one, zero);
-        assert_eq!(to_field!(-5) + F::from_with_cfg(5, &cfg), zero);
+        assert_eq!(f.add(&to_field!(-1), &one), zero);
+        assert_eq!(f.add(&to_field!(-5), &f.project(&5)), zero);
 
         // u64 maximum value (hand-calculated)
         assert_eq!(
@@ -723,310 +670,285 @@ mod tests {
 
         // Verify property: i64::MIN + |i64::MIN| = 0
         let i64_min_abs = to_field!(i64::MIN.unsigned_abs());
-        assert_eq!(to_field!(i64::MIN) + i64_min_abs, zero);
+        assert_eq!(f.add(&to_field!(i64::MIN), &i64_min_abs), zero);
     }
 
     #[test]
     fn assign_operations() {
+        let f = make_f();
+
         // Addition
-        let mut a = from_u64(5);
-        a += from_u64(6);
-        assert_eq!(a, from_u64(11));
+        let mut a = f.project(&5);
+        f.add_assign(&mut a, &f.project(&6));
+        assert_eq!(a, f.project(&11));
 
         // Subtraction
-        let mut a = from_u64(20);
-        a -= from_u64(7);
-        assert_eq!(a, from_u64(13));
+        let mut a = f.project(&20);
+        f.sub_assign(&mut a, &f.project(&7));
+        assert_eq!(a, f.project(&13));
 
         // Multiplication
-        let mut a = from_u64(11);
-        a *= from_u64(3);
-        assert_eq!(a, from_u64(33));
+        let mut a = f.project(&11);
+        f.mul_assign(&mut a, &f.project(&3));
+        assert_eq!(a, f.project(&33));
 
         // Division
-        let mut a = from_u64(20);
-        let b = from_u64(4);
-        a /= b;
-        assert_eq!(&a * &from_u64(4), from_u64(20));
+        let mut a = f.project(&20);
+        let b = f.project(&4);
+        f.div_assign(&mut a, &b);
+        assert_eq!(f.mul(&a, &b), f.project(&20));
     }
 
     #[test]
     #[should_panic(expected = "Division by zero")]
     fn div_by_zero_panics() {
-        let a = from_u64(7);
-        let zero = zero();
-        let _ = a / zero;
+        let f = make_f();
+
+        let a = f.project(&7);
+        let zero = f.zero();
+        let _ = f.div(&a, &zero);
     }
 
     #[test]
     fn pow_operation() {
+        let f = make_f();
+
+        // Check both `pow` flavors: a `u32` exponent and the same exponent
+        // as a `Self::Integer`.
+        macro_rules! assert_pow {
+            ($base:expr, $exp:expr, $expected:expr) => {{
+                let exp: u32 = $exp;
+                assert_eq!(f.pow_u32(&$base, exp), $expected);
+                assert_eq!(f.pow(&$base, &BoxedUint::from(exp)), $expected);
+            }};
+        }
+
         // Test basic exponentiation
-        let base = from_u64(2);
+        let base = f.project(&2);
 
         // 2^0 = 1
-        assert_eq!(base.clone().pow(0), one());
+        assert_pow!(base, 0, f.one());
 
         // 2^1 = 2
-        assert_eq!(base.clone().pow(1), base);
+        assert_pow!(base, 1, base.clone());
 
         // 2^3 = 8
-        assert_eq!(base.clone().pow(3), from_u64(8));
+        assert_pow!(base, 3, f.project(&8));
 
         // 2^10 = 1024
-        assert_eq!(base.clone().pow(10), from_u64(1024));
+        assert_pow!(base, 10, f.project(&1024));
 
         // Test with different base
-        let base = from_u64(3);
+        let base = f.project(&3);
 
         // 3^4 = 81
-        assert_eq!(base.clone().pow(4), from_u64(81));
+        assert_pow!(base, 4, f.project(&81));
 
         // Test with base 1
-        let base = one();
-        assert_eq!(base.clone().pow(1000), one());
+        let base = f.one();
+        assert_pow!(base, 1000, f.one());
 
         // Test with base 0
-        let base = zero();
-        assert_eq!(base.clone().pow(0), one()); // 0^0 = 1 by convention
-        assert_eq!(base.clone().pow(10), zero()); // 0^n = 0 for n > 0
+        let base = f.zero();
+        assert_pow!(base, 0, f.one()); // 0^0 = 1 by convention
+        assert_pow!(base, 10, f.zero()); // 0^n = 0 for n > 0
+    }
+
+    #[test]
+    fn pow_matches_crypto_bigint() {
+        let f = make_f();
+
+        for (base, exp) in [
+            (0_u64, 0_u32),
+            (0, 7),
+            (1, 1000),
+            (2, 10),
+            (3, 251),
+            (123456789, 1),
+            (123456789, u32::MAX),
+        ] {
+            let x = f.project(&base);
+            let expected = BoxedMontyForm::from_montgomery(x.0.inner().clone(), &f.params)
+                .pow(&crypto_bigint::BoxedUint::from(u64::from(exp)));
+            assert_eq!(
+                f.pow_u32(&x, exp).0.inner(),
+                expected.as_montgomery(),
+                "{base}^{exp} diverges from BoxedMontyForm::pow"
+            );
+            assert_eq!(
+                f.pow(&x, &BoxedUint::from(exp)).0.inner(),
+                expected.as_montgomery(),
+                "{base}^{exp} (integer exponent) diverges from BoxedMontyForm::pow"
+            );
+        }
+
+        // An exponent wider than u32 (integer-exponent `pow` only)
+        let x = f.project(&123456789_u64);
+        let exp = u128::MAX;
+        let expected = BoxedMontyForm::from_montgomery(x.0.inner().clone(), &f.params)
+            .pow(&crypto_bigint::BoxedUint::from(exp));
+        assert_eq!(
+            f.pow(&x, &BoxedUint::from(exp)).0.inner(),
+            expected.as_montgomery(),
+            "u128::MAX exponent diverges from BoxedMontyForm::pow"
+        );
+    }
+
+    /// Regression test: the final AMM value of the exponentiation can land in
+    /// `[modulus, 2*modulus)`, where exactly one final conditional subtraction
+    /// is needed. `almost_montgomery_reduce` used to apply a stale comparison
+    /// to both subtractions, subtracting the modulus twice and wrapping.
+    #[test]
+    fn pow_amm_final_reduction() {
+        let f = {
+            // Using a 64-bit prime 10064419296686275259
+            let modulus = BoxedUint::from_be_hex("8bac0006d9927abb", 64).unwrap();
+            let modulus = Odd::new(modulus.into_inner()).expect("modulus should be odd");
+            F::wrap(BoxedMontyParams::new(modulus))
+        };
+
+        // Small cases with hand-checkable results
+        for (base, exp, result) in [(2_u64, 8_u32, 256_u64), (2, 9, 512), (3, 5, 243)] {
+            assert_eq!(
+                f.pow_u32(&f.project(&base), exp),
+                f.project(&result),
+                "{base}^{exp} != {result}"
+            );
+        }
+
+        // Larger cases, verified against the library
+        for (base, exp) in [(12345_u64, 67_u32), (2, 64), (123456789, u32::MAX)] {
+            let x = f.project(&base);
+            let expected = BoxedMontyForm::from_montgomery(x.0.inner().clone(), &f.params)
+                .pow(&crypto_bigint::BoxedUint::from(u64::from(exp)));
+            assert_eq!(
+                f.pow_u32(&x, exp).0.inner(),
+                expected.as_montgomery(),
+                "{base}^{exp} diverges from BoxedMontyForm::pow"
+            );
+        }
     }
 
     #[test]
     fn inv_operation() {
-        let a = from_u64(5);
-        let inv_a = a.clone().inv().unwrap();
-        assert_eq!(&a * &inv_a, one());
+        let f = make_f();
+
+        let a = f.project(&5);
+        let inv_a = f.inv(&a).unwrap();
+        assert_eq!(f.mul(&a, &inv_a), f.one());
 
         // Test that zero has no inverse
-        let zero = zero();
-        assert!(zero.inv().is_none());
-    }
-
-    #[test]
-    fn checked_neg() {
-        // Test with positive number
-        let a = from_u64(10);
-        let neg_a = a.checked_neg().unwrap();
-        assert_eq!(neg_a, from_i64(-10));
-
-        // Test with negative number
-        let b = from_i64(-5);
-        let neg_b = b.checked_neg().unwrap();
-        assert_eq!(neg_b, from_u64(5));
-
-        // Test with zero
-        let zero_val = zero();
-        let neg_zero = zero_val.checked_neg().unwrap();
-        assert_eq!(neg_zero, zero());
-    }
-
-    #[test]
-    fn checked_add() {
-        let a = from_u64(10);
-        let b = from_u64(5);
-
-        let c = a.checked_add(&b).unwrap();
-        assert_eq!(c, from_u64(15));
-    }
-
-    #[test]
-    fn checked_sub() {
-        let a = from_u64(10);
-        let b = from_u64(5);
-
-        let d = a.checked_sub(&b).unwrap();
-        assert_eq!(d, from_u64(5));
-    }
-
-    #[test]
-    fn checked_mul() {
-        let a = from_u64(10);
-        let b = from_u64(5);
-
-        let e = a.checked_mul(&b).unwrap();
-        assert_eq!(e, from_u64(50));
+        let zero = f.zero();
+        assert!(f.inv(&zero).is_none());
     }
 
     #[test]
     fn checked_div() {
-        let a = from_u64(10);
-        let b = from_u64(5);
-        let zero = zero();
+        let f = make_f();
+
+        let a = f.project(&10);
+        let b = f.project(&5);
+        let zero = f.zero();
 
         // Normal division
-        let c = a.checked_div(&b).unwrap();
-        assert_eq!(&c * &b, a);
+        let c = f.checked_div(&a, &b).unwrap();
+        assert_eq!(f.mul(&c, &b), a);
 
         // Division by zero
-        assert!(a.checked_div(&zero).is_none());
-    }
-
-    #[allow(clippy::op_ref)]
-    #[test]
-    fn ref_and_value_combinations_add_sub_mul() {
-        let a = from_u64(42);
-        let b = from_u64(123);
-
-        let r1 = &a + &b;
-        let a1 = from_u64(42);
-        let b1 = from_u64(123);
-        let r2 = a1 + b1;
-        let a2 = from_u64(42);
-        let b2 = from_u64(123);
-        let r3 = a2 + &b2;
-        let a3 = from_u64(42);
-        let b3 = from_u64(123);
-        let r4 = &a3 + b3;
-        assert_eq!(r1, r2);
-        assert_eq!(r1, r3);
-        assert_eq!(r1, r4);
-
-        let a = from_u64(88);
-        let b = from_u64(59);
-        let s1 = &a - &b;
-        let a1 = from_u64(88);
-        let b1 = from_u64(59);
-        let s2 = a1 - b1;
-        let a2 = from_u64(88);
-        let b2 = from_u64(59);
-        let s3 = a2 - &b2;
-        let a3 = from_u64(88);
-        let b3 = from_u64(59);
-        let s4 = &a3 - b3;
-        assert_eq!(s1, s2);
-        assert_eq!(s1, s3);
-        assert_eq!(s1, s4);
-
-        let a = from_u64(9);
-        let b = from_u64(14);
-        let m1 = &a * &b;
-        let a1 = from_u64(9);
-        let b1 = from_u64(14);
-        let m2 = a1 * b1;
-        let a2 = from_u64(9);
-        let b2 = from_u64(14);
-        let m3 = a2 * &b2;
-        let a3 = from_u64(9);
-        let b3 = from_u64(14);
-        let m4 = &a3 * b3;
-        assert_eq!(m1, m2);
-        assert_eq!(m1, m3);
-        assert_eq!(m1, m4);
-    }
-
-    #[test]
-    fn assign_ops_with_refs_and_val() {
-        let mut a = from_u64(100);
-        let b = from_u64(50);
-        a += b;
-        assert_eq!(a, from_u64(150));
-
-        let mut c = from_u64(100);
-        let d = from_u64(50);
-        c += &d;
-        assert_eq!(c, from_u64(150));
-
-        let mut e = from_u64(100);
-        let f = from_u64(30);
-        e -= f;
-        assert_eq!(e, from_u64(70));
-
-        let mut g = from_u64(100);
-        let h = from_u64(30);
-        g -= &h;
-        assert_eq!(g, from_u64(70));
-
-        let mut i = from_u64(10);
-        let j = from_u64(5);
-        i *= j;
-        assert_eq!(i, from_u64(50));
-
-        let mut k = from_u64(10);
-        let l = from_u64(5);
-        k *= &l;
-        assert_eq!(k, from_u64(50));
+        assert!(f.checked_div(&a, &zero).is_none());
     }
 
     #[test]
     fn aggregate_operations() {
-        // Sum
-        let values = vec![from_u64(1), from_u64(2), from_u64(3)];
-        let sum: F = values.iter().sum();
-        assert_eq!(sum, from_u64(6));
+        let f = make_f();
 
-        let sum2: F = values.into_iter().sum();
-        assert_eq!(sum2, from_u64(6));
+        // Sum
+        let values = vec![f.project(&1), f.project(&2), f.project(&3)];
+        let sum = f.sum_refs(values.iter());
+        assert_eq!(sum, f.project(&6));
+
+        let sum2 = f.sum(values.into_iter());
+        assert_eq!(sum2, f.project(&6));
 
         // Product
-        let values = vec![from_u64(2), from_u64(3), from_u64(4)];
-        let product: F = values.iter().product();
-        assert_eq!(product, from_u64(24));
+        let values = vec![f.project(&2), f.project(&3), f.project(&4)];
+        let product = f.product_refs(values.iter());
+        assert_eq!(product, f.project(&24));
 
-        let product2: F = values.into_iter().product();
-        assert_eq!(product2, from_u64(24));
+        let product2 = f.product(values.into_iter());
+        assert_eq!(product2, f.project(&24));
 
-        // Test empty collections panic
-        // Note: BoxedMontyField doesn't have a default config, so empty
-        // iterators must panic
+        // Empty iterators yield the respective identity elements
+        assert_eq!(f.sum(core::iter::empty()), f.zero());
+        assert_eq!(f.product(core::iter::empty()), f.one());
     }
 
     #[test]
     fn conversions() {
-        let cfg = test_config();
+        let f = make_f();
 
-        // Test FromWithConfig for BoxedUint
-        let u: BoxedUint = BoxedUint::from(123_u64);
-        let f = F::from_with_cfg(u, &cfg);
-        assert_eq!(f, from_u64(123));
+        // Test ProjectElement for BoxedUint
+        let u = BoxedUint::from(123_u64).resize(f.modulus().bits_precision());
+        let a = f.project(&u);
+        assert_eq!(a, f.project(&123_u64));
 
-        // Test inner() and cfg()
-        let value = from_u64(456);
-        let _inner_ref = value.inner();
-        let _cfg_ref = value.cfg();
+        // A BoxedUint narrower than the field is zero-extended...
+        let narrow = BoxedUint::from(123_u64); // 64-bit precision
+        assert_eq!(f.project(&narrow), f.project(&123_u64));
+
+        // ...including when it arrives via the fixed-width Uint projections.
+        assert_eq!(f.project(&Uint::<1>::from(123_u64)), f.project(&123_u64));
+
+        // A BoxedUint wider than the field is reduced, not truncated:
+        // 2^256 mod (2^256 - 2^32 - 977) = 2^32 + 977 (truncation would give 0)
+        let wide = BoxedUint::from_be_hex(
+            "0000000000000000000000000000000000000000000000000000000000000001\
+             0000000000000000000000000000000000000000000000000000000000000000",
+            512,
+        )
+        .unwrap();
+        assert_eq!(f.project(&wide), f.project(&0x1_000003D1_u64));
     }
 
     #[test]
     fn from_primitive() {
-        let cfg = test_config();
+        let f = make_f();
 
-        // Test FromWithConfig for various types
-        let a = F::from_with_cfg(42_u8, &cfg);
-        assert_eq!(a, from_u64(42));
+        // Unsigned types
+        assert_eq!(f.project(&42_u8), f.project(&42_u64));
+        assert_eq!(f.project(&12345_u16), f.project(&12345_u64));
+        assert_eq!(f.project(&1234567890_u32), f.project(&1234567890_u64));
+        assert_eq!(
+            f.project(&1234567890123456789_u64),
+            f.project(&1234567890123456789_u128)
+        );
 
-        let b = F::from_with_cfg(12345_u16, &cfg);
-        assert_eq!(b, from_u64(12345));
-
-        let c = F::from_with_cfg(1234567890_u32, &cfg);
-        assert_eq!(c, from_u64(1234567890));
-
-        let d = F::from_with_cfg(1234567890123456789_u64, &cfg);
-        assert_eq!(d, from_u64(1234567890123456789));
-
-        let e = F::from_with_cfg(-42_i8, &cfg);
-        assert_eq!(e, from_i64(-42));
-
-        let f = F::from_with_cfg(-12345_i16, &cfg);
-        assert_eq!(f, from_i64(-12345));
-
-        let g = F::from_with_cfg(-1234567_i32, &cfg);
-        assert_eq!(g, from_i64(-1234567));
-
-        let h = F::from_with_cfg(-1234567890123456789_i64, &cfg);
-        assert_eq!(h, from_i64(-1234567890123456789));
+        // Signed types
+        assert_eq!(f.project(&-42_i8), f.project(&-42_i64));
+        assert_eq!(f.project(&-12345_i16), f.project(&-12345_i64));
+        assert_eq!(f.project(&-1234567_i32), f.project(&-1234567_i64));
+        assert_eq!(
+            f.project(&-1234567890123456789_i64),
+            f.project(&-1234567890123456789_i128)
+        );
     }
 
     #[test]
     fn clone_works() {
-        let a = from_u64(42);
+        let f = make_f();
+
+        let a = f.project(&42);
         let b = a.clone();
         assert_eq!(a, b);
     }
 
     #[test]
     fn equality_and_ordering() {
-        let a = from_u64(10);
-        let b = from_u64(10);
-        let c = from_u64(20);
+        let f = make_f();
+
+        let a = f.project(&10);
+        let b = f.project(&10);
+        let c = f.project(&20);
 
         // Test equality
         assert_eq!(a, b);
@@ -1041,7 +963,7 @@ mod tests {
         assert!(a >= b);
 
         // Verify transitivity of ordering
-        let d = from_u64(30);
+        let d = f.project(&30);
         if a < c && c < d {
             assert!(a < d);
         }
@@ -1068,8 +990,10 @@ mod tests {
             }
         }
 
-        let a = from_u64(42);
-        let b = from_u64(42);
+        let f = make_f();
+
+        let a = f.project(&42);
+        let b = f.project(&42);
 
         let mut hasher_a = TestHasher { state: 0 };
         a.hash(&mut hasher_a);
@@ -1087,42 +1011,41 @@ mod tests {
 
     #[test]
     fn prime_field_methods() {
-        let a = from_u64(42);
-        let cfg = a.cfg();
+        let f = make_f();
 
         // Test that we can get modulus
-        let modulus = F::modulus(cfg);
+        let modulus = f.modulus();
         assert!(modulus.bits_precision() > 0);
 
         // Test modulus_minus_one_div_two
-        let m_minus_1_div_2 = F::modulus_minus_one_div_two(cfg);
+        let m_minus_1_div_2 = f.modulus_minus_one_div_two();
         assert!(m_minus_1_div_2.bits_precision() > 0);
 
-        // Test zero_with_cfg and one_with_cfg
-        let z = F::zero_with_cfg(cfg);
-        assert!(F::is_zero(&z));
-        let o = F::one_with_cfg(cfg);
-        assert!(!F::is_zero(&o));
+        // Test zero and one
+        let z = f.zero();
+        assert!(f.is_zero(&z));
+        let o = f.one();
+        assert!(!f.is_zero(&o));
     }
 
     #[test]
-    fn make_cfg_works() {
+    fn new_works() {
         let modulus = BoxedUint::from_be_hex(
             "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
             256,
         )
         .unwrap();
-        let cfg = F::make_cfg(&modulus).expect("Should create config");
+        let f = F::new(&modulus).expect("Should create config");
 
         // Create a field element using this config
-        let a = F::from_with_cfg(123_u64, &cfg);
-        assert_eq!(a, from_u64(123));
+        let a = f.project(&123_u64);
+        assert_eq!(a, f.project(&123));
     }
 
     #[test]
-    fn make_cfg_rejects_even_modulus() {
+    fn new_rejects_even_modulus() {
         let even_modulus = BoxedUint::from(42_u64);
-        let result = F::make_cfg(&even_modulus);
+        let result = F::new(&even_modulus);
         assert!(result.is_err());
     }
 }

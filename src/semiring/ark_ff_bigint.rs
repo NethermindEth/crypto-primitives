@@ -1,5 +1,5 @@
 use super::*;
-use crate::{boolean::Boolean, pow_via_repeated_squaring};
+use crate::{Wrapper, boolean::Boolean, helpers::pow_via_repeated_squaring};
 use alloc::{format, vec::Vec};
 use ark_ff::{BigInt as ArkBigInt, BigInteger as ArkBigInteger};
 use ark_serialize::{
@@ -15,13 +15,15 @@ use core::{
     },
     str::FromStr,
 };
-use num_traits::{CheckedAdd, CheckedMul, CheckedSub, ConstOne, ConstZero, Num, One, Pow, Zero};
+use num_traits::{
+    Bounded, CheckedAdd, CheckedMul, CheckedSub, ConstOne, ConstZero, Num, One, Pow, Zero,
+};
 #[cfg(feature = "rand")]
 use rand::{distr::StandardUniform, prelude::*};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
-pub struct BigInt<const N: usize>(ArkBigInt<N>);
+pub struct BigInt<const N: usize>(pub ArkBigInt<N>);
 
 impl<const N: usize> BigInt<N> {
     /// Size of the underlying limbs in bits
@@ -31,6 +33,7 @@ impl<const N: usize> BigInt<N> {
     pub const BYTES: usize = Self::NUM_LIMBS * 8;
     /// Number of u64 limbs in the underlying representation
     pub const LIMBS: usize = N;
+    pub const MAX: Self = Self(ArkBigInt([u64::MAX; N]));
 
     /// Wraps a given value into this wrapper type
     #[inline(always)]
@@ -52,25 +55,7 @@ impl<const N: usize> BigInt<N> {
         unsafe { &mut *(value as *mut ArkBigInt<N> as *mut Self) }
     }
 
-    /// Get the reference to the wrapped value
-    #[inline(always)]
-    pub const fn inner(&self) -> &ArkBigInt<N> {
-        &self.0
-    }
-
-    /// Get the mutable reference to the wrapped value
-    #[inline(always)]
-    pub const fn inner_mut(&mut self) -> &mut ArkBigInt<N> {
-        &mut self.0
-    }
-
-    /// Get the wrapped value, consuming self
-    #[inline(always)]
-    pub const fn into_inner(self) -> ArkBigInt<N> {
-        self.0
-    }
-
-    /// See [ArkBigInteger::new]
+    /// See [ArkBigInt::new]
     #[inline(always)]
     pub const fn from_limbs(arr: [u64; N]) -> Self {
         Self(ArkBigInt::new(arr))
@@ -514,21 +499,56 @@ impl<const N: usize> TryFrom<num_bigint::BigUint> for BigInt<N> {
 }
 
 //
+// Wrapper
+//
+
+impl<const N: usize> Wrapper for BigInt<N> {
+    type Inner = ArkBigInt<N>;
+
+    #[inline(always)]
+    fn inner(&self) -> &Self::Inner {
+        &self.0
+    }
+
+    #[inline(always)]
+    fn inner_mut(&mut self) -> &mut Self::Inner {
+        &mut self.0
+    }
+
+    #[inline(always)]
+    fn into_inner(self) -> Self::Inner {
+        self.0
+    }
+
+    #[inline(always)]
+    fn new_unchecked(inner: Self::Inner) -> Self {
+        Self(inner)
+    }
+}
+
+//
 // Semiring
 //
 
-impl<const N: usize> Semiring for BigInt<N> {}
+impl<const N: usize> Bounded for BigInt<N> {
+    #[inline(always)]
+    fn min_value() -> Self {
+        Self::ZERO
+    }
 
-impl<const N: usize> ConstSemiring for BigInt<N> {
-    const MAX: Self = Self(ArkBigInt([u64::MAX; N]));
-    const MIN: Self = Self::ZERO;
+    #[inline(always)]
+    fn max_value() -> Self {
+        Self::MAX
+    }
 }
 
 impl<const N: usize> IntSemiring for BigInt<N> {
+    #[inline(always)]
     fn is_odd(&self) -> bool {
         self.0.is_odd()
     }
 
+    #[inline(always)]
     fn is_even(&self) -> bool {
         self.0.is_even()
     }
@@ -755,7 +775,8 @@ mod tests {
     type BigInt4 = BigInt<4>;
 
     #[test]
-    fn ensure_blanket_traits() {
+    fn ensure_traits() {
+        ensure_type_implements_trait!(BigInt4, Wrapper);
         ensure_type_implements_trait!(BigInt4, ConstIntSemiring);
         ensure_type_implements_trait!(BigInt4, IntSemiringWithShifts);
     }
@@ -809,8 +830,8 @@ mod tests {
         assert!(b.checked_sub(&a).is_none());
 
         // MIN and MAX
-        assert_eq!(BigInt4::MAX.checked_add(&One::one()), None);
-        assert_eq!(BigInt4::MIN.checked_sub(&One::one()), None);
+        assert_eq!(BigInt4::max_value().checked_add(&One::one()), None);
+        assert_eq!(BigInt4::min_value().checked_sub(&One::one()), None);
     }
 
     #[allow(clippy::op_ref)]
@@ -927,7 +948,7 @@ mod tests {
     #[test]
     fn edge_cases() {
         // Test operations with MAX values
-        let max = BigInt4::MAX;
+        let max = BigInt4::max_value();
         let one = BigInt4::one();
 
         // MAX + 1 should overflow in checked_add
@@ -1008,7 +1029,7 @@ mod tests {
     #[test]
     fn formatting() {
         let a = BigInt1::from(255_u64);
-        let b = BigInt1::MAX;
+        let b = BigInt1::max_value();
 
         // Test Display
         assert_eq!(format!("{}", a), "255");
@@ -1029,7 +1050,7 @@ mod tests {
     #[test]
     fn constants() {
         // Test MAX
-        assert!(BigInt4::MAX > BigInt4::ZERO);
+        assert!(BigInt4::max_value() > BigInt4::ZERO);
 
         // Test BITS, BYTES, LIMBS
         assert_eq!(BigInt4::BITS, 256);
@@ -1065,7 +1086,7 @@ mod tests {
         assert_eq!(d, BigInt4::one());
         assert_eq!(
             u64::MAX.to_string().parse::<BigInt1>().unwrap(),
-            BigInt1::MAX
+            BigInt1::max_value()
         );
 
         assert_eq!("0xFF".parse::<BigInt4>().unwrap(), BigInt4::from(255_u64));
