@@ -1386,4 +1386,10 @@ mod tests {
         assert_eq!(a.wrapping_sub(&b), BoxedUint::from(5_u64));
         assert_eq!(a.wrapping_mul(&b), BoxedUint::from(50_u64));
     }
+
+    #[test]
+    #[cfg(feature = "zerocopy")]
+    fn zerocopy() {
+        ensure_type_implements_trait!(BoxedUint, zerocopy::KnownLayout);
+    }
 }

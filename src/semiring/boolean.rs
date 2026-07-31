@@ -855,6 +855,8 @@ mod tests {
     fn zerocopy() {
         use zerocopy::*;
 
+        ensure_type_implements_trait!(Boolean, KnownLayout);
+
         let mut v = Boolean::TRUE;
         v.zero();
         assert_eq!(v, Boolean::FALSE);

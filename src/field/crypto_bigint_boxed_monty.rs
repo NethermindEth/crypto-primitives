@@ -1051,4 +1051,10 @@ mod tests {
         let result = F::new(&even_modulus);
         assert!(result.is_err());
     }
+
+    #[test]
+    #[cfg(feature = "zerocopy")]
+    fn zerocopy() {
+        ensure_type_implements_trait!(<F as SetConfig>::Element, zerocopy::KnownLayout);
+    }
 }

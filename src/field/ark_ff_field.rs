@@ -30,7 +30,7 @@ use zerocopy_derive::*;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, InfallibleCheckedOp)]
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
-#[cfg_attr(feature = "zerocopy", derive(KnownLayout, Immutable, IntoBytes))]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout))]
 #[repr(transparent)]
 pub struct ArkField<F: ArkWrappedPrimeField>(pub F);
 

@@ -58,7 +58,7 @@ impl<const LIMBS: usize> MontyField<LIMBS> {
 ///
 /// Can be converted to bytes, but cannot be safely reconstructed from bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "zerocopy", derive(KnownLayout, Immutable, IntoBytes))]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout))]
 #[repr(transparent)]
 pub struct MontyFieldElement<const LIMBS: usize>(pub Uint<LIMBS>);
 
@@ -1057,5 +1057,11 @@ mod tests {
         let even_modulus = Uint::<LIMBS>::from(42_u64);
         let result = F::new(&even_modulus);
         assert!(result.is_err());
+    }
+
+    #[test]
+    #[cfg(feature = "zerocopy")]
+    fn zerocopy() {
+        ensure_type_implements_trait!(<F as SetConfig>::Element, zerocopy::KnownLayout);
     }
 }

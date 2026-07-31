@@ -28,7 +28,7 @@ use zerocopy_derive::*;
 #[derive(Clone, Copy, PartialEq, Eq, InfallibleCheckedOp)]
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
-#[cfg_attr(feature = "zerocopy", derive(KnownLayout, Immutable, IntoBytes))]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout))]
 #[repr(transparent)]
 pub struct ConstMontyField<Mod: Params<LIMBS>, const LIMBS: usize>(pub ConstMontyForm<Mod, LIMBS>);
 
@@ -1464,11 +1464,11 @@ mod tests {
     clippy::cast_possible_wrap
 )]
 mod prop_tests {
+    use super::*;
+    use crate::ensure_type_implements_trait;
     use crypto_bigint::{U256, const_monty_params};
     use num_traits::{One, Zero};
     use proptest::prelude::*;
-
-    use super::*;
 
     const_monty_params!(
         ModP,
@@ -1583,5 +1583,11 @@ mod prop_tests {
             x3 *= y;
             prop_assert_eq!(x3, x0 * y);
         }
+    }
+
+    #[test]
+    #[cfg(feature = "zerocopy")]
+    fn zerocopy() {
+        ensure_type_implements_trait!(F, zerocopy::KnownLayout);
     }
 }

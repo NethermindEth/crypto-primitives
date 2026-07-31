@@ -25,10 +25,7 @@ use rand::{distr::StandardUniform, prelude::*, rand_core::TryRng};
 use zerocopy_derive::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "zerocopy",
-    derive(KnownLayout, Immutable, FromBytes, IntoBytes)
-)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout))]
 #[repr(transparent)]
 pub struct Uint<const LIMBS: usize>(pub crypto_bigint::Uint<LIMBS>);
 
@@ -1357,5 +1354,11 @@ mod tests {
         assert_eq!(a.wrapping_add(&b), Uint4::from(15_u64));
         assert_eq!(a.wrapping_sub(&b), Uint4::from(5_u64));
         assert_eq!(a.wrapping_mul(&b), Uint4::from(50_u64));
+    }
+
+    #[test]
+    #[cfg(feature = "zerocopy")]
+    fn zerocopy() {
+        ensure_type_implements_trait!(Uint4, zerocopy::KnownLayout);
     }
 }

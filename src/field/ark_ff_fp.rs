@@ -33,7 +33,7 @@ use zerocopy_derive::*;
 #[derive(InfallibleCheckedOp)]
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
-#[cfg_attr(feature = "zerocopy", derive(KnownLayout, Immutable, IntoBytes))]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout))]
 #[repr(transparent)]
 pub struct Fp<P: FpConfig<N>, const N: usize>(pub ArkWrappedFp<P, N>);
 
@@ -1379,5 +1379,11 @@ mod tests {
         // Test that we can access inner methods via Deref
         let _ = a.is_zero();
         let _ = a.inverse();
+    }
+
+    #[test]
+    #[cfg(feature = "zerocopy")]
+    fn zerocopy() {
+        ensure_type_implements_trait!(F, zerocopy::KnownLayout);
     }
 }
