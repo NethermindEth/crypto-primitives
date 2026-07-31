@@ -10,15 +10,20 @@ use num_traits::{
     Bounded, CheckedAdd, CheckedMul, CheckedSub, ConstOne, ConstZero, FromBytes, One, Pow, ToBytes,
     Zero,
 };
-
 #[cfg(feature = "rand")]
 use rand::{distr::StandardUniform, prelude::*};
+#[cfg(feature = "zerocopy")]
+use zerocopy_derive::*;
 
 /// A boolean semiring where true represents 1 and false represents 0.
 /// Arithmetic operations behave like modulo-2 arithmetic:
 /// - In debug mode: overflow panics (e.g., true + true panics)
 /// - In release mode: overflow wraps (e.g., true + true = false)
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(
+    feature = "zerocopy",
+    derive(KnownLayout, Immutable, FromZeros, IntoBytes)
+)]
 #[repr(transparent)]
 pub struct Boolean(pub bool);
 
@@ -843,5 +848,20 @@ mod tests {
     #[test]
     fn default() {
         assert_eq!(Boolean::default(), Boolean::FALSE);
+    }
+
+    #[test]
+    #[cfg(feature = "zerocopy")]
+    fn zerocopy() {
+        use zerocopy::*;
+
+        let mut v = Boolean::TRUE;
+        v.zero();
+        assert_eq!(v, Boolean::FALSE);
+
+        assert_eq!(Boolean::new_zeroed(), Boolean::FALSE);
+
+        assert_eq!(Boolean::FALSE.as_bytes(), &[0x00]);
+        assert_eq!(Boolean::TRUE.as_bytes(), &[0x01]);
     }
 }

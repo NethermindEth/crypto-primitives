@@ -14,6 +14,8 @@ use crypto_bigint::{
     modular::{BoxedMontyForm, BoxedMontyParams},
 };
 use num_traits::{One, Signed};
+#[cfg(feature = "zerocopy")]
+use zerocopy_derive::*;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoxedMontyField {
@@ -60,6 +62,7 @@ impl BoxedMontyField {
 /// A wrapper around [`BoxedUint`] to prevent accidentally calling math
 /// operations on it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout))]
 #[repr(transparent)]
 pub struct BoxedMontyFieldElement(pub BoxedUint);
 

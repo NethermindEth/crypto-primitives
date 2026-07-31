@@ -30,6 +30,8 @@ rand = { workspace = true, optional = true }
 rayon = { version = "1", optional = true }
 serde = { version = "1", default-features = false, optional = true }
 zeroize = { version = "1", default-features = false, optional = true }
+zerocopy = { version = "0.8", default-features = false, optional = true }
+zerocopy-derive = { version = "0.8", default-features = false, optional = true }
 
 [dev-dependencies]
 crypto-primitives = { workspace = true, features = ["crypto_bigint"] }
@@ -44,6 +46,7 @@ parallel = ["dep:rayon"]
 rand = ["dep:rand", "crypto-bigint/rand_core"]
 serde = ["dep:serde", "crypto-bigint/serde"]
 zeroize = ["dep:zeroize", "crypto-bigint/zeroize"]
+zerocopy = ["dep:zerocopy", "dep:zerocopy-derive"]
 
 std = ["num-traits/std", "ark-std/std", "ark-ff/std", "serde/std", "rand/std", "zeroize/std"]
 ark_std = ["dep:ark-std"]

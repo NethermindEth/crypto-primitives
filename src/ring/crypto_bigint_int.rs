@@ -19,11 +19,16 @@ use num_traits::{
     ConstZero, Num, One, Pow, Signed, WrappingAdd, WrappingMul, WrappingSub, Zero,
 };
 use pastey::paste;
-
 #[cfg(feature = "rand")]
 use rand::{distr::StandardUniform, prelude::*, rand_core::TryRng};
+#[cfg(feature = "zerocopy")]
+use zerocopy_derive::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "zerocopy",
+    derive(KnownLayout, Immutable, FromBytes, IntoBytes)
+)]
 #[repr(transparent)]
 pub struct Int<const LIMBS: usize>(pub crypto_bigint::Int<LIMBS>);
 

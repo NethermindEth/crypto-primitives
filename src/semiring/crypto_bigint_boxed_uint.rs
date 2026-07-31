@@ -20,11 +20,13 @@ use num_traits::{
     WrappingSub, Zero,
 };
 use pastey::paste;
-
 #[cfg(feature = "rand")]
 use rand::rand_core::TryRng;
+#[cfg(feature = "zerocopy")]
+use zerocopy_derive::*;
 
 #[derive(Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout))]
 #[repr(transparent)]
 pub struct BoxedUint(pub crypto_bigint::BoxedUint);
 

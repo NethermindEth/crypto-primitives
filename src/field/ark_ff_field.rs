@@ -8,6 +8,8 @@ use ark_serialize::{
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
     CanonicalSerializeWithFlags, Compress, Flags, Read, SerializationError, Valid, Validate, Write,
 };
+#[cfg(feature = "rand")]
+use ark_std::{UniformRand, rand::prelude::*};
 use core::{
     fmt::{Display, Formatter, Result as FmtResult},
     hash::{Hash, Hasher},
@@ -20,15 +22,15 @@ use num_traits::{
     Bounded, CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One,
     Pow, Zero,
 };
-
-#[cfg(feature = "rand")]
-use ark_std::{UniformRand, rand::prelude::*};
 #[cfg(feature = "rand")]
 use rand::distr::StandardUniform;
+#[cfg(feature = "zerocopy")]
+use zerocopy_derive::*;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, InfallibleCheckedOp)]
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, Immutable, IntoBytes))]
 #[repr(transparent)]
 pub struct ArkField<F: ArkWrappedPrimeField>(pub F);
 

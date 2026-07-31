@@ -1,5 +1,5 @@
 use super::*;
-use crate::{IntSemiring, LiftElement, Wrapper, boolean::Boolean};
+use crate::{IntSemiring, LiftElement, Wrapper, ark_ff_bigint::BigInt, boolean::Boolean};
 use ark_ff::{
     AdditiveGroup, BigInteger, FftField, FpConfig, LegendreSymbol, MontBackend, MontConfig,
     SqrtPrecomputation,
@@ -9,6 +9,8 @@ use ark_serialize::{
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
     CanonicalSerializeWithFlags, Compress, Flags, Read, SerializationError, Valid, Validate, Write,
 };
+#[cfg(feature = "rand")]
+use ark_std::{UniformRand, rand::prelude::*};
 use core::{
     cmp::Ordering,
     fmt::{Display, Formatter, Result as FmtResult},
@@ -22,17 +24,16 @@ use num_traits::{
     Bounded, CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub, ConstOne, ConstZero, One,
     Pow, Zero,
 };
-
-use crate::ark_ff_bigint::BigInt;
-#[cfg(feature = "rand")]
-use ark_std::{UniformRand, rand::prelude::*};
 #[cfg(feature = "rand")]
 use rand::distr::StandardUniform;
+#[cfg(feature = "zerocopy")]
+use zerocopy_derive::*;
 
 // Can't derive core traits because of the generic parameters
 #[derive(InfallibleCheckedOp)]
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, Immutable, IntoBytes))]
 #[repr(transparent)]
 pub struct Fp<P: FpConfig<N>, const N: usize>(pub ArkWrappedFp<P, N>);
 

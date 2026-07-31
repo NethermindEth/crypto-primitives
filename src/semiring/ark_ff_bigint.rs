@@ -20,8 +20,14 @@ use num_traits::{
 };
 #[cfg(feature = "rand")]
 use rand::{distr::StandardUniform, prelude::*};
+#[cfg(feature = "zerocopy")]
+use zerocopy_derive::*;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(
+    feature = "zerocopy",
+    derive(KnownLayout, Immutable, FromBytes, IntoBytes)
+)]
 #[repr(transparent)]
 pub struct BigInt<const N: usize>(pub ArkBigInt<N>);
 

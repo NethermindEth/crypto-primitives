@@ -12,6 +12,8 @@ use crypto_bigint::{
     modular::{FixedMontyForm, FixedMontyParams},
 };
 use num_traits::Signed;
+#[cfg(feature = "zerocopy")]
+use zerocopy_derive::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MontyField<const LIMBS: usize> {
@@ -53,7 +55,10 @@ impl<const LIMBS: usize> MontyField<LIMBS> {
 
 /// A wrapper around [`Uint`] to prevent accidentally calling math operations
 /// on it.
+///
+/// Can be converted to bytes, but cannot be safely reconstructed from bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, Immutable, IntoBytes))]
 #[repr(transparent)]
 pub struct MontyFieldElement<const LIMBS: usize>(pub Uint<LIMBS>);
 
