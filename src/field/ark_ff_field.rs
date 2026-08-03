@@ -26,11 +26,14 @@ use num_traits::{
 use rand::distr::StandardUniform;
 #[cfg(feature = "zerocopy")]
 use zerocopy_derive::*;
+#[cfg(feature = "zeroize")]
+use zeroize::Zeroize;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, InfallibleCheckedOp)]
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
 #[cfg_attr(feature = "zerocopy", derive(KnownLayout))]
+#[cfg_attr(feature = "zeroize", derive(Zeroize))]
 #[repr(transparent)]
 pub struct ArkField<F: ArkWrappedPrimeField>(pub F);
 
@@ -539,18 +542,6 @@ impl<F: ArkWrappedPrimeField> Distribution<ArkField<F>> for StandardUniform {
 impl<F: ArkWrappedPrimeField> UniformRand for ArkField<F> {
     fn rand<R: ark_std::rand::Rng + ?Sized>(rng: &mut R) -> Self {
         Self(F::rand(rng))
-    }
-}
-
-//
-// Zeroize
-//
-
-#[cfg(feature = "zeroize")]
-impl<F: ArkWrappedPrimeField> zeroize::Zeroize for ArkField<F> {
-    fn zeroize(&mut self) {
-        // FIXME
-        self.0.zeroize()
     }
 }
 

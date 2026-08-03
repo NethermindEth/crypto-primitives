@@ -16,6 +16,8 @@ use crypto_bigint::{
 use num_traits::{One, Signed};
 #[cfg(feature = "zerocopy")]
 use zerocopy_derive::*;
+#[cfg(feature = "zeroize")]
+use zeroize::Zeroize;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoxedMontyField {
@@ -63,6 +65,7 @@ impl BoxedMontyField {
 /// operations on it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "zerocopy", derive(KnownLayout))]
+#[cfg_attr(feature = "zeroize", derive(Zeroize))]
 #[repr(transparent)]
 pub struct BoxedMontyFieldElement(pub BoxedUint);
 
@@ -465,17 +468,6 @@ impl serde::Serialize for BoxedMontyFieldElement {
         S: serde::Serializer,
     {
         self.0.serialize(serializer)
-    }
-}
-
-//
-// Zeroize
-//
-
-#[cfg(feature = "zeroize")]
-impl zeroize::Zeroize for BoxedMontyFieldElement {
-    fn zeroize(&mut self) {
-        self.0.zeroize()
     }
 }
 

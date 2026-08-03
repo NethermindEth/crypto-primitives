@@ -28,12 +28,15 @@ use num_traits::{
 use rand::distr::StandardUniform;
 #[cfg(feature = "zerocopy")]
 use zerocopy_derive::*;
+#[cfg(feature = "zeroize")]
+use zeroize::Zeroize;
 
 // Can't derive core traits because of the generic parameters
 #[derive(InfallibleCheckedOp)]
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
 #[cfg_attr(feature = "zerocopy", derive(KnownLayout))]
+#[cfg_attr(feature = "zeroize", derive(Zeroize))]
 #[repr(transparent)]
 pub struct Fp<P: FpConfig<N>, const N: usize>(pub ArkWrappedFp<P, N>);
 
@@ -579,17 +582,6 @@ impl<P: FpConfig<N>, const N: usize> Distribution<Fp<P, N>> for StandardUniform 
 impl<P: FpConfig<N>, const N: usize> UniformRand for Fp<P, N> {
     fn rand<R: ark_std::rand::Rng + ?Sized>(rng: &mut R) -> Self {
         Self(ArkWrappedFp::rand(rng))
-    }
-}
-
-//
-// Zeroize
-//
-
-#[cfg(feature = "zeroize")]
-impl<P: FpConfig<N>, const N: usize> zeroize::Zeroize for Fp<P, N> {
-    fn zeroize(&mut self) {
-        self.0.zeroize()
     }
 }
 

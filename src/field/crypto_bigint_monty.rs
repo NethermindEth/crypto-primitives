@@ -14,6 +14,8 @@ use crypto_bigint::{
 use num_traits::Signed;
 #[cfg(feature = "zerocopy")]
 use zerocopy_derive::*;
+#[cfg(feature = "zeroize")]
+use zeroize::Zeroize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MontyField<const LIMBS: usize> {
@@ -59,6 +61,7 @@ impl<const LIMBS: usize> MontyField<LIMBS> {
 /// Can be converted to bytes, but cannot be safely reconstructed from bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "zerocopy", derive(KnownLayout))]
+#[cfg_attr(feature = "zeroize", derive(Zeroize))]
 #[repr(transparent)]
 pub struct MontyFieldElement<const LIMBS: usize>(pub Uint<LIMBS>);
 
@@ -416,17 +419,6 @@ where
         S: serde::Serializer,
     {
         self.0.serialize(serializer)
-    }
-}
-
-//
-// Zeroize
-//
-
-#[cfg(feature = "zeroize")]
-impl<const LIMBS: usize> zeroize::Zeroize for MontyFieldElement<LIMBS> {
-    fn zeroize(&mut self) {
-        self.0.zeroize()
     }
 }
 

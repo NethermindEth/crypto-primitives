@@ -24,11 +24,14 @@ use pastey::paste;
 use rand::{distr::StandardUniform, prelude::*, rand_core::TryRng};
 #[cfg(feature = "zerocopy")]
 use zerocopy_derive::*;
+#[cfg(feature = "zeroize")]
+use zeroize::Zeroize;
 
 #[derive(Clone, Copy, PartialEq, Eq, InfallibleCheckedOp)]
 #[infallible_checked_unary_op((CheckedNeg, neg))]
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
 #[cfg_attr(feature = "zerocopy", derive(KnownLayout))]
+#[cfg_attr(feature = "zeroize", derive(Zeroize))]
 #[repr(transparent)]
 pub struct ConstMontyField<Mod: Params<LIMBS>, const LIMBS: usize>(pub ConstMontyForm<Mod, LIMBS>);
 
@@ -688,17 +691,6 @@ where
         S: serde::Serializer,
     {
         self.0.serialize(serializer)
-    }
-}
-
-//
-// Zeroize
-//
-
-#[cfg(feature = "zeroize")]
-impl<Mod: Params<LIMBS>, const LIMBS: usize> zeroize::Zeroize for ConstMontyField<Mod, LIMBS> {
-    fn zeroize(&mut self) {
-        self.0.zeroize()
     }
 }
 

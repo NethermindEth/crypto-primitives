@@ -857,8 +857,14 @@ mod tests {
 
         ensure_type_implements_trait!(Boolean, KnownLayout);
 
-        assert_eq!(Boolean::try_read_from_bytes(&[0x00]).unwrap(), Boolean::FALSE);
-        assert_eq!(Boolean::try_read_from_bytes(&[0x01]).unwrap(), Boolean::TRUE);
+        assert_eq!(
+            Boolean::try_read_from_bytes(&[0x00]).unwrap(),
+            Boolean::FALSE
+        );
+        assert_eq!(
+            Boolean::try_read_from_bytes(&[0x01]).unwrap(),
+            Boolean::TRUE
+        );
         assert!(Boolean::try_read_from_bytes(&[0x02]).is_err());
 
         assert_eq!(Boolean::FALSE.as_bytes(), &[0x00]);
