@@ -57,8 +57,6 @@ impl<const LIMBS: usize> MontyField<LIMBS> {
 
 /// A wrapper around [`Uint`] to prevent accidentally calling math operations
 /// on it.
-///
-/// Can be converted to bytes, but cannot be safely reconstructed from bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "zerocopy", derive(KnownLayout))]
 #[cfg_attr(feature = "zeroize", derive(Zeroize))]
