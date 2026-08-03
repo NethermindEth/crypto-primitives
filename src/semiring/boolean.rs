@@ -22,7 +22,7 @@ use zerocopy_derive::*;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(
     feature = "zerocopy",
-    derive(KnownLayout, Immutable, FromZeros, IntoBytes)
+    derive(KnownLayout, Immutable, TryFromBytes, IntoBytes)
 )]
 #[repr(transparent)]
 pub struct Boolean(pub bool);
@@ -857,11 +857,9 @@ mod tests {
 
         ensure_type_implements_trait!(Boolean, KnownLayout);
 
-        let mut v = Boolean::TRUE;
-        v.zero();
-        assert_eq!(v, Boolean::FALSE);
-
-        assert_eq!(Boolean::new_zeroed(), Boolean::FALSE);
+        assert_eq!(Boolean::try_read_from_bytes(&[0x00]).unwrap(), Boolean::FALSE);
+        assert_eq!(Boolean::try_read_from_bytes(&[0x01]).unwrap(), Boolean::TRUE);
+        assert!(Boolean::try_read_from_bytes(&[0x02]).is_err());
 
         assert_eq!(Boolean::FALSE.as_bytes(), &[0x00]);
         assert_eq!(Boolean::TRUE.as_bytes(), &[0x01]);

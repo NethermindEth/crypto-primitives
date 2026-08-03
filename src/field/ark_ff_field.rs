@@ -549,6 +549,7 @@ impl<F: ArkWrappedPrimeField> UniformRand for ArkField<F> {
 #[cfg(feature = "zeroize")]
 impl<F: ArkWrappedPrimeField> zeroize::Zeroize for ArkField<F> {
     fn zeroize(&mut self) {
+        // FIXME
         self.0.zeroize()
     }
 }
@@ -1312,5 +1313,11 @@ mod tests {
         // Test that we can access inner methods via Deref
         let _ = a.is_zero();
         let _ = a.inverse();
+    }
+
+    #[test]
+    #[cfg(feature = "zerocopy")]
+    fn zerocopy() {
+        ensure_type_implements_trait!(F, zerocopy::KnownLayout);
     }
 }

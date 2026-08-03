@@ -26,7 +26,7 @@ use zerocopy_derive::*;
 #[infallible_checked_binary_op((CheckedAdd, add), (CheckedSub, sub), (CheckedMul, mul))]
 #[cfg_attr(
     feature = "zerocopy",
-    derive(KnownLayout, Immutable, FromZeros, IntoBytes)
+    derive(KnownLayout, Immutable, TryFromBytes, IntoBytes)
 )]
 #[repr(transparent)]
 pub struct F2(pub bool);
@@ -877,11 +877,9 @@ mod tests {
 
         ensure_type_implements_trait!(F2, KnownLayout);
 
-        let mut v = V1;
-        v.zero();
-        assert_eq!(v, V0);
-
-        assert_eq!(F2::new_zeroed(), V0);
+        assert_eq!(F2::try_read_from_bytes(&[0x00]).unwrap(), V0);
+        assert_eq!(F2::try_read_from_bytes(&[0x01]).unwrap(), V1);
+        assert!(F2::try_read_from_bytes(&[0x02]).is_err());
 
         assert_eq!(V0.as_bytes(), &[0x00]);
         assert_eq!(V1.as_bytes(), &[0x01]);
