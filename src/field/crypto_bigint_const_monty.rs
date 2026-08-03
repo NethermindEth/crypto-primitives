@@ -1447,6 +1447,12 @@ mod tests {
 
         assert_ne!(random3, random4);
     }
+
+    #[test]
+    #[cfg(feature = "zerocopy")]
+    fn zerocopy() {
+        ensure_type_implements_trait!(F, zerocopy::KnownLayout);
+    }
 }
 
 #[cfg(test)]
@@ -1457,7 +1463,6 @@ mod tests {
 )]
 mod prop_tests {
     use super::*;
-    use crate::ensure_type_implements_trait;
     use crypto_bigint::{U256, const_monty_params};
     use num_traits::{One, Zero};
     use proptest::prelude::*;
@@ -1575,11 +1580,5 @@ mod prop_tests {
             x3 *= y;
             prop_assert_eq!(x3, x0 * y);
         }
-    }
-
-    #[test]
-    #[cfg(feature = "zerocopy")]
-    fn zerocopy() {
-        ensure_type_implements_trait!(F, zerocopy::KnownLayout);
     }
 }
