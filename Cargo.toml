@@ -29,7 +29,7 @@ num-bigint = { version = "0.4", default-features = false, optional = true }
 rand = { workspace = true, optional = true }
 rayon = { version = "1", optional = true }
 serde = { version = "1", default-features = false, optional = true }
-zeroize = { version = "1", default-features = false, optional = true }
+zeroize = { version = "1", features = ["derive"], optional = true }
 zerocopy = { version = "0.8", default-features = false, optional = true }
 zerocopy-derive = { version = "0.8", default-features = false, optional = true }
 
@@ -48,7 +48,7 @@ serde = ["dep:serde", "crypto-bigint/serde"]
 zeroize = ["dep:zeroize", "crypto-bigint/zeroize"]
 zerocopy = ["dep:zerocopy", "dep:zerocopy-derive"]
 
-std = ["num-traits/std", "ark-std/std", "ark-ff/std", "serde/std", "rand/std", "zeroize/std"]
+std = ["num-traits/std", "ark-std/std", "ark-ff/std", "serde/std", "rand/std", "zeroize/std", "zerocopy/std"]
 ark_std = ["dep:ark-std"]
 ark_ff = ["ark_std", "num_bigint", "zeroize", "dep:ark-ff", "dep:ark-serialize"]
 crypto_bigint = ["dep:crypto-bigint", "crypto-bigint/alloc"]
