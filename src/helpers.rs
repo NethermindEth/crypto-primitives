@@ -17,6 +17,7 @@ macro_rules! define_blanket_trait {
 pub(crate) use define_blanket_trait;
 
 /// Implement exponentiation using repeated squaring
+#[cfg(any(feature = "ark_ff", feature = "crypto_bigint"))]
 macro_rules! pow_via_repeated_squaring {
     ($self:expr, $rhs:expr, $one:expr) => {{
         if $rhs == 0 {
@@ -42,6 +43,7 @@ macro_rules! pow_via_repeated_squaring {
         result
     }};
 }
+#[cfg(any(feature = "ark_ff", feature = "crypto_bigint"))]
 pub(crate) use pow_via_repeated_squaring;
 
 /// Will fail compilation if trait is not implemented for the type.

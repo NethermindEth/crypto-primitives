@@ -12,9 +12,7 @@ use core::{
     },
     str::FromStr,
 };
-use crypto_bigint::{
-    BitOps, ConcatenatingMul, DivVartime, Integer, Limb, RandomBitsError, Resize, UintRef, Word,
-};
+use crypto_bigint::{BitOps, ConcatenatingMul, DivVartime, Integer, Limb, Resize, UintRef, Word};
 use num_traits::{
     CheckedAdd, CheckedMul, CheckedRem, CheckedSub, One, Pow, WrappingAdd, WrappingMul,
     WrappingSub, Zero,
@@ -716,7 +714,7 @@ impl crypto_bigint::RandomBits for BoxedUint {
     fn try_random_bits<R: TryRng + ?Sized>(
         rng: &mut R,
         bit_length: u32,
-    ) -> Result<Self, RandomBitsError<R::Error>> {
+    ) -> Result<Self, crypto_bigint::RandomBitsError<R::Error>> {
         crypto_bigint::BoxedUint::try_random_bits(rng, bit_length).map(Self)
     }
 
@@ -724,7 +722,7 @@ impl crypto_bigint::RandomBits for BoxedUint {
         rng: &mut R,
         bit_length: u32,
         bits_precision: u32,
-    ) -> Result<Self, RandomBitsError<R::Error>> {
+    ) -> Result<Self, crypto_bigint::RandomBitsError<R::Error>> {
         crypto_bigint::BoxedUint::try_random_bits_with_precision(rng, bit_length, bits_precision)
             .map(Self)
     }

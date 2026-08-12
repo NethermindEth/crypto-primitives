@@ -1,6 +1,8 @@
 use super::*;
 use crate::{Wrapper, boolean::Boolean, helpers::pow_via_repeated_squaring};
-use alloc::{format, vec::Vec};
+#[cfg(feature = "serde")]
+use alloc::format;
+use alloc::vec::Vec;
 use ark_ff::{BigInt as ArkBigInt, BigInteger as ArkBigInteger};
 use ark_serialize::{
     CanonicalDeserialize, CanonicalSerialize, Compress, SerializationError, Valid, Validate,
@@ -770,7 +772,6 @@ mod tests {
     use super::*;
     use crate::ensure_type_implements_trait;
     use alloc::{format, string::ToString, vec::Vec};
-    use ark_std::rand::Rng;
     use core::cmp::Ordering;
 
     type BigInt1 = BigInt<1>;
@@ -1112,6 +1113,7 @@ mod tests {
     #[cfg(feature = "rand")]
     #[test]
     fn random_generation() {
+        use ark_std::rand::Rng;
         use rand::prelude::*;
         // Use a seeded RNG for reproducibility
 

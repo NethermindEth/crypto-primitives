@@ -3,7 +3,6 @@ use syn::{
     punctuated::Punctuated, spanned::Spanned, token::Comma,
 };
 
-#[derive(Debug)]
 pub(super) enum Op {
     Unary {
         trait_path: Path,

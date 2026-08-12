@@ -1,7 +1,8 @@
 use super::*;
 use crate::{
-    IntSemiring, IntSemiringConfig, LiftElementWithConfig, Wrapper, boolean::Boolean,
-    crypto_bigint_int::Int, crypto_bigint_uint::Uint, helpers::crypto_bigint as helpers,
+    IntSemiring, IntSemiringConfig, LiftElementWithConfig, SemiringConfig, Wrapper,
+    boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint,
+    helpers::crypto_bigint as helpers,
 };
 use core::{
     cmp::Ordering,

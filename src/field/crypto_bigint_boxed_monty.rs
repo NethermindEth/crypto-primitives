@@ -1,8 +1,8 @@
 use super::*;
 use crate::{
-    IntSemiring, IntSemiringConfig, LiftElementWithConfig, Wrapper, boolean::Boolean,
-    crypto_bigint_boxed_uint::BoxedUint, crypto_bigint_int::Int, crypto_bigint_uint::Uint,
-    helpers::crypto_bigint as helpers,
+    IntSemiring, IntSemiringConfig, LiftElementWithConfig, SemiringConfig, Wrapper,
+    boolean::Boolean, crypto_bigint_boxed_uint::BoxedUint, crypto_bigint_int::Int,
+    crypto_bigint_uint::Uint, helpers::crypto_bigint as helpers,
 };
 use alloc::borrow::Cow;
 use core::{
@@ -13,7 +13,7 @@ use crypto_bigint::{
     MontyForm, Odd,
     modular::{BoxedMontyForm, BoxedMontyParams},
 };
-use num_traits::{One, Signed};
+use num_traits::{One, Signed, Zero};
 #[cfg(feature = "zerocopy")]
 use zerocopy_derive::*;
 #[cfg(feature = "zeroize")]

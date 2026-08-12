@@ -41,14 +41,14 @@ pub mod crypto_bigint_monty;
 pub mod f2;
 
 use crate::{
-    ConstRing, FixedConfig, IntSemiring, Ring, RingConfig, SemiringConfig, SetConfig, SetElement,
+    ConstRing, FixedConfig, IntSemiring, Ring, RingConfig, SetConfig, SetElement,
     helpers::{define_blanket_trait, delegate_to_ref_binary},
 };
 use core::{
     fmt::Debug,
-    ops::{Div, DivAssign, Neg},
+    ops::{Div, DivAssign},
 };
-use num_traits::{Bounded, Inv, Pow, Zero};
+use num_traits::{Bounded, Inv, Pow};
 use pastey::paste;
 use thiserror::Error;
 

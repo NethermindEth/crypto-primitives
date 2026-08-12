@@ -19,3 +19,68 @@ jobs:
       run: cargo test --workspace --all-features --verbose --no-run
     - name: Run tests
       run: cargo test --workspace --all-features --verbose
+
+  # `--all-features` unifies features across the dependency graph, so it hides
+  # missing feature gates. Test each combination on its own to catch them.
+  feature-matrix:
+    name: Test ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    env:
+      # A missing feature gate shows up as an unused import long before it
+      # becomes a build failure, so warnings have to be fatal here.
+      RUSTFLAGS: "-Dwarnings"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: no-default-features
+            args: --no-default-features
+          - name: std
+            args: --no-default-features --features std
+          - name: ark_std
+            args: --no-default-features --features ark_std
+          - name: num_bigint
+            args: --no-default-features --features num_bigint
+          - name: rand
+            args: --no-default-features --features rand
+          - name: serde
+            args: --no-default-features --features serde
+          - name: zeroize
+            args: --no-default-features --features zeroize
+          - name: zerocopy
+            args: --no-default-features --features zerocopy
+          - name: parallel
+            args: --no-default-features --features parallel
+          - name: crypto_bigint
+            args: --no-default-features --features crypto_bigint
+          - name: ark_ff
+            args: --no-default-features --features ark_ff
+          # Backend x utility pairs. Utility features gate items *inside* the
+          # backend modules, so this intersection is the only place that code
+          # is compiled -- neither single-feature build reaches it.
+          - name: crypto_bigint,rand
+            args: --no-default-features --features crypto_bigint,rand
+          - name: crypto_bigint,serde
+            args: --no-default-features --features crypto_bigint,serde
+          - name: crypto_bigint,zeroize
+            args: --no-default-features --features crypto_bigint,zeroize
+          - name: crypto_bigint,zerocopy
+            args: --no-default-features --features crypto_bigint,zerocopy
+          - name: ark_ff,rand
+            args: --no-default-features --features ark_ff,rand
+          - name: ark_ff,serde
+            args: --no-default-features --features ark_ff,serde
+          - name: ark_ff,zeroize
+            args: --no-default-features --features ark_ff,zeroize
+          - name: ark_ff,zerocopy
+            args: --no-default-features --features ark_ff,zerocopy
+          - name: ark_ff,crypto_bigint
+            args: --no-default-features --features ark_ff,crypto_bigint
+          - name: ark_ff,std
+            args: --no-default-features --features ark_ff,std
+          - name: all-features
+            args: --all-features
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: cargo test ${{ matrix.args }}

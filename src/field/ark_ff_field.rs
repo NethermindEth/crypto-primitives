@@ -8,13 +8,14 @@ use ark_serialize::{
     CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
     CanonicalSerializeWithFlags, Compress, Flags, Read, SerializationError, Valid, Validate, Write,
 };
+use ark_std::UniformRand;
 #[cfg(feature = "rand")]
-use ark_std::{UniformRand, rand::prelude::*};
+use ark_std::rand::prelude::*;
 use core::{
     fmt::{Display, Formatter, Result as FmtResult},
     hash::{Hash, Hasher},
     iter::{Product, Sum},
-    ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
+    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
     str::FromStr,
 };
 use crypto_primitives_proc_macros::InfallibleCheckedOp;
@@ -538,7 +539,6 @@ impl<F: ArkWrappedPrimeField> Distribution<ArkField<F>> for StandardUniform {
     }
 }
 
-#[cfg(feature = "rand")]
 impl<F: ArkWrappedPrimeField> UniformRand for ArkField<F> {
     fn rand<R: ark_std::rand::Rng + ?Sized>(rng: &mut R) -> Self {
         Self(F::rand(rng))

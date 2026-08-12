@@ -8,7 +8,7 @@ use core::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     hash::{Hash, Hasher},
     iter::{Product, Sum},
-    ops::{Add, AddAssign, DivAssign, Mul, MulAssign, Sub, SubAssign},
+    ops::{Add, AddAssign, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
     str::FromStr,
 };
 use crypto_bigint::{

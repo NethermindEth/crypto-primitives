@@ -1,6 +1,6 @@
-use super::*;
 use crate::{
-    Wrapper, boolean::Boolean, crypto_bigint_uint::Uint, helpers::pow_via_repeated_squaring,
+    IntSemiring, Wrapper, boolean::Boolean, crypto_bigint_uint::Uint,
+    helpers::pow_via_repeated_squaring,
 };
 use core::{
     cmp::Ordering,
@@ -904,7 +904,7 @@ pub type I32768 = Int<{ 512 * WORD_FACTOR }>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ensure_type_implements_trait;
+    use crate::{ConstIntRing, IntRingWithShifts, ensure_type_implements_trait};
     use alloc::{format, string::ToString, vec::Vec};
 
     #[cfg(target_pointer_width = "64")]

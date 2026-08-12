@@ -11,9 +11,9 @@
 pub mod crypto_bigint_int;
 
 use crate::{
-    ConstIntSemiring, ConstIntSemiringConfig, ConstSemiring, FixedConfig, IntSemiring,
-    IntSemiringConfig, IntSemiringWithDivRem, IntSemiringWithShifts, Semiring, SemiringConfig,
-    SetElement, helpers::define_blanket_trait,
+    ConstIntSemiring, ConstIntSemiringConfig, ConstSemiring, FixedConfig, IntSemiringConfig,
+    IntSemiringWithDivRem, IntSemiringWithShifts, Semiring, SemiringConfig, SetElement,
+    helpers::define_blanket_trait,
 };
 use core::ops::Neg;
 use num_traits::{CheckedNeg, Signed};
