@@ -1,5 +1,13 @@
 use super::*;
-use crate::{Wrapper, boolean::Boolean, helpers::pow_via_repeated_squaring};
+use crate::{
+    Wrapper,
+    boolean::Boolean,
+    helpers::pow_via_repeated_squaring,
+    serialization::{
+        CanonicalBytes, CanonicalBytesError, CanonicalIntBytes, FixedCanonicalBytes,
+        canonical_width,
+    },
+};
 #[cfg(feature = "serde")]
 use alloc::format;
 use alloc::vec::Vec;
@@ -763,6 +771,76 @@ impl<const N: usize> ArkBigInteger for BigInt<N> {
     #[inline]
     fn find_wnaf(&self, w: usize) -> Option<Vec<i64>> {
         self.0.find_wnaf(w)
+    }
+}
+
+//
+// Canonical bytes
+//
+
+impl<const N: usize> CanonicalIntBytes for BigInt<N> {
+    #[inline]
+    fn bit_len(&self) -> u32 {
+        self.0.num_bits()
+    }
+
+    fn write_le(&self, width: usize, out: &mut Vec<u8>) -> Result<(), CanonicalBytesError> {
+        if canonical_width(self) > width {
+            return Err(CanonicalBytesError::Overflow { width });
+        }
+        let all = self.0.to_bytes_le();
+        let taken = all.len().min(width);
+        out.extend_from_slice(&all[..taken]);
+        out.resize(out.len().saturating_add(width.saturating_sub(taken)), 0);
+        Ok(())
+    }
+
+    fn read_le_like(bytes: &[u8], _like: &Self) -> Result<Self, CanonicalBytesError> {
+        let mut limbs = [0_u64; N];
+        // ark limbs are always 64 bits wide, whatever the target.
+        for (index, chunk) in bytes.chunks(8).enumerate() {
+            match limbs.get_mut(index) {
+                Some(limb) => {
+                    let mut buf = [0_u8; 8];
+                    buf[..chunk.len()].copy_from_slice(chunk);
+                    *limb = u64::from_le_bytes(buf);
+                }
+                None if chunk.iter().any(|byte| *byte != 0) => {
+                    return Err(CanonicalBytesError::Overflow { width: Self::BYTES });
+                }
+                None => {}
+            }
+        }
+        Ok(Self(ArkBigInt(limbs)))
+    }
+}
+
+impl<const N: usize> CanonicalBytes for BigInt<N> {
+    #[inline]
+    fn canonical_byte_len(&self) -> usize {
+        Self::BYTES
+    }
+
+    fn write_canonical(&self, out: &mut Vec<u8>) {
+        // The full width always fits.
+        let _ = self.write_le(Self::BYTES, out);
+    }
+
+    fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
+        if bytes.len() != Self::BYTES {
+            return Err(CanonicalBytesError::InvalidLength {
+                expected: Self::BYTES,
+                actual: bytes.len(),
+            });
+        }
+        Self::read_le_like(bytes, &Self::ZERO)
+    }
+}
+
+impl<const N: usize> FixedCanonicalBytes for BigInt<N> {
+    #[inline]
+    fn fixed_canonical_byte_len() -> usize {
+        Self::BYTES
     }
 }
 

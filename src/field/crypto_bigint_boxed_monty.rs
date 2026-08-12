@@ -1,10 +1,18 @@
 use super::*;
 use crate::{
     IntSemiring, IntSemiringConfig, LiftElementWithConfig, SemiringConfig, Wrapper,
-    boolean::Boolean, crypto_bigint_boxed_uint::BoxedUint, crypto_bigint_int::Int,
-    crypto_bigint_uint::Uint, helpers::crypto_bigint as helpers,
+    boolean::Boolean,
+    crypto_bigint_boxed_uint::BoxedUint,
+    crypto_bigint_int::Int,
+    crypto_bigint_uint::Uint,
+    helpers::crypto_bigint as helpers,
+    serialization::{
+        CanonicalBytesError, CanonicalBytesWithConfig, FromUniformBytesWithConfig,
+        base_field_from_uniform_bytes_with_config, canonical_width, read_base_field_with_config,
+        uniform_width, write_base_field_with_config,
+    },
 };
-use alloc::borrow::Cow;
+use alloc::{borrow::Cow, vec::Vec};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, Result as FmtResult},
@@ -451,27 +459,47 @@ impl LiftElementWithConfig<<Self as WithAssociatedInteger>::Integer> for BoxedMo
 // Serialization and Deserialization
 //
 
-#[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for BoxedMontyFieldElement {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        BoxedUint::deserialize(deserializer).map(Self)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl serde::Serialize for BoxedMontyFieldElement {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.0.serialize(serializer)
-    }
-}
+// `serde` is deliberately not implemented for `BoxedMontyFieldElement`: the
+// element carries no modulus, so it cannot strip the Montgomery factor, and its
+// width would follow the allocated precision rather than the modulus. Use
+// `BoxedMontyField::to_canonical_bytes` instead.
 
 // TODO: Do we want to zeroize the modulus?
+
+//
+// Canonical bytes
+//
+
+/// The width follows the modulus, never the [`BoxedUint`] precision, so the
+/// same element encodes alike whatever precision holds it.
+///
+/// The element carries no modulus, so `serde` is deliberately not implemented
+/// on [`BoxedMontyFieldElement`].
+impl CanonicalBytesWithConfig for BoxedMontyField {
+    #[inline]
+    fn canonical_byte_len(&self) -> usize {
+        canonical_width(&self.modulus())
+    }
+
+    fn write_canonical(&self, value: &Self::Element, out: &mut Vec<u8>) {
+        write_base_field_with_config(self, value, out);
+    }
+
+    fn from_canonical_bytes(&self, bytes: &[u8]) -> Result<Self::Element, CanonicalBytesError> {
+        read_base_field_with_config(self, bytes)
+    }
+}
+
+impl FromUniformBytesWithConfig for BoxedMontyField {
+    #[inline]
+    fn uniform_byte_len(&self) -> usize {
+        uniform_width(&self.modulus())
+    }
+
+    fn from_uniform_bytes(&self, bytes: &[u8]) -> Self::Element {
+        base_field_from_uniform_bytes_with_config(self, bytes)
+    }
+}
 
 #[allow(
     clippy::arithmetic_side_effects,

@@ -1,5 +1,15 @@
 use super::*;
-use crate::{IntSemiring, LiftElement, Wrapper, ark_ff_bigint::BigInt, boolean::Boolean};
+use crate::{
+    IntSemiring, LiftElement, Wrapper,
+    ark_ff_bigint::BigInt,
+    boolean::Boolean,
+    serialization::{
+        CanonicalBytes, CanonicalBytesError, FixedCanonicalBytes, FromUniformBytes,
+        base_field_from_uniform_bytes, canonical_width, read_base_field, uniform_width,
+        write_base_field,
+    },
+};
+use alloc::vec::Vec;
 use ark_ff::{
     AdditiveGroup, BigInteger, FftField, FpConfig, LegendreSymbol, MontBackend, MontConfig,
     SqrtPrecomputation,
@@ -776,6 +786,43 @@ pub type Fp832<P> = Fp<P, 13>;
 #[macro_export]
 macro_rules! mont_fp {
     ($c0:expr) => {{ $crate::field::ark_ff_fp::Fp::new(ark_ff::MontFp!($c0)) }};
+}
+
+//
+// Canonical bytes
+//
+
+impl<M: MontConfig<N>, const N: usize> CanonicalBytes for Fp<MontBackend<M, N>, N> {
+    #[inline]
+    fn canonical_byte_len(&self) -> usize {
+        Self::fixed_canonical_byte_len()
+    }
+
+    fn write_canonical(&self, out: &mut Vec<u8>) {
+        write_base_field(self, out);
+    }
+
+    fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
+        read_base_field(bytes)
+    }
+}
+
+impl<M: MontConfig<N>, const N: usize> FixedCanonicalBytes for Fp<MontBackend<M, N>, N> {
+    #[inline]
+    fn fixed_canonical_byte_len() -> usize {
+        canonical_width(&<Self as ConstBaseField>::MODULUS)
+    }
+}
+
+impl<M: MontConfig<N>, const N: usize> FromUniformBytes for Fp<MontBackend<M, N>, N> {
+    #[inline]
+    fn uniform_byte_len() -> usize {
+        uniform_width(&<Self as ConstBaseField>::MODULUS)
+    }
+
+    fn from_uniform_bytes(bytes: &[u8]) -> Self {
+        base_field_from_uniform_bytes(bytes)
+    }
 }
 
 #[cfg(test)]

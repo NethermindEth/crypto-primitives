@@ -1,9 +1,17 @@
 use super::*;
 use crate::{
     IntSemiring, IntSemiringConfig, LiftElementWithConfig, SemiringConfig, Wrapper,
-    boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint,
+    boolean::Boolean,
+    crypto_bigint_int::Int,
+    crypto_bigint_uint::Uint,
     helpers::crypto_bigint as helpers,
+    serialization::{
+        CanonicalBytesError, CanonicalBytesWithConfig, FromUniformBytesWithConfig,
+        base_field_from_uniform_bytes_with_config, canonical_width, read_base_field_with_config,
+        uniform_width, write_base_field_with_config,
+    },
 };
+use alloc::vec::Vec;
 use core::{
     cmp::Ordering,
     fmt::{Display, Formatter, Result as FmtResult},
@@ -395,31 +403,10 @@ impl<const LIMBS: usize> LiftElementWithConfig<<Self as WithAssociatedInteger>::
 // Serialization and Deserialization
 //
 
-#[cfg(feature = "serde")]
-impl<'de, const LIMBS: usize> serde::Deserialize<'de> for MontyFieldElement<LIMBS>
-where
-    crypto_bigint::Uint<LIMBS>: crypto_bigint::Encoding,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Uint::<LIMBS>::deserialize(deserializer).map(Self)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<const LIMBS: usize> serde::Serialize for MontyFieldElement<LIMBS>
-where
-    crypto_bigint::Uint<LIMBS>: crypto_bigint::Encoding,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.0.serialize(serializer)
-    }
-}
+// `serde` is deliberately not implemented for `MontyFieldElement`: the element
+// carries no modulus, so it cannot strip the Montgomery factor, and the bytes
+// would differ from every other backend holding the same value. Use
+// `MontyField::to_canonical_bytes` instead.
 
 // TODO: Do we want to zeroize the modulus?
 
@@ -454,6 +441,40 @@ pub type F6144 = MontyField<{ 96 * WORD_FACTOR }>;
 pub type F8192 = MontyField<{ 128 * WORD_FACTOR }>;
 pub type F16384 = MontyField<{ 256 * WORD_FACTOR }>;
 pub type F32768 = MontyField<{ 512 * WORD_FACTOR }>;
+
+//
+// Canonical bytes
+//
+
+/// The element carries no modulus, so only the config can produce a canonical
+/// encoding. `serde` is deliberately not implemented on
+/// [`MontyFieldElement`] for the same reason: it would leak the Montgomery
+/// residue.
+impl<const LIMBS: usize> CanonicalBytesWithConfig for MontyField<LIMBS> {
+    #[inline]
+    fn canonical_byte_len(&self) -> usize {
+        canonical_width(&self.modulus())
+    }
+
+    fn write_canonical(&self, value: &Self::Element, out: &mut Vec<u8>) {
+        write_base_field_with_config(self, value, out);
+    }
+
+    fn from_canonical_bytes(&self, bytes: &[u8]) -> Result<Self::Element, CanonicalBytesError> {
+        read_base_field_with_config(self, bytes)
+    }
+}
+
+impl<const LIMBS: usize> FromUniformBytesWithConfig for MontyField<LIMBS> {
+    #[inline]
+    fn uniform_byte_len(&self) -> usize {
+        uniform_width(&self.modulus())
+    }
+
+    fn from_uniform_bytes(&self, bytes: &[u8]) -> Self::Element {
+        base_field_from_uniform_bytes_with_config(self, bytes)
+    }
+}
 
 #[allow(
     clippy::arithmetic_side_effects,

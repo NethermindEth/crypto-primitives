@@ -1,7 +1,15 @@
 use super::*;
 use crate::{
-    Wrapper, boolean::Boolean, crypto_bigint_int::Int, helpers::pow_via_repeated_squaring,
+    Wrapper,
+    boolean::Boolean,
+    crypto_bigint_int::Int,
+    helpers::pow_via_repeated_squaring,
+    serialization::{
+        CanonicalBytes, CanonicalBytesError, CanonicalIntBytes, FixedCanonicalBytes,
+        canonical_width,
+    },
 };
+use alloc::vec::Vec;
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, LowerHex, Result as FmtResult, UpperHex},
@@ -774,6 +782,68 @@ pub type U6144 = Uint<{ 96 * WORD_FACTOR }>;
 pub type U8192 = Uint<{ 128 * WORD_FACTOR }>;
 pub type U16384 = Uint<{ 256 * WORD_FACTOR }>;
 pub type U32768 = Uint<{ 512 * WORD_FACTOR }>;
+
+//
+// Canonical bytes
+//
+
+impl<const LIMBS: usize> CanonicalIntBytes for Uint<LIMBS> {
+    #[inline]
+    fn bit_len(&self) -> u32 {
+        self.0.bits()
+    }
+
+    fn write_le(&self, width: usize, out: &mut Vec<u8>) -> Result<(), CanonicalBytesError> {
+        if canonical_width(self) > width {
+            return Err(CanonicalBytesError::Overflow { width });
+        }
+        let repr = crypto_bigint::Encoding::to_le_bytes(&self.0);
+        let all: &[u8] = repr.as_ref();
+        let taken = all.len().min(width);
+        out.extend_from_slice(&all[..taken]);
+        out.resize(out.len().saturating_add(width.saturating_sub(taken)), 0);
+        Ok(())
+    }
+
+    fn read_le_like(bytes: &[u8], _like: &Self) -> Result<Self, CanonicalBytesError> {
+        let taken = bytes.len().min(Self::BYTES);
+        if bytes[taken..].iter().any(|byte| *byte != 0) {
+            return Err(CanonicalBytesError::Overflow { width: Self::BYTES });
+        }
+        let mut repr = <crypto_bigint::Uint<LIMBS> as crypto_bigint::Encoding>::Repr::default();
+        repr.as_mut()[..taken].copy_from_slice(&bytes[..taken]);
+        Ok(Self(crypto_bigint::Uint::from_le_slice(repr.as_ref())))
+    }
+}
+
+impl<const LIMBS: usize> CanonicalBytes for Uint<LIMBS> {
+    #[inline]
+    fn canonical_byte_len(&self) -> usize {
+        Self::BYTES
+    }
+
+    fn write_canonical(&self, out: &mut Vec<u8>) {
+        // The full width always fits.
+        let _ = self.write_le(Self::BYTES, out);
+    }
+
+    fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
+        if bytes.len() != Self::BYTES {
+            return Err(CanonicalBytesError::InvalidLength {
+                expected: Self::BYTES,
+                actual: bytes.len(),
+            });
+        }
+        Self::read_le_like(bytes, &Self::ZERO)
+    }
+}
+
+impl<const LIMBS: usize> FixedCanonicalBytes for Uint<LIMBS> {
+    #[inline]
+    fn fixed_canonical_byte_len() -> usize {
+        Self::BYTES
+    }
+}
 
 #[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
 #[cfg(test)]

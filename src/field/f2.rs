@@ -1,6 +1,12 @@
 use crate::{
-    ConstBaseField, IntSemiring, LiftElement, WithAssociatedInteger, Wrapper, boolean::Boolean,
+    ConstBaseField, IntSemiring, LiftElement, WithAssociatedInteger, Wrapper,
+    boolean::Boolean,
+    serialization::{
+        CanonicalBytes, CanonicalBytesError, FixedCanonicalBytes, FromUniformBytes,
+        base_field_from_uniform_bytes, read_base_field, uniform_width, write_base_field,
+    },
 };
+use alloc::vec::Vec;
 use core::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     hash::Hash,
@@ -497,6 +503,44 @@ impl zeroize::DefaultIsZeroes for F2 {}
 //
 // Tests
 //
+
+//
+// Canonical bytes
+//
+
+/// One byte, `0x00` or `0x01`, matching the width the modulus 2 implies.
+impl CanonicalBytes for F2 {
+    #[inline]
+    fn canonical_byte_len(&self) -> usize {
+        1
+    }
+
+    fn write_canonical(&self, out: &mut Vec<u8>) {
+        write_base_field(self, out);
+    }
+
+    fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
+        read_base_field(bytes)
+    }
+}
+
+impl FixedCanonicalBytes for F2 {
+    #[inline]
+    fn fixed_canonical_byte_len() -> usize {
+        1
+    }
+}
+
+impl FromUniformBytes for F2 {
+    #[inline]
+    fn uniform_byte_len() -> usize {
+        uniform_width(&Self::MODULUS)
+    }
+
+    fn from_uniform_bytes(bytes: &[u8]) -> Self {
+        base_field_from_uniform_bytes(bytes)
+    }
+}
 
 #[allow(
     clippy::arithmetic_side_effects,

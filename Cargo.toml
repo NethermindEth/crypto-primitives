@@ -37,6 +37,7 @@ zerocopy-derive = { version = "0.8", default-features = false, optional = true }
 criterion = { workspace = true }
 proptest = { workspace = true }
 rand = { workspace = true, features = ["std_rng"] }
+serde_json = "1"  # Only used to round-trip the canonical `serde` encodings in tests
 
 [features]
 default = ["std"]
