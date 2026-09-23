@@ -102,7 +102,11 @@ define_blanket_trait! {
 
 define_blanket_trait! {
     pub trait IntSemiringWithShifts:
-        IntSemiring + Shl<u32> + Shr<u32> + ShlAssign<u32> + ShrAssign<u32>
+        IntSemiring
+        + Shl<u32, Output = Self>
+        + Shr<u32, Output = Self>
+        + ShlAssign<u32>
+        + ShrAssign<u32>
 }
 
 define_blanket_trait! {
