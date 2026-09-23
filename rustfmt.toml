@@ -13,6 +13,7 @@ condense_wildcard_suffixes = true          # Prefer `use foo::{self, Bar};`
 
 # --- Readability ------------------------------------------------------------
 max_width                  = 100           # Hard column limit for all code
+comment_width              = 100           # By default, comment width is still 80
 wrap_comments              = true          # Break comments to fit on the line
 format_code_in_doc_comments= true          # Rust-format code blocks in docs
 use_field_init_shorthand   = true          # `{ x, y }` instead of `{ x: x, y: y }`

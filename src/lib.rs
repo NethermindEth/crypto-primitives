@@ -3,19 +3,16 @@
 //! the general `*Config` traits: [`SetConfig`], [`SemiringConfig`],
 //! [`RingConfig`] and [`FieldConfig`]).
 //!
-//! - [`Semiring`], [`Ring`] and [`Field`] (along with their `Const*` variants)
-//!   are structures where each element is self-sufficient. Instances carry
-//!   around all metadata necessary to perform operations, so they can be used
-//!   normally as e.g. `a + b`. Every `Const*` structure implements its
-//!   non-const counterpart as well. These traits have blanket implementations.
+//! - [`Semiring`], [`Ring`] and [`Field`] (along with their `Const*` variants) are structures where
+//!   each element is self-sufficient. Instances carry around all metadata necessary to perform
+//!   operations, so they can be used normally as e.g. `a + b`. Every `Const*` structure implements
+//!   its non-const counterpart as well. These traits have blanket implementations.
 //!
-//! - [`SemiringConfig`], [`RingConfig`] and [`FieldConfig`] are configurations
-//!   that carry the metadata needed to perform operations that the elements
-//!   themselves do not carry, e.g. a modulus only available at runtime. They're
-//!   used as `f.add(&a, &b)`.
+//! - [`SemiringConfig`], [`RingConfig`] and [`FieldConfig`] are configurations that carry the
+//!   metadata needed to perform operations that the elements themselves do not carry, e.g. a
+//!   modulus only available at runtime. They're used as `f.add(&a, &b)`.
 //!
-//! - Bridge between these and structures with self-sufficient elements is
-//!   [`FixedConfig`].
+//! - Bridge between these and structures with self-sufficient elements is [`FixedConfig`].
 
 #![no_std]
 extern crate alloc;

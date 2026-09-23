@@ -8,25 +8,22 @@
 //! modulus is an integer, but can be seamlessly extended to support extension
 //! fields in the future as well.
 //!
-//! - [`WithAssociatedInteger`] defines the associated integer type for a field,
-//!   which is used for exponents and order, as well as the modulus for base
-//!   fields.
+//! - [`WithAssociatedInteger`] defines the associated integer type for a field, which is used for
+//!   exponents and order, as well as the modulus for base fields.
 //!
-//! - [`WithExtensionDegree`] defines the field's degree over its prime subfield
-//!   (1 for base fields).
+//! - [`WithExtensionDegree`] defines the field's degree over its prime subfield (1 for base
+//!   fields).
 //!
-//! - Base field variants of fields are [`BaseField`], [`ConstBaseField`] and
-//!   [`BaseFieldConfig`] that define an integer `modulus`. They additionally
-//!   allow lifting elements to the associated integer type (and, on the config
-//!   side, projecting from it).
+//! - Base field variants of fields are [`BaseField`], [`ConstBaseField`] and [`BaseFieldConfig`]
+//!   that define an integer `modulus`. They additionally allow lifting elements to the associated
+//!   integer type (and, on the config side, projecting from it).
 //!
-//! - [`LiftElementWithConfig`] and [`ProjectElementWithConfig`] define how to
-//!   lift a field element to a chosen type and project it back to the field.
+//! - [`LiftElementWithConfig`] and [`ProjectElementWithConfig`] define how to lift a field element
+//!   to a chosen type and project it back to the field.
 //!
-//! - Lift/project counterpart for self-sufficient elements is asymmetric -
-//!   lifting is done via [`LiftElement`] (by reference, avoiding a copy of the
-//!   element) while projection is done with [`From`] (both by reference and by
-//!   value), e.g. `F::from(f.lift()) == f`.
+//! - Lift/project counterpart for self-sufficient elements is asymmetric - lifting is done via
+//!   [`LiftElement`] (by reference, avoiding a copy of the element) while projection is done with
+//!   [`From`] (both by reference and by value), e.g. `F::from(f.lift()) == f`.
 
 #[cfg(feature = "ark_ff")]
 pub mod ark_ff_field;
