@@ -1017,7 +1017,7 @@ mod tests {
 
     #[test]
     fn to_primitive_floats() {
-        // Floats: zero and small value
+        // Zero and small value
         assert_eq!(BigInt4::ZERO.to_f32(), Some(0.0));
         assert_eq!(BigInt4::ZERO.to_f64(), Some(0.0));
         assert_eq!(BigInt4::from(42_u64).to_f32(), Some(42.0));

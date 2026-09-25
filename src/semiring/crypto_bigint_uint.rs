@@ -15,8 +15,8 @@ use core::{
 };
 use crypto_bigint::{DivVartime, Integer, Limb, UintRef, Word};
 use num_traits::{
-    CheckedAdd, CheckedMul, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow, WrappingAdd,
-    WrappingMul, WrappingSub, Zero,
+    CheckedAdd, CheckedMul, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow, ToPrimitive,
+    WrappingAdd, WrappingMul, WrappingSub, Zero, float::FloatCore,
 };
 use pastey::paste;
 #[cfg(feature = "rand")]
@@ -116,12 +116,28 @@ impl<const LIMBS: usize> Uint<LIMBS> {
     pub const fn from_le_hex(hex: &str) -> Self {
         Self(crypto_bigint::Uint::<LIMBS>::from_le_hex(hex))
     }
+
+    /// Returns $(m, e)$ with $\mathsf{self} \approx m \cdot 2^e$, where $m$ is the top 64 bits of
+    /// `self` rounded to odd: its LSB is set if any truncated bit is set, so that rounding $m$
+    /// to a float with round-to-nearest-even is correct. Mirrors `num_bigint`'s
+    /// `high_bits_to_u64`.
+    fn float_mantissa_and_exponent(&self) -> (u64, u32) {
+        let Some(exponent) = self.0.bits_vartime().checked_sub(u64::BITS) else {
+            return (self.0.resize::<WORD_FACTOR>().into(), 0);
+        };
+        // exponent < bits <= BITS, so shifts don't panic
+        let high = self.0.shr_vartime(exponent);
+        let sticky = u64::from(high.shl_vartime(exponent) != self.0);
+        let mantissa = u64::from(high.resize::<WORD_FACTOR>()) | sticky;
+        (mantissa, exponent)
+    }
 }
 
 const fn checked_resize<const SRC: usize, const DST: usize>(
     num: &crypto_bigint::Uint<SRC>,
 ) -> Option<crypto_bigint::Uint<DST>> {
-    if SRC > DST {
+    // Compile-time check: widening or same-size resize is infallible
+    if const { SRC > DST } {
         let max = Uint::<DST>::MAX.0.resize();
         let cmp = num.cmp_vartime(&max);
         if cmp.is_gt() {
@@ -589,6 +605,53 @@ impl<const LIMBS: usize, const LIMBS2: usize> TryFrom<&crypto_bigint::Uint<LIMBS
     }
 }
 
+impl<const LIMBS: usize> ToPrimitive for Uint<LIMBS> {
+    #[inline]
+    fn to_i64(&self) -> Option<i64> {
+        self.to_u128()?.to_i64()
+    }
+
+    #[inline]
+    fn to_i128(&self) -> Option<i128> {
+        self.to_u128()?.to_i128()
+    }
+
+    #[inline]
+    fn to_u64(&self) -> Option<u64> {
+        self.to_u128()?.to_u64()
+    }
+
+    #[inline]
+    fn to_u128(&self) -> Option<u128> {
+        let value: U128 = self.checked_resize()?;
+        Some(value.0.into())
+    }
+
+    #[allow(clippy::cast_precision_loss)] // Rounding is intended
+    #[inline]
+    fn to_f32(&self) -> Option<f32> {
+        let (mantissa, exponent) = self.float_mantissa_and_exponent();
+        match i32::try_from(exponent) {
+            Ok(exponent) if exponent <= f32::MAX_EXP => {
+                Some(mantissa as f32 * FloatCore::powi(2.0_f32, exponent))
+            }
+            _ => Some(f32::INFINITY),
+        }
+    }
+
+    #[allow(clippy::cast_precision_loss)] // Rounding is intended
+    #[inline]
+    fn to_f64(&self) -> Option<f64> {
+        let (mantissa, exponent) = self.float_mantissa_and_exponent();
+        match i32::try_from(exponent) {
+            Ok(exponent) if exponent <= f64::MAX_EXP => {
+                Some(mantissa as f64 * FloatCore::powi(2.0_f64, exponent))
+            }
+            _ => Some(f64::INFINITY),
+        }
+    }
+}
+
 //
 // Wrapper
 //
@@ -896,6 +959,131 @@ mod tests {
 
         assert_eq!(Uint4::from(true), Uint4::ONE);
         assert_eq!(Uint4::from(Boolean::TRUE), Uint4::ONE);
+    }
+
+    #[test]
+    fn to_primitive_ints() {
+        // Zero
+        assert_eq!(Uint4::ZERO.to_u64(), Some(0));
+        assert_eq!(Uint4::ZERO.to_i64(), Some(0));
+        assert_eq!(Uint4::ZERO.to_u128(), Some(0));
+        assert_eq!(Uint4::ZERO.to_i128(), Some(0));
+
+        // Small value
+        let a = Uint4::from(42_u64);
+        assert_eq!(a.to_u64(), Some(42));
+        assert_eq!(a.to_i64(), Some(42));
+        assert_eq!(a.to_u128(), Some(42));
+        assert_eq!(a.to_i128(), Some(42));
+
+        // i64::MAX fits i64, i64::MAX + 1 does not
+        let a = Uint4::from(i64::MAX as u64);
+        assert_eq!(a.to_i64(), Some(i64::MAX));
+        let a = a + Uint4::ONE;
+        assert_eq!(a.to_i64(), None);
+        assert_eq!(a.to_u64(), Some(i64::MAX as u64 + 1));
+
+        // u64::MAX fits u64, but not i64
+        let a = Uint1::MAX;
+        assert_eq!(a.to_u64(), Some(u64::MAX));
+        assert_eq!(a.to_i64(), None);
+        assert_eq!(a.to_u128(), Some(u64::MAX as u128));
+        assert_eq!(a.to_i128(), Some(u64::MAX as i128));
+
+        // u64::MAX + 1 fits u128, but not u64
+        let a = Uint2::ONE << 64;
+        assert_eq!(a.to_u64(), None);
+        assert_eq!(a.to_i64(), None);
+        assert_eq!(a.to_u128(), Some(u64::MAX as u128 + 1));
+        assert_eq!(a.to_i128(), Some(u64::MAX as i128 + 1));
+
+        // i128::MAX fits i128, i128::MAX + 1 does not
+        let a = Uint4::from(i128::MAX as u128);
+        assert_eq!(a.to_i128(), Some(i128::MAX));
+        let a = a + Uint4::ONE;
+        assert_eq!(a.to_i128(), None);
+        assert_eq!(a.to_u128(), Some(i128::MAX as u128 + 1));
+
+        // u128::MAX fits u128, but not i128
+        let a = Uint2::MAX;
+        assert_eq!(a.to_u64(), None);
+        assert_eq!(a.to_i64(), None);
+        assert_eq!(a.to_u128(), Some(u128::MAX));
+        assert_eq!(a.to_i128(), None);
+
+        // Nonzero bits above 128 do not fit any primitive
+        for shift in [128, 192, 255] {
+            let a = Uint4::ONE << shift;
+            assert_eq!(a.to_u64(), None);
+            assert_eq!(a.to_i64(), None);
+            assert_eq!(a.to_u128(), None);
+            assert_eq!(a.to_i128(), None);
+        }
+        assert_eq!(Uint4::MAX.to_u128(), None);
+
+        // Narrower types go through the default impls
+        assert_eq!(Uint4::from(255_u64).to_u8(), Some(255));
+        assert_eq!(Uint4::from(256_u64).to_u8(), None);
+        assert_eq!(Uint4::from(128_u64).to_i8(), None);
+    }
+
+    #[test]
+    fn to_primitive_floats() {
+        // Zero and small value
+        assert_eq!(Uint4::ZERO.to_f32(), Some(0.0));
+        assert_eq!(Uint4::ZERO.to_f64(), Some(0.0));
+        assert_eq!(Uint4::from(42_u64).to_f32(), Some(42.0));
+        assert_eq!(Uint4::from(42_u64).to_f64(), Some(42.0));
+
+        // Ties round to even
+        let two_pow = |e| FloatCore::powi(2.0_f64, e);
+        let a = Uint4::from((1_u64 << 53) + 1);
+        assert_eq!(a.to_f64(), Some(two_pow(53)));
+        let a = (Uint4::ONE << 100) + (Uint4::ONE << 47);
+        assert_eq!(a.to_f64(), Some(two_pow(100)));
+
+        // Truncated bits beyond the top 64 break the tie
+        let a = a + Uint4::ONE;
+        assert_eq!(a.to_f64(), Some(two_pow(100) + two_pow(48)));
+        let a = (Uint4::ONE << 100) + (Uint4::ONE << 76) + Uint4::ONE;
+        assert_eq!(
+            a.to_f32(),
+            Some(FloatCore::powi(2.0_f32, 100) + FloatCore::powi(2.0_f32, 77))
+        );
+
+        // MAX is exact, anything rounding above it is infinity
+        let a = Uint2::from((1_u64 << 24) - 1) << 104;
+        assert_eq!(a.to_f32(), Some(f32::MAX));
+        assert_eq!(Uint2::MAX.to_f32(), Some(f32::INFINITY));
+        assert_eq!(Uint4::MAX.to_f32(), Some(f32::INFINITY));
+        let a = U1024::from((1_u64 << 53) - 1) << 971;
+        assert_eq!(a.to_f64(), Some(f64::MAX));
+        assert_eq!(U1024::MAX.to_f64(), Some(f64::INFINITY));
+        assert_eq!(U1280::MAX.to_f64(), Some(f64::INFINITY));
+
+        // 2^k and 2^k ± 1 round like a single IEEE operation across all bit lengths
+        fn assert_floats_correctly_rounded<const LIMBS: usize>() {
+            for k in 0..Uint::<LIMBS>::BITS {
+                let pow = Uint::<LIMBS>::ONE << k;
+                let pow_f32 = FloatCore::powi(2.0_f32, i32::try_from(k).unwrap());
+                let pow_f64 = FloatCore::powi(2.0_f64, i32::try_from(k).unwrap());
+                let top = Uint::<LIMBS>::BITS - k;
+                let max_f32 = FloatCore::powi(2.0_f32, i32::try_from(top).unwrap()) - 1.0;
+                let max_f64 = FloatCore::powi(2.0_f64, i32::try_from(top).unwrap()) - 1.0;
+                for (a, expected_f32, expected_f64) in [
+                    (pow, pow_f32, pow_f64),
+                    (pow + Uint::ONE, pow_f32 + 1.0, pow_f64 + 1.0),
+                    (Uint::<LIMBS>::MAX >> k, max_f32, max_f64),
+                ] {
+                    assert_eq!(a.to_f32(), Some(expected_f32), "{a}");
+                    assert_eq!(a.to_f64(), Some(expected_f64), "{a}");
+                }
+            }
+        }
+        assert_floats_correctly_rounded::<{ WORD_FACTOR }>();
+        assert_floats_correctly_rounded::<{ 2 * WORD_FACTOR }>();
+        assert_floats_correctly_rounded::<{ 4 * WORD_FACTOR }>();
+        assert_floats_correctly_rounded::<{ 20 * WORD_FACTOR }>();
     }
 
     #[test]
