@@ -1,6 +1,4 @@
-use crate::{
-    ConstBaseField, IntSemiring, LiftElement, WithAssociatedInteger, Wrapper, boolean::Boolean,
-};
+use crate::{ConstBaseField, LiftElement, WithAssociatedInteger, Wrapper, boolean::Boolean};
 use core::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     hash::Hash,
@@ -421,18 +419,6 @@ impl Bounded for F2 {
     #[inline(always)]
     fn max_value() -> Self {
         Self::ONE
-    }
-}
-
-impl IntSemiring for F2 {
-    #[inline(always)]
-    fn is_odd(&self) -> bool {
-        !self.is_zero()
-    }
-
-    #[inline(always)]
-    fn is_even(&self) -> bool {
-        self.is_zero()
     }
 }
 

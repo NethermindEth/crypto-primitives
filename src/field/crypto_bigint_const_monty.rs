@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
-    IntSemiring, LiftElement, Wrapper, boolean::Boolean, crypto_bigint_int::Int,
-    crypto_bigint_uint::Uint, helpers::crypto_bigint as helpers,
+    LiftElement, Wrapper, boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint,
+    helpers::crypto_bigint as helpers,
 };
 use core::{
     cmp::Ordering,
@@ -598,20 +598,6 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Bounded for ConstMontyField<Mod, LI
     #[inline(always)]
     fn max_value() -> Self {
         Self::MAX
-    }
-}
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> IntSemiring for ConstMontyField<Mod, LIMBS> {
-    #[inline(always)]
-    fn is_odd(&self) -> bool {
-        // There's no way to check that efficiently
-        self.lift().is_odd()
-    }
-
-    #[inline(always)]
-    fn is_even(&self) -> bool {
-        // There's no way to check that efficiently
-        self.lift().is_even()
     }
 }
 

@@ -35,7 +35,7 @@ use core::{
 };
 use num_traits::{
     Bounded, CheckedAdd, CheckedDiv, CheckedMul, CheckedRem, CheckedSub, ConstOne, ConstZero, One,
-    Pow, Zero,
+    Pow, ToPrimitive, Zero,
 };
 use pastey::paste;
 
@@ -80,7 +80,7 @@ define_blanket_trait! {
 }
 
 /// Semiring of integers.
-pub trait IntSemiring: Semiring + Ord {
+pub trait IntSemiring: Semiring + Ord + ToPrimitive {
     fn is_odd(&self) -> bool;
 
     fn is_even(&self) -> bool;
