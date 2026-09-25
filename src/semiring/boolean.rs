@@ -8,7 +8,7 @@ use core::{
 };
 use num_traits::{
     Bounded, CheckedAdd, CheckedMul, CheckedSub, ConstOne, ConstZero, FromBytes, One, Pow, ToBytes,
-    Zero,
+    ToPrimitive, Zero,
 };
 #[cfg(feature = "rand")]
 use rand::{distr::StandardUniform, prelude::*};
@@ -180,14 +180,88 @@ impl_from_boolean_for!(i8, i16, i32, i64, i128, isize);
 impl_from_boolean_for!(u8, u16, u32, u64, u128, usize);
 
 impl From<F2> for Boolean {
+    #[inline(always)]
     fn from(value: F2) -> Self {
         Self(*value)
     }
 }
 
 impl From<&F2> for Boolean {
+    #[inline(always)]
     fn from(value: &F2) -> Self {
         Self(**value)
+    }
+}
+
+impl ToPrimitive for Boolean {
+    #[inline(always)]
+    fn to_isize(&self) -> Option<isize> {
+        Some(self.const_widen())
+    }
+
+    #[inline(always)]
+    fn to_i8(&self) -> Option<i8> {
+        Some(self.const_widen())
+    }
+
+    #[inline(always)]
+    fn to_i16(&self) -> Option<i16> {
+        Some(self.const_widen())
+    }
+
+    #[inline(always)]
+    fn to_i32(&self) -> Option<i32> {
+        Some(self.const_widen())
+    }
+
+    #[inline(always)]
+    fn to_i64(&self) -> Option<i64> {
+        Some(self.const_widen())
+    }
+
+    #[inline(always)]
+    fn to_i128(&self) -> Option<i128> {
+        Some(self.const_widen())
+    }
+
+    #[inline(always)]
+    fn to_usize(&self) -> Option<usize> {
+        Some(self.const_widen())
+    }
+
+    #[inline(always)]
+    fn to_u8(&self) -> Option<u8> {
+        Some(self.const_widen())
+    }
+
+    #[inline(always)]
+    fn to_u16(&self) -> Option<u16> {
+        Some(self.const_widen())
+    }
+
+    #[inline(always)]
+    fn to_u32(&self) -> Option<u32> {
+        Some(self.const_widen())
+    }
+
+    #[inline(always)]
+    fn to_u64(&self) -> Option<u64> {
+        Some(self.const_widen())
+    }
+
+    #[inline(always)]
+    fn to_u128(&self) -> Option<u128> {
+        Some(self.const_widen())
+    }
+
+    #[inline(always)]
+    fn to_f32(&self) -> Option<f32> {
+        Some(self.const_widen())
+    }
+
+    #[inline(always)]
+    fn to_f64(&self) -> Option<f64> {
+        Some(self.const_widen())
     }
 }
 
@@ -207,6 +281,7 @@ impl Add for Boolean {
 impl<'a> Add<&'a Boolean> for Boolean {
     type Output = Self;
 
+    #[inline(always)]
     fn add(self, rhs: &'a Self) -> Self::Output {
         // In debug mode, panic on overflow (when both are true)
         debug_assert!(!(self.0 && rhs.0), "attempt to add with overflow");
@@ -228,6 +303,7 @@ impl Sub for Boolean {
 impl<'a> Sub<&'a Boolean> for Boolean {
     type Output = Self;
 
+    #[inline(always)]
     fn sub(self, rhs: &'a Self) -> Self::Output {
         // In debug mode, panic on underflow
         debug_assert!(self.0 || !rhs.0, "attempt to subtract with overflow");
