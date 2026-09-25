@@ -16,7 +16,7 @@ use core::{
 use crypto_bigint::{CheckedSub as CryptoCheckedSub, Integer, Word};
 use num_traits::{
     Bounded, CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedRem, CheckedSub, ConstOne,
-    ConstZero, Num, One, Pow, Signed, WrappingAdd, WrappingMul, WrappingSub, Zero,
+    ConstZero, Num, One, Pow, Signed, ToPrimitive, WrappingAdd, WrappingMul, WrappingSub, Zero,
 };
 use pastey::paste;
 #[cfg(feature = "rand")]
@@ -110,7 +110,7 @@ impl<const LIMBS: usize> Int<LIMBS> {
 const fn checked_resize<const SRC: usize, const DST: usize>(
     num: &crypto_bigint::Int<SRC>,
 ) -> Option<crypto_bigint::Int<DST>> {
-    if SRC > DST {
+    if const { SRC > DST } {
         let max = Int::<DST>::MAX.0.resize();
         let cmp = num.cmp_vartime(&max);
         if cmp.is_gt() {
@@ -671,6 +671,46 @@ impl<const LIMBS: usize, const LIMBS2: usize> TryFrom<&crypto_bigint::Uint<LIMBS
     }
 }
 
+impl<const LIMBS: usize> ToPrimitive for Int<LIMBS> {
+    #[inline]
+    fn to_i64(&self) -> Option<i64> {
+        self.to_i128()?.to_i64()
+    }
+
+    #[inline]
+    fn to_i128(&self) -> Option<i128> {
+        let value: I128 = self.checked_resize()?;
+        Some(value.0.into())
+    }
+
+    #[inline]
+    fn to_u64(&self) -> Option<u64> {
+        self.to_u128()?.to_u64()
+    }
+
+    #[inline]
+    fn to_u128(&self) -> Option<u128> {
+        if self.is_negative() {
+            return None;
+        }
+        self.as_uint().to_u128()
+    }
+
+    #[inline]
+    fn to_f32(&self) -> Option<f32> {
+        let (abs, is_negative) = self.abs_sign();
+        let abs = abs.to_f32()?;
+        Some(if is_negative { -abs } else { abs })
+    }
+
+    #[inline]
+    fn to_f64(&self) -> Option<f64> {
+        let (abs, is_negative) = self.abs_sign();
+        let abs = abs.to_f64()?;
+        Some(if is_negative { -abs } else { abs })
+    }
+}
+
 //
 // Wrapper
 //
@@ -1028,6 +1068,180 @@ mod tests {
 
         assert_eq!(Int4::from(true), Int4::ONE);
         assert_eq!(Int4::from(Boolean::TRUE), Int4::ONE);
+    }
+
+    #[test]
+    fn to_primitive_ints() {
+        // Zero
+        assert_eq!(Int4::ZERO.to_u64(), Some(0));
+        assert_eq!(Int4::ZERO.to_i64(), Some(0));
+        assert_eq!(Int4::ZERO.to_u128(), Some(0));
+        assert_eq!(Int4::ZERO.to_i128(), Some(0));
+
+        // Small values: negatives fit only signed types
+        let a = Int4::from(42_i64);
+        assert_eq!(a.to_u64(), Some(42));
+        assert_eq!(a.to_i64(), Some(42));
+        assert_eq!(a.to_u128(), Some(42));
+        assert_eq!(a.to_i128(), Some(42));
+        let a = Int4::MINUS_ONE;
+        assert_eq!(a.to_u64(), None);
+        assert_eq!(a.to_i64(), Some(-1));
+        assert_eq!(a.to_u128(), None);
+        assert_eq!(a.to_i128(), Some(-1));
+
+        // i64::MAX fits i64, i64::MAX + 1 does not
+        let a = Int4::from(i64::MAX);
+        assert_eq!(a.to_i64(), Some(i64::MAX));
+        let a = a + Int4::ONE;
+        assert_eq!(a.to_i64(), None);
+        assert_eq!(a.to_u64(), Some(i64::MAX as u64 + 1));
+
+        // i64::MIN fits i64, i64::MIN - 1 does not
+        let a = Int4::from(i64::MIN);
+        assert_eq!(a.to_i64(), Some(i64::MIN));
+        let a = a - Int4::ONE;
+        assert_eq!(a.to_i64(), None);
+        assert_eq!(a.to_i128(), Some(i64::MIN as i128 - 1));
+
+        // Same-size and narrower types are always in range of signed ones
+        assert_eq!(Int1::MAX.to_i64(), Some(i64::MAX));
+        assert_eq!(Int1::MIN.to_i64(), Some(i64::MIN));
+        assert_eq!(Int1::MIN.to_i128(), Some(i64::MIN as i128));
+        assert_eq!(Int2::MAX.to_i128(), Some(i128::MAX));
+        assert_eq!(Int2::MIN.to_i128(), Some(i128::MIN));
+
+        // Negatives of same-size and narrower types still do not fit unsigned ones
+        assert_eq!(Int1::MINUS_ONE.to_u64(), None);
+        assert_eq!(Int1::MIN.to_u128(), None);
+        assert_eq!(Int2::MINUS_ONE.to_u128(), None);
+        assert_eq!(Int2::MIN.to_u64(), None);
+
+        // u64::MAX fits u64, but not i64
+        let a = Int4::from(u64::MAX);
+        assert_eq!(a.to_u64(), Some(u64::MAX));
+        assert_eq!(a.to_i64(), None);
+        assert_eq!(a.to_u128(), Some(u64::MAX as u128));
+        assert_eq!(a.to_i128(), Some(u64::MAX as i128));
+
+        // i128::MAX fits i128, i128::MAX + 1 fits only u128
+        let a = Int4::from(i128::MAX);
+        assert_eq!(a.to_i128(), Some(i128::MAX));
+        let a = a + Int4::ONE;
+        assert_eq!(a.to_i128(), None);
+        assert_eq!(a.to_u128(), Some(i128::MAX as u128 + 1));
+
+        // i128::MIN fits i128, i128::MIN - 1 does not
+        let a = Int4::from(i128::MIN);
+        assert_eq!(a.to_i128(), Some(i128::MIN));
+        assert_eq!(a.to_u128(), None);
+        let a = a - Int4::ONE;
+        assert_eq!(a.to_i128(), None);
+        assert_eq!(a.to_i64(), None);
+
+        // u128::MAX fits u128, but not i128
+        let a = (Int4::ONE << 128) - Int4::ONE;
+        assert_eq!(a.to_u64(), None);
+        assert_eq!(a.to_i64(), None);
+        assert_eq!(a.to_u128(), Some(u128::MAX));
+        assert_eq!(a.to_i128(), None);
+
+        // Magnitudes above 128 bits do not fit any primitive, either sign
+        for a in [
+            Int4::ONE << 128,
+            -(Int4::ONE << 128),
+            Int4::ONE << 254,
+            Int4::MAX,
+            Int4::MIN,
+        ] {
+            assert_eq!(a.to_u64(), None);
+            assert_eq!(a.to_i64(), None);
+            assert_eq!(a.to_u128(), None);
+            assert_eq!(a.to_i128(), None);
+        }
+
+        // Narrower types go through the default impls
+        assert_eq!(Int4::from(127_i64).to_i8(), Some(127));
+        assert_eq!(Int4::from(128_i64).to_i8(), None);
+        assert_eq!(Int4::from(-128_i64).to_i8(), Some(-128));
+        assert_eq!(Int4::from(-129_i64).to_i8(), None);
+        assert_eq!(Int4::from(255_i64).to_u8(), Some(255));
+        assert_eq!(Int4::from(-1_i64).to_u8(), None);
+    }
+
+    #[test]
+    fn to_primitive_floats() {
+        use num_traits::float::FloatCore;
+
+        // Zero and small values
+        assert_eq!(Int4::ZERO.to_f32(), Some(0.0));
+        assert_eq!(Int4::ZERO.to_f64(), Some(0.0));
+        assert_eq!(Int4::from(42_i64).to_f32(), Some(42.0));
+        assert_eq!(Int4::from(42_i64).to_f64(), Some(42.0));
+        assert_eq!(Int4::from(-42_i64).to_f32(), Some(-42.0));
+        assert_eq!(Int4::from(-42_i64).to_f64(), Some(-42.0));
+
+        // Ties round to even, symmetrically for negatives
+        let two_pow = |e| FloatCore::powi(2.0_f64, e);
+        let a = Int4::from((1_i64 << 53) + 1);
+        assert_eq!(a.to_f64(), Some(two_pow(53)));
+        assert_eq!((-a).to_f64(), Some(-two_pow(53)));
+        let a = (Int4::ONE << 100) + (Int4::ONE << 47);
+        assert_eq!(a.to_f64(), Some(two_pow(100)));
+        assert_eq!((-a).to_f64(), Some(-two_pow(100)));
+
+        // Truncated bits beyond the top 64 break the tie
+        let a = a + Int4::ONE;
+        assert_eq!(a.to_f64(), Some(two_pow(100) + two_pow(48)));
+        assert_eq!((-a).to_f64(), Some(-(two_pow(100) + two_pow(48))));
+        let a = (Int4::ONE << 100) + (Int4::ONE << 76) + Int4::ONE;
+        let expected = FloatCore::powi(2.0_f32, 100) + FloatCore::powi(2.0_f32, 77);
+        assert_eq!(a.to_f32(), Some(expected));
+        assert_eq!((-a).to_f32(), Some(-expected));
+
+        // MAX is exact, anything rounding above it is infinity of the same sign
+        let a = Int4::from((1_i64 << 24) - 1) << 104;
+        assert_eq!(a.to_f32(), Some(f32::MAX));
+        assert_eq!((-a).to_f32(), Some(f32::MIN));
+        assert_eq!(Int4::MAX.to_f32(), Some(f32::INFINITY));
+        assert_eq!(Int4::MIN.to_f32(), Some(f32::NEG_INFINITY));
+        let a = I1280::from((1_i64 << 53) - 1) << 971;
+        assert_eq!(a.to_f64(), Some(f64::MAX));
+        assert_eq!((-a).to_f64(), Some(f64::MIN));
+        let a = (I1280::ONE << 1024) - I1280::ONE;
+        assert_eq!(a.to_f64(), Some(f64::INFINITY));
+        assert_eq!((-a).to_f64(), Some(f64::NEG_INFINITY));
+        assert_eq!(I1280::MAX.to_f64(), Some(f64::INFINITY));
+        assert_eq!(I1280::MIN.to_f64(), Some(f64::NEG_INFINITY));
+
+        // 2^k and 2^k ± 1 round like a single IEEE operation across all bit lengths, either sign
+        fn assert_floats_correctly_rounded<const LIMBS: usize>() {
+            let bits = Int::<LIMBS>::BITS;
+            for k in 0..bits - 1 {
+                let pow = Int::<LIMBS>::ONE << k;
+                let pow_f32 = FloatCore::powi(2.0_f32, i32::try_from(k).unwrap());
+                let pow_f64 = FloatCore::powi(2.0_f64, i32::try_from(k).unwrap());
+                let top = bits - 1 - k;
+                let max_f32 = FloatCore::powi(2.0_f32, i32::try_from(top).unwrap()) - 1.0;
+                let max_f64 = FloatCore::powi(2.0_f64, i32::try_from(top).unwrap()) - 1.0;
+                for (a, expected_f32, expected_f64) in [
+                    (pow, pow_f32, pow_f64),
+                    (pow + Int::ONE, pow_f32 + 1.0, pow_f64 + 1.0),
+                    (Int::<LIMBS>::MAX >> k, max_f32, max_f64),
+                ] {
+                    assert_eq!(a.to_f32(), Some(expected_f32), "{a}");
+                    assert_eq!(a.to_f64(), Some(expected_f64), "{a}");
+                    assert_eq!((-a).to_f32(), Some(-expected_f32), "{a}");
+                    assert_eq!((-a).to_f64(), Some(-expected_f64), "{a}");
+                }
+            }
+            let min = -FloatCore::powi(2.0_f64, i32::try_from(bits - 1).unwrap());
+            assert_eq!(Int::<LIMBS>::MIN.to_f64(), Some(min));
+        }
+        assert_floats_correctly_rounded::<{ WORD_FACTOR }>();
+        assert_floats_correctly_rounded::<{ 2 * WORD_FACTOR }>();
+        assert_floats_correctly_rounded::<{ 4 * WORD_FACTOR }>();
+        assert_floats_correctly_rounded::<{ 20 * WORD_FACTOR }>();
     }
 
     #[test]
