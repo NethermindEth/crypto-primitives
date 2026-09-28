@@ -1,5 +1,9 @@
 use super::*;
-use crate::{Wrapper, boolean::Boolean, helpers::pow_via_repeated_squaring};
+use crate::{
+    Wrapper,
+    boolean::Boolean,
+    helpers::{ToFloatHelper, decompose_truncated_f64, impl_to_float, pow_via_repeated_squaring},
+};
 #[cfg(feature = "serde")]
 use alloc::format;
 use alloc::vec::Vec;
@@ -97,21 +101,6 @@ impl<const N: usize> BigInt<N> {
     fn checked_sub_assign_helper(&mut self, other: &Self) -> Result<(), ()> {
         let overflow = self.0.sub_with_borrow(&other.0);
         if overflow { Err(()) } else { Ok(()) }
-    }
-
-    /// Returns $(m, e)$ with $\mathsf{self} \approx m \cdot 2^e$, where $m$ is the top 64 bits of
-    /// `self` rounded to odd: its LSB is set if any truncated bit is set, so that rounding $m$
-    /// to a float with round-to-nearest-even is correct. Mirrors `num_bigint`'s
-    /// `high_bits_to_u64`.
-    #[allow(clippy::arithmetic_side_effects)] // Shifts are in range and saturate anyway
-    fn float_mantissa_and_exponent(&self) -> (u64, u32) {
-        let Some(exponent) = self.0.num_bits().checked_sub(u64::BITS) else {
-            return (self.as_limbs().first().copied().unwrap_or(0), 0);
-        };
-        let high = *self >> exponent;
-        let sticky = u64::from(high << exponent != *self);
-        let mantissa = high.as_limbs().first().copied().unwrap_or(0) | sticky;
-        (mantissa, exponent)
     }
 }
 
@@ -519,7 +508,22 @@ impl<const N: usize> TryFrom<num_bigint::BigUint> for BigInt<N> {
     }
 }
 
+impl<const N: usize> ToFloatHelper for BigInt<N> {
+    #[allow(clippy::arithmetic_side_effects)] // Shifts are in range and saturate anyway
+    fn float_mantissa_and_exponent(&self) -> (u64, u32) {
+        let Some(exponent) = self.0.num_bits().checked_sub(u64::BITS) else {
+            return (self.as_limbs().first().copied().unwrap_or(0), 0);
+        };
+        let high = *self >> exponent;
+        let sticky = u64::from(high << exponent != *self);
+        let mantissa = high.as_limbs().first().copied().unwrap_or(0) | sticky;
+        (mantissa, exponent)
+    }
+}
+
 impl<const N: usize> ToPrimitive for BigInt<N> {
+    impl_to_float!();
+
     #[inline]
     fn to_i64(&self) -> Option<i64> {
         self.to_u128()?.to_i64()
@@ -544,30 +548,6 @@ impl<const N: usize> ToPrimitive for BigInt<N> {
         let lo = limbs.first().copied().unwrap_or(0);
         let hi = limbs.get(1).copied().unwrap_or(0);
         Some(u128::from(lo) | (u128::from(hi) << 64))
-    }
-
-    #[allow(clippy::cast_precision_loss)] // Rounding is intended
-    #[inline]
-    fn to_f32(&self) -> Option<f32> {
-        let (mantissa, exponent) = self.float_mantissa_and_exponent();
-        match i32::try_from(exponent) {
-            Ok(exponent) if exponent <= f32::MAX_EXP => {
-                Some(mantissa as f32 * FloatCore::powi(2.0_f32, exponent))
-            }
-            _ => Some(f32::INFINITY),
-        }
-    }
-
-    #[allow(clippy::cast_precision_loss)] // Rounding is intended
-    #[inline]
-    fn to_f64(&self) -> Option<f64> {
-        let (mantissa, exponent) = self.float_mantissa_and_exponent();
-        match i32::try_from(exponent) {
-            Ok(exponent) if exponent <= f64::MAX_EXP => {
-                Some(mantissa as f64 * FloatCore::powi(2.0_f64, exponent))
-            }
-            _ => Some(f64::INFINITY),
-        }
     }
 }
 
@@ -605,22 +585,7 @@ impl<const N: usize> FromPrimitive for BigInt<N> {
     #[allow(clippy::arithmetic_side_effects)] // Shift is in range
     #[inline]
     fn from_f64(n: f64) -> Option<Self> {
-        if !n.is_finite() {
-            return None;
-        }
-        // Truncate toward zero, matching `as` casts and `num_bigint`
-        let n = FloatCore::trunc(n);
-        if n.is_zero() {
-            return Some(Self::ZERO);
-        }
-        let (mantissa, exponent, sign) = FloatCore::integer_decode(n);
-        if sign < 0 {
-            return None;
-        }
-        let Ok(exponent) = u32::try_from(exponent) else {
-            // `n` is an integer, so the shifted-out bits are zero
-            return Self::from_u64(mantissa >> exponent.unsigned_abs());
-        };
+        let (mantissa, exponent) = decompose_truncated_f64(n)?;
         let mantissa = Self::from_u64(mantissa)?;
         if mantissa.0.num_bits().checked_add(exponent)? > Self::BITS {
             return None;

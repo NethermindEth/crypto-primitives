@@ -459,11 +459,13 @@ impl ToBytes for Boolean {
 impl FromBytes for Boolean {
     type Bytes = [u8; 1];
 
+    /// Panics on anything other than 0 and 1
     #[inline(always)]
     fn from_be_bytes(bytes: &Self::Bytes) -> Self {
         Self::from_le_bytes(bytes)
     }
 
+    /// Panics on anything other than 0 and 1
     #[inline(always)]
     fn from_le_bytes(bytes: &Self::Bytes) -> Self {
         Self::from_u8(bytes[0]).expect("Invalid byte value!")

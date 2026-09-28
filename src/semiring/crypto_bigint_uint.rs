@@ -1,6 +1,9 @@
 use super::*;
 use crate::{
-    Wrapper, boolean::Boolean, crypto_bigint_int::Int, helpers::pow_via_repeated_squaring,
+    Wrapper,
+    boolean::Boolean,
+    crypto_bigint_int::Int,
+    helpers::{decompose_truncated_f64, pow_via_repeated_squaring},
 };
 use core::{
     cmp::Ordering,
@@ -115,21 +118,6 @@ impl<const LIMBS: usize> Uint<LIMBS> {
     /// See [crypto_bigint::Uint::from_le_hex]
     pub const fn from_le_hex(hex: &str) -> Self {
         Self(crypto_bigint::Uint::<LIMBS>::from_le_hex(hex))
-    }
-
-    /// Returns $(m, e)$ with $\mathsf{self} \approx m \cdot 2^e$, where $m$ is the top 64 bits of
-    /// `self` rounded to odd: its LSB is set if any truncated bit is set, so that rounding $m$
-    /// to a float with round-to-nearest-even is correct. Mirrors `num_bigint`'s
-    /// `high_bits_to_u64`.
-    fn float_mantissa_and_exponent(&self) -> (u64, u32) {
-        let Some(exponent) = self.0.bits_vartime().checked_sub(u64::BITS) else {
-            return (self.0.resize::<WORD_FACTOR>().into(), 0);
-        };
-        // exponent < bits <= BITS, so shifts don't panic
-        let high = self.0.shr_vartime(exponent);
-        let sticky = u64::from(high.shl_vartime(exponent) != self.0);
-        let mantissa = u64::from(high.resize::<WORD_FACTOR>()) | sticky;
-        (mantissa, exponent)
     }
 }
 
@@ -605,7 +593,22 @@ impl<const LIMBS: usize, const LIMBS2: usize> TryFrom<&crypto_bigint::Uint<LIMBS
     }
 }
 
+impl<const LIMBS: usize> ToFloatHelper for Uint<LIMBS> {
+    fn float_mantissa_and_exponent(&self) -> (u64, u32) {
+        let Some(exponent) = self.0.bits_vartime().checked_sub(u64::BITS) else {
+            return (self.0.resize::<WORD_FACTOR>().into(), 0);
+        };
+        // exponent < bits <= BITS, so shifts don't panic
+        let high = self.0.shr_vartime(exponent);
+        let sticky = u64::from(high.shl_vartime(exponent) != self.0);
+        let mantissa = u64::from(high.resize::<WORD_FACTOR>()) | sticky;
+        (mantissa, exponent)
+    }
+}
+
 impl<const LIMBS: usize> ToPrimitive for Uint<LIMBS> {
+    impl_to_float!();
+
     #[inline]
     fn to_i64(&self) -> Option<i64> {
         self.to_u128()?.to_i64()
@@ -625,30 +628,6 @@ impl<const LIMBS: usize> ToPrimitive for Uint<LIMBS> {
     fn to_u128(&self) -> Option<u128> {
         let value: U128 = self.checked_resize()?;
         Some(value.0.into())
-    }
-
-    #[allow(clippy::cast_precision_loss)] // Rounding is intended
-    #[inline]
-    fn to_f32(&self) -> Option<f32> {
-        let (mantissa, exponent) = self.float_mantissa_and_exponent();
-        match i32::try_from(exponent) {
-            Ok(exponent) if exponent <= f32::MAX_EXP => {
-                Some(mantissa as f32 * FloatCore::powi(2.0_f32, exponent))
-            }
-            _ => Some(f32::INFINITY),
-        }
-    }
-
-    #[allow(clippy::cast_precision_loss)] // Rounding is intended
-    #[inline]
-    fn to_f64(&self) -> Option<f64> {
-        let (mantissa, exponent) = self.float_mantissa_and_exponent();
-        match i32::try_from(exponent) {
-            Ok(exponent) if exponent <= f64::MAX_EXP => {
-                Some(mantissa as f64 * FloatCore::powi(2.0_f64, exponent))
-            }
-            _ => Some(f64::INFINITY),
-        }
     }
 }
 
@@ -676,22 +655,7 @@ impl<const LIMBS: usize> FromPrimitive for Uint<LIMBS> {
 
     #[inline]
     fn from_f64(n: f64) -> Option<Self> {
-        if !n.is_finite() {
-            return None;
-        }
-        // Truncate toward zero, matching `as` casts and `num_bigint`
-        let n = FloatCore::trunc(n);
-        if n.is_zero() {
-            return Some(Self::ZERO);
-        }
-        let (mantissa, exponent, sign) = FloatCore::integer_decode(n);
-        if sign < 0 {
-            return None;
-        }
-        let Ok(exponent) = u32::try_from(exponent) else {
-            // `n` is an integer, so the shifted-out bits are zero
-            return U64::from_u64(mantissa >> exponent.unsigned_abs()).checked_resize();
-        };
+        let (mantissa, exponent) = decompose_truncated_f64(n)?;
         let mantissa: Self = U64::from_u64(mantissa).checked_resize()?;
         if mantissa.0.bits_vartime().checked_add(exponent)? > Self::BITS {
             return None;
@@ -856,7 +820,8 @@ impl<const LIMBS: usize> crypto_bigint::Constants for Uint<LIMBS> {
 // Predefined uints of various sizes for convenience
 //
 
-use crate::helpers::crypto_bigint::WORD_FACTOR;
+use crate::helpers::{ToFloatHelper, crypto_bigint::WORD_FACTOR, impl_to_float};
+
 pub type U64 = Uint<{ WORD_FACTOR }>;
 pub type U128 = Uint<{ 2 * WORD_FACTOR }>;
 pub type U192 = Uint<{ 3 * WORD_FACTOR }>;
