@@ -16,8 +16,8 @@ use crypto_bigint::{
     BitOps, ConcatenatingMul, DivVartime, Integer, Limb, Resize, U64, U128, UintRef, Word,
 };
 use num_traits::{
-    CheckedAdd, CheckedMul, CheckedRem, CheckedSub, One, Pow, ToPrimitive, WrappingAdd,
-    WrappingMul, WrappingSub, Zero, float::FloatCore,
+    CheckedAdd, CheckedMul, CheckedRem, CheckedSub, FromPrimitive, One, Pow, ToPrimitive,
+    WrappingAdd, WrappingMul, WrappingSub, Zero, float::FloatCore,
 };
 use pastey::paste;
 #[cfg(feature = "rand")]
@@ -730,6 +730,55 @@ impl ToPrimitive for BoxedUint {
     }
 }
 
+// Integers keep the precision of the matching `From` impl, floats get the minimal one
+impl FromPrimitive for BoxedUint {
+    #[inline]
+    fn from_i64(n: i64) -> Option<Self> {
+        u64::try_from(n).ok().map(Self::from)
+    }
+
+    #[inline]
+    fn from_i128(n: i128) -> Option<Self> {
+        u128::try_from(n).ok().map(Self::from)
+    }
+
+    #[inline]
+    fn from_u64(n: u64) -> Option<Self> {
+        Some(Self::from(n))
+    }
+
+    #[inline]
+    fn from_u128(n: u128) -> Option<Self> {
+        Some(Self::from(n))
+    }
+
+    #[inline]
+    fn from_f64(n: f64) -> Option<Self> {
+        if !n.is_finite() {
+            return None;
+        }
+        // Truncate toward zero, matching `as` casts and `num_bigint`
+        let n = FloatCore::trunc(n);
+        if n.is_zero() {
+            return Some(Self::zero());
+        }
+        let (mantissa, exponent, sign) = FloatCore::integer_decode(n);
+        if sign < 0 {
+            return None;
+        }
+        let Ok(exponent) = u32::try_from(exponent) else {
+            // `n` is an integer, so the shifted-out bits are zero
+            return Self::from_u64(mantissa >> exponent.unsigned_abs());
+        };
+        // Widen to the minimal precision holding `mantissa << exponent`, then shift in place
+        let value = crypto_bigint::BoxedUint::from(mantissa);
+        let bits = value.bits_vartime().checked_add(exponent)?;
+        let mut value = value.resize_unchecked(bits);
+        value.unbounded_shl_assign_vartime(exponent);
+        Some(Self(value))
+    }
+}
+
 //
 // Wrapper
 //
@@ -1132,6 +1181,134 @@ mod tests {
                     assert_eq!(a.to_f32(), Some(expected_f32), "{a}");
                     assert_eq!(a.to_f64(), Some(expected_f64), "{a}");
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn from_primitive_ints() {
+        // Zero and small value
+        assert_eq!(BoxedUint::from_u64(0), Some(BoxedUint::zero()));
+        assert_eq!(BoxedUint::from_i64(0), Some(BoxedUint::zero()));
+        assert_eq!(BoxedUint::from_u128(0), Some(BoxedUint::zero()));
+        assert_eq!(BoxedUint::from_i128(0), Some(BoxedUint::zero()));
+        let a = BoxedUint::from(42_u64);
+        assert_eq!(BoxedUint::from_u64(42), Some(a.clone()));
+        assert_eq!(BoxedUint::from_i64(42), Some(a.clone()));
+        assert_eq!(BoxedUint::from_u128(42), Some(a.clone()));
+        assert_eq!(BoxedUint::from_i128(42), Some(a));
+
+        // Negative values do not fit
+        assert_eq!(BoxedUint::from_i64(-1), None);
+        assert_eq!(BoxedUint::from_i64(i64::MIN), None);
+        assert_eq!(BoxedUint::from_i128(-1), None);
+        assert_eq!(BoxedUint::from_i128(i128::MIN), None);
+
+        // MAX values fit, since precision is not bounded
+        let a = BoxedUint::from(i64::MAX as u64);
+        assert_eq!(BoxedUint::from_i64(i64::MAX), Some(a));
+        assert_eq!(BoxedUint::from_u64(u64::MAX), Some(max(1)));
+        let a = BoxedUint::from(i128::MAX as u128);
+        assert_eq!(BoxedUint::from_i128(i128::MAX), Some(a));
+        assert_eq!(BoxedUint::from_u128(u128::MAX), Some(max(2)));
+        let n = u128::from(u64::MAX) + 1;
+        let i = i128::from(u64::MAX) + 1;
+        let a = BoxedUint::one_with_precision(128) << 64;
+        assert_eq!(BoxedUint::from_u128(n), Some(a.clone()));
+        assert_eq!(BoxedUint::from_i128(i), Some(a));
+
+        // Precision matches the `From` impls
+        assert_eq!(BoxedUint::from_u64(1).unwrap().bits_precision(), 64);
+        assert_eq!(BoxedUint::from_i64(1).unwrap().bits_precision(), 64);
+        assert_eq!(BoxedUint::from_u128(1).unwrap().bits_precision(), 128);
+        assert_eq!(BoxedUint::from_i128(1).unwrap().bits_precision(), 128);
+
+        // Round trip through `ToPrimitive`
+        for n in [0, 1, n - 1, n, i128::MAX as u128, u128::MAX] {
+            assert_eq!(BoxedUint::from_u128(n).unwrap().to_u128(), Some(n));
+        }
+
+        // Narrower types go through the default impls
+        let a = BoxedUint::from(u32::MAX);
+        assert_eq!(BoxedUint::from_u32(u32::MAX), Some(a));
+        assert_eq!(BoxedUint::from_i32(-1), None);
+        assert_eq!(BoxedUint::from_usize(42), Some(BoxedUint::from(42_u64)));
+        assert_eq!(BoxedUint::from_isize(-1), None);
+    }
+
+    #[test]
+    fn from_primitive_floats() {
+        // Zero, including negative zero
+        assert_eq!(BoxedUint::from_f64(0.0), Some(BoxedUint::zero()));
+        assert_eq!(BoxedUint::from_f64(-0.0), Some(BoxedUint::zero()));
+        assert_eq!(BoxedUint::from_f32(0.0), Some(BoxedUint::zero()));
+
+        // Fractions truncate toward zero, like `as` casts
+        assert_eq!(BoxedUint::from_f64(42.9), Some(BoxedUint::from(42_u64)));
+        assert_eq!(BoxedUint::from_f64(0.9), Some(BoxedUint::zero()));
+        assert_eq!(BoxedUint::from_f64(-0.9), Some(BoxedUint::zero()));
+        assert_eq!(
+            BoxedUint::from_f64(f64::MIN_POSITIVE),
+            Some(BoxedUint::zero())
+        );
+        assert_eq!(BoxedUint::from_f32(1.5), Some(BoxedUint::one()));
+
+        // Negative values, NaN and infinities do not fit
+        assert_eq!(BoxedUint::from_f64(-1.0), None);
+        assert_eq!(BoxedUint::from_f64(f64::MIN), None);
+        assert_eq!(BoxedUint::from_f64(f64::NAN), None);
+        assert_eq!(BoxedUint::from_f64(f64::INFINITY), None);
+        assert_eq!(BoxedUint::from_f64(f64::NEG_INFINITY), None);
+        assert_eq!(BoxedUint::from_f32(f32::NAN), None);
+
+        // MAX values fit, since precision is not bounded
+        let a = BoxedUint::from((1_u64 << 24) - 1).resize(128) << 104;
+        assert_eq!(BoxedUint::from_f32(f32::MAX), Some(a));
+        let a = BoxedUint::from((1_u64 << 53) - 1).resize(1024) << 971;
+        assert_eq!(BoxedUint::from_f64(f64::MAX), Some(a));
+
+        // Precision is the minimal one holding the value, but no less than `from_u64`'s
+        let two_pow = |e| FloatCore::powi(2.0_f64, e);
+        assert_eq!(BoxedUint::from_f64(42.0).unwrap().bits_precision(), 64);
+        assert_eq!(
+            BoxedUint::from_f64(two_pow(63)).unwrap().bits_precision(),
+            64
+        );
+        assert_eq!(
+            BoxedUint::from_f64(two_pow(64)).unwrap().bits_precision(),
+            128
+        );
+        assert_eq!(BoxedUint::from_f32(f32::MAX).unwrap().bits_precision(), 128);
+        assert_eq!(
+            BoxedUint::from_f64(f64::MAX).unwrap().bits_precision(),
+            1024
+        );
+
+        // Exact values, precision and round trip through `ToPrimitive` across all exponents
+        let one = BoxedUint::one_with_precision(1280);
+        for e in 0..f64::MAX_EXP {
+            let k = e.unsigned_abs();
+            let pow = two_pow(e);
+            let exact = one.clone() << k;
+            // Truncated neighbours of 2^k and 2^(k + 1): f64 spacing in [2^k, 2^(k + 1)) is
+            // 2^(k - 52)
+            let (next, prev) = match k.checked_sub(52) {
+                Some(s) => (
+                    exact.clone() + (one.clone() << s),
+                    (exact.clone() << 1) - (one.clone() << s),
+                ),
+                None => (exact.clone(), (exact.clone() << 1) - &one),
+            };
+            for (n, expected) in [
+                (pow, exact),
+                (pow * (1.0 + f64::EPSILON), next),
+                (pow * (2.0 - f64::EPSILON), prev),
+            ] {
+                let a = BoxedUint::from_f64(n).unwrap();
+                assert_eq!(a, expected, "{n}");
+                let bits = a.bits().next_multiple_of(Limb::BITS).max(64);
+                assert_eq!(a.bits_precision(), bits, "{n}");
+                assert_eq!(a.to_f64(), Some(FloatCore::trunc(n)), "{n}");
             }
         }
     }
