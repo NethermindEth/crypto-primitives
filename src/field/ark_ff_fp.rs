@@ -1,8 +1,7 @@
 use super::*;
-use crate::{IntSemiring, LiftElement, Wrapper, ark_ff_bigint::BigInt, boolean::Boolean};
+use crate::{LiftElement, Wrapper, ark_ff_bigint::BigInt, boolean::Boolean};
 use ark_ff::{
-    AdditiveGroup, BigInteger, FftField, FpConfig, LegendreSymbol, MontBackend, MontConfig,
-    SqrtPrecomputation,
+    AdditiveGroup, FftField, FpConfig, LegendreSymbol, MontBackend, MontConfig, SqrtPrecomputation,
     fields::{Field as ArkWrappedField, Fp as ArkWrappedFp, PrimeField as ArkPrimeField},
 };
 use ark_serialize::{
@@ -530,20 +529,6 @@ impl<M: MontConfig<N>, const N: usize> Bounded for Fp<MontBackend<M, N>, N> {
     #[inline(always)]
     fn max_value() -> Self {
         Self::MAX
-    }
-}
-
-impl<P: FpConfig<N>, const N: usize> IntSemiring for Fp<P, N> {
-    #[inline(always)]
-    fn is_odd(&self) -> bool {
-        // There's no way to check that efficiently
-        self.0.into_bigint().is_odd()
-    }
-
-    #[inline(always)]
-    fn is_even(&self) -> bool {
-        // There's no way to check that efficiently
-        self.0.into_bigint().is_even()
     }
 }
 

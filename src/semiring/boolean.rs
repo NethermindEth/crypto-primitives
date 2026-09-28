@@ -7,9 +7,10 @@ use core::{
     str::FromStr,
 };
 use num_traits::{
-    Bounded, CheckedAdd, CheckedMul, CheckedSub, ConstOne, ConstZero, FromBytes, One, Pow, ToBytes,
-    Zero,
+    Bounded, CheckedAdd, CheckedMul, CheckedSub, ConstOne, ConstZero, FromBytes, FromPrimitive,
+    One, Pow, ToBytes, ToPrimitive, Zero,
 };
+use pastey::paste;
 #[cfg(feature = "rand")]
 use rand::{distr::StandardUniform, prelude::*};
 #[cfg(feature = "zerocopy")]
@@ -35,18 +36,6 @@ impl Boolean {
     #[inline(always)]
     pub const fn new(value: bool) -> Self {
         Self(value)
-    }
-
-    /// Convert to u8 (0 or 1)
-    #[inline(always)]
-    pub const fn to_u8(&self) -> u8 {
-        self.0 as u8
-    }
-
-    /// Create from u8 (0 is false, non-zero is true)
-    #[inline(always)]
-    pub const fn from_u8(value: u8) -> Self {
-        Self(value != 0)
     }
 
     /// Convert to a constant type that implements ConstOne and ConstZero
@@ -180,15 +169,53 @@ impl_from_boolean_for!(i8, i16, i32, i64, i128, isize);
 impl_from_boolean_for!(u8, u16, u32, u64, u128, usize);
 
 impl From<F2> for Boolean {
+    #[inline(always)]
     fn from(value: F2) -> Self {
         Self(*value)
     }
 }
 
 impl From<&F2> for Boolean {
+    #[inline(always)]
     fn from(value: &F2) -> Self {
         Self(**value)
     }
+}
+
+macro_rules! impl_to_primitive {
+    ($($tpe:ty),+) => { paste! {$(
+        #[inline(always)]
+        fn [<to_ $tpe>](&self) -> Option<$tpe> {
+            Some(self.const_widen())
+        }
+    )+}}
+}
+
+impl ToPrimitive for Boolean {
+    impl_to_primitive!(isize, i8, i16, i32, i64, i128);
+
+    impl_to_primitive!(usize, u8, u16, u32, u64, u128);
+
+    impl_to_primitive!(f32, f64);
+}
+
+macro_rules! impl_from_primitive_int {
+    ($($tpe:ty),+) => { paste! {$(
+        #[inline(always)]
+        fn [<from_ $tpe>](n: $tpe) -> Option<Self> {
+            match n {
+                0 => Some(Self::FALSE),
+                1 => Some(Self::TRUE),
+                _ => None
+            }
+        }
+    )+}}
+}
+
+impl FromPrimitive for Boolean {
+    impl_from_primitive_int!(isize, i8, i16, i32, i64, i128);
+
+    impl_from_primitive_int!(usize, u8, u16, u32, u64, u128);
 }
 
 //
@@ -207,6 +234,7 @@ impl Add for Boolean {
 impl<'a> Add<&'a Boolean> for Boolean {
     type Output = Self;
 
+    #[inline(always)]
     fn add(self, rhs: &'a Self) -> Self::Output {
         // In debug mode, panic on overflow (when both are true)
         debug_assert!(!(self.0 && rhs.0), "attempt to add with overflow");
@@ -228,6 +256,7 @@ impl Sub for Boolean {
 impl<'a> Sub<&'a Boolean> for Boolean {
     type Output = Self;
 
+    #[inline(always)]
     fn sub(self, rhs: &'a Self) -> Self::Output {
         // In debug mode, panic on underflow
         debug_assert!(self.0 || !rhs.0, "attempt to subtract with overflow");
@@ -418,26 +447,28 @@ impl ToBytes for Boolean {
 
     #[inline(always)]
     fn to_be_bytes(&self) -> Self::Bytes {
-        [self.to_u8()]
+        [self.widen()]
     }
 
     #[inline(always)]
     fn to_le_bytes(&self) -> Self::Bytes {
-        [self.to_u8()]
+        [self.widen()]
     }
 }
 
 impl FromBytes for Boolean {
     type Bytes = [u8; 1];
 
+    /// Panics on anything other than 0 and 1
     #[inline(always)]
     fn from_be_bytes(bytes: &Self::Bytes) -> Self {
-        Self::from_u8(bytes[0])
+        Self::from_le_bytes(bytes)
     }
 
+    /// Panics on anything other than 0 and 1
     #[inline(always)]
     fn from_le_bytes(bytes: &Self::Bytes) -> Self {
-        Self::from_u8(bytes[0])
+        Self::from_u8(bytes[0]).expect("Invalid byte value!")
     }
 }
 
@@ -674,11 +705,8 @@ mod tests {
         // Methods
         assert_eq!(*Boolean::new(true).inner(), true);
         assert_eq!(Boolean::new(false).into_inner(), false);
-        assert_eq!(Boolean::TRUE.to_u8(), 1);
-        assert_eq!(Boolean::FALSE.to_u8(), 0);
-        assert_eq!(Boolean::from_u8(0), Boolean::FALSE);
-        assert_eq!(Boolean::from_u8(1), Boolean::TRUE);
-        assert_eq!(Boolean::from_u8(2), Boolean::TRUE);
+        assert_eq!(Boolean::TRUE.to_u8(), Some(1));
+        assert_eq!(Boolean::FALSE.to_u8(), Some(0));
     }
 
     #[test]
@@ -688,6 +716,132 @@ mod tests {
         assert_eq!(i128::from(Boolean::TRUE), 1);
         assert_eq!(u8::from(Boolean::TRUE), 1);
         assert_eq!(u128::from(Boolean::TRUE), 1);
+    }
+
+    #[test]
+    fn to_primitive_ints() {
+        // FALSE and TRUE are 0 and 1 in every integer type
+        for (a, n) in [(Boolean::FALSE, 0_u8), (Boolean::TRUE, 1)] {
+            assert_eq!(a.to_u8(), Some(n));
+            assert_eq!(a.to_u16(), Some(n.into()));
+            assert_eq!(a.to_u32(), Some(n.into()));
+            assert_eq!(a.to_u64(), Some(n.into()));
+            assert_eq!(a.to_u128(), Some(n.into()));
+            assert_eq!(a.to_usize(), Some(n.into()));
+            assert_eq!(a.to_i8(), i8::try_from(n).ok());
+            assert_eq!(a.to_i16(), Some(n.into()));
+            assert_eq!(a.to_i32(), Some(n.into()));
+            assert_eq!(a.to_i64(), Some(n.into()));
+            assert_eq!(a.to_i128(), Some(n.into()));
+            assert_eq!(a.to_isize(), Some(n.into()));
+        }
+    }
+
+    #[test]
+    fn to_primitive_floats() {
+        assert_eq!(Boolean::FALSE.to_f32(), Some(0.0));
+        assert_eq!(Boolean::FALSE.to_f64(), Some(0.0));
+        assert_eq!(Boolean::TRUE.to_f32(), Some(1.0));
+        assert_eq!(Boolean::TRUE.to_f64(), Some(1.0));
+
+        // FALSE is positive zero
+        assert!(Boolean::FALSE.to_f32().unwrap().is_sign_positive());
+        assert!(Boolean::FALSE.to_f64().unwrap().is_sign_positive());
+    }
+
+    #[test]
+    fn from_primitive_ints() {
+        // 0 and 1
+        assert_eq!(Boolean::from_u64(0), Some(Boolean::FALSE));
+        assert_eq!(Boolean::from_i64(0), Some(Boolean::FALSE));
+        assert_eq!(Boolean::from_u128(0), Some(Boolean::FALSE));
+        assert_eq!(Boolean::from_i128(0), Some(Boolean::FALSE));
+        assert_eq!(Boolean::from_u64(1), Some(Boolean::TRUE));
+        assert_eq!(Boolean::from_i64(1), Some(Boolean::TRUE));
+        assert_eq!(Boolean::from_u128(1), Some(Boolean::TRUE));
+        assert_eq!(Boolean::from_i128(1), Some(Boolean::TRUE));
+
+        // Negative values and values above 1 do not fit
+        assert_eq!(Boolean::from_u64(2), None);
+        assert_eq!(Boolean::from_u64(u64::MAX), None);
+        assert_eq!(Boolean::from_i64(2), None);
+        assert_eq!(Boolean::from_i64(-1), None);
+        assert_eq!(Boolean::from_i64(i64::MIN), None);
+        assert_eq!(Boolean::from_u128(2), None);
+        assert_eq!(Boolean::from_u128(u128::MAX), None);
+        assert_eq!(Boolean::from_i128(-1), None);
+        assert_eq!(Boolean::from_i128(i128::MIN), None);
+
+        // Round trip through `ToPrimitive`
+        for a in [Boolean::FALSE, Boolean::TRUE] {
+            assert_eq!(Boolean::from_u64(a.to_u64().unwrap()), Some(a));
+            assert_eq!(Boolean::from_i64(a.to_i64().unwrap()), Some(a));
+            assert_eq!(Boolean::from_u128(a.to_u128().unwrap()), Some(a));
+            assert_eq!(Boolean::from_i128(a.to_i128().unwrap()), Some(a));
+        }
+
+        // Narrower types
+        assert_eq!(Boolean::from_u8(1), Some(Boolean::TRUE));
+        assert_eq!(Boolean::from_u8(2), None);
+        assert_eq!(Boolean::from_i8(-1), None);
+        assert_eq!(Boolean::from_u32(u32::MAX), None);
+        assert_eq!(Boolean::from_i32(0), Some(Boolean::FALSE));
+        assert_eq!(Boolean::from_usize(1), Some(Boolean::TRUE));
+        assert_eq!(Boolean::from_isize(-1), None);
+    }
+
+    #[test]
+    fn from_primitive_floats() {
+        // Zero, including negative zero
+        assert_eq!(Boolean::from_f64(0.0), Some(Boolean::FALSE));
+        assert_eq!(Boolean::from_f64(-0.0), Some(Boolean::FALSE));
+        assert_eq!(Boolean::from_f32(0.0), Some(Boolean::FALSE));
+
+        // Fractions truncate toward zero, like `as` casts
+        assert_eq!(Boolean::from_f64(0.9), Some(Boolean::FALSE));
+        assert_eq!(Boolean::from_f64(-0.9), Some(Boolean::FALSE));
+        assert_eq!(Boolean::from_f64(f64::MIN_POSITIVE), Some(Boolean::FALSE));
+        assert_eq!(Boolean::from_f64(1.0), Some(Boolean::TRUE));
+        assert_eq!(Boolean::from_f64(1.9), Some(Boolean::TRUE));
+        assert_eq!(Boolean::from_f32(1.5), Some(Boolean::TRUE));
+
+        // Truncation boundaries: nearest floats inside (-1, 2) still fit
+        let below_one = 1.0 - f64::EPSILON / 2.0;
+        assert_eq!(Boolean::from_f64(below_one), Some(Boolean::FALSE));
+        assert_eq!(Boolean::from_f64(-below_one), Some(Boolean::FALSE));
+        assert_eq!(Boolean::from_f64(2.0 - f64::EPSILON), Some(Boolean::TRUE));
+        assert_eq!(Boolean::from_f32(2.0 - f32::EPSILON), Some(Boolean::TRUE));
+
+        // Negative values, values of 2 and above, NaN and infinities do not fit
+        assert_eq!(Boolean::from_f64(-1.0), None);
+        assert_eq!(Boolean::from_f64(2.0), None);
+        assert_eq!(Boolean::from_f64(f64::MAX), None);
+        assert_eq!(Boolean::from_f64(f64::MIN), None);
+        assert_eq!(Boolean::from_f64(f64::NAN), None);
+        assert_eq!(Boolean::from_f64(f64::INFINITY), None);
+        assert_eq!(Boolean::from_f64(f64::NEG_INFINITY), None);
+        assert_eq!(Boolean::from_f32(2.0), None);
+        assert_eq!(Boolean::from_f32(f32::NAN), None);
+
+        // Round trip through `ToPrimitive`
+        for a in [Boolean::FALSE, Boolean::TRUE] {
+            assert_eq!(Boolean::from_f32(a.to_f32().unwrap()), Some(a));
+            assert_eq!(Boolean::from_f64(a.to_f64().unwrap()), Some(a));
+        }
+
+        // All powers of two, either sign, from the smallest subnormal up
+        let mut n = f64::from_bits(1);
+        while n.is_finite() {
+            let expected = match n {
+                n if n < 1.0 => Some(Boolean::FALSE),
+                1.0 => Some(Boolean::TRUE),
+                _ => None,
+            };
+            assert_eq!(Boolean::from_f64(n), expected, "{n}");
+            let expected = (n < 1.0).then_some(Boolean::FALSE);
+            assert_eq!(Boolean::from_f64(-n), expected, "{n}");
+            n *= 2.0;
+        }
     }
 
     #[test]

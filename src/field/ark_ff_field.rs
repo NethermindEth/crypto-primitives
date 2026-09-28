@@ -1,7 +1,7 @@
 use super::*;
-use crate::{IntSemiring, LiftElement, Wrapper, boolean::Boolean, semiring::ark_ff_bigint::BigInt};
+use crate::{LiftElement, Wrapper, boolean::Boolean, semiring::ark_ff_bigint::BigInt};
 use ark_ff::{
-    AdditiveGroup, BigInteger, FftField, LegendreSymbol, SqrtPrecomputation,
+    AdditiveGroup, FftField, LegendreSymbol, SqrtPrecomputation,
     fields::{Field as ArkWrappedField, PrimeField as ArkWrappedPrimeField},
 };
 use ark_serialize::{
@@ -468,20 +468,6 @@ impl<F: ArkWrappedPrimeField> Wrapper for ArkField<F> {
 //
 // Semiring, Ring and Field
 //
-
-impl<F: ArkWrappedPrimeField> IntSemiring for ArkField<F> {
-    #[inline(always)]
-    fn is_odd(&self) -> bool {
-        // There's no way to check that efficiently
-        self.0.into_bigint().is_odd()
-    }
-
-    #[inline(always)]
-    fn is_even(&self) -> bool {
-        // There's no way to check that efficiently
-        self.0.into_bigint().is_even()
-    }
-}
 
 impl<F: ArkWrappedPrimeField> Bounded for ArkField<F> {
     #[inline(always)]
