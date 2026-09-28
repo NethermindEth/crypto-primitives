@@ -15,8 +15,8 @@ use core::{
 };
 use crypto_bigint::{DivVartime, Integer, Limb, UintRef, Word};
 use num_traits::{
-    CheckedAdd, CheckedMul, CheckedRem, CheckedSub, ConstOne, ConstZero, One, Pow, ToPrimitive,
-    WrappingAdd, WrappingMul, WrappingSub, Zero, float::FloatCore,
+    CheckedAdd, CheckedMul, CheckedRem, CheckedSub, ConstOne, ConstZero, FromPrimitive, One, Pow,
+    ToPrimitive, WrappingAdd, WrappingMul, WrappingSub, Zero, float::FloatCore,
 };
 use pastey::paste;
 #[cfg(feature = "rand")]
@@ -652,6 +652,55 @@ impl<const LIMBS: usize> ToPrimitive for Uint<LIMBS> {
     }
 }
 
+// Inherent `from_u*` shadow the trait methods, so values are built via `U64`/`U128`
+impl<const LIMBS: usize> FromPrimitive for Uint<LIMBS> {
+    #[inline]
+    fn from_i64(n: i64) -> Option<Self> {
+        U64::from_u64(u64::try_from(n).ok()?).checked_resize()
+    }
+
+    #[inline]
+    fn from_i128(n: i128) -> Option<Self> {
+        U128::from_u128(u128::try_from(n).ok()?).checked_resize()
+    }
+
+    #[inline]
+    fn from_u64(n: u64) -> Option<Self> {
+        U64::from_u64(n).checked_resize()
+    }
+
+    #[inline]
+    fn from_u128(n: u128) -> Option<Self> {
+        U128::from_u128(n).checked_resize()
+    }
+
+    #[inline]
+    fn from_f64(n: f64) -> Option<Self> {
+        if !n.is_finite() {
+            return None;
+        }
+        // Truncate toward zero, matching `as` casts and `num_bigint`
+        let n = FloatCore::trunc(n);
+        if n.is_zero() {
+            return Some(Self::ZERO);
+        }
+        let (mantissa, exponent, sign) = FloatCore::integer_decode(n);
+        if sign < 0 {
+            return None;
+        }
+        let Ok(exponent) = u32::try_from(exponent) else {
+            // `n` is an integer, so the shifted-out bits are zero
+            return U64::from_u64(mantissa >> exponent.unsigned_abs()).checked_resize();
+        };
+        let mantissa: Self = U64::from_u64(mantissa).checked_resize()?;
+        if mantissa.0.bits_vartime().checked_add(exponent)? > Self::BITS {
+            return None;
+        }
+        // exponent < BITS, so the shift doesn't panic
+        Some(Self(mantissa.0.shl_vartime(exponent)))
+    }
+}
+
 //
 // Wrapper
 //
@@ -1084,6 +1133,143 @@ mod tests {
         assert_floats_correctly_rounded::<{ 2 * WORD_FACTOR }>();
         assert_floats_correctly_rounded::<{ 4 * WORD_FACTOR }>();
         assert_floats_correctly_rounded::<{ 20 * WORD_FACTOR }>();
+    }
+
+    #[test]
+    fn from_primitive_ints() {
+        // Inherent `from_u*` shadow the trait methods, hence the qualified calls
+
+        // Zero and small value
+        assert_eq!(<Uint4 as FromPrimitive>::from_u64(0), Some(Uint4::ZERO));
+        assert_eq!(Uint4::from_i64(0), Some(Uint4::ZERO));
+        assert_eq!(<Uint4 as FromPrimitive>::from_u128(0), Some(Uint4::ZERO));
+        assert_eq!(Uint4::from_i128(0), Some(Uint4::ZERO));
+        let a = Uint4::from(42_u64);
+        assert_eq!(<Uint4 as FromPrimitive>::from_u64(42), Some(a));
+        assert_eq!(Uint4::from_i64(42), Some(a));
+        assert_eq!(<Uint4 as FromPrimitive>::from_u128(42), Some(a));
+        assert_eq!(Uint4::from_i128(42), Some(a));
+
+        // Negative values do not fit
+        assert_eq!(Uint4::from_i64(-1), None);
+        assert_eq!(Uint4::from_i64(i64::MIN), None);
+        assert_eq!(Uint4::from_i128(-1), None);
+        assert_eq!(Uint4::from_i128(i128::MIN), None);
+
+        // Signed MAX values fit
+        let a = Uint1::from(i64::MAX as u64);
+        assert_eq!(Uint1::from_i64(i64::MAX), Some(a));
+        let a = Uint2::from(i128::MAX as u128);
+        assert_eq!(Uint2::from_i128(i128::MAX), Some(a));
+
+        // u64::MAX fits 64 bits
+        assert_eq!(
+            <Uint1 as FromPrimitive>::from_u64(u64::MAX),
+            Some(Uint1::MAX)
+        );
+        assert_eq!(
+            <Uint1 as FromPrimitive>::from_u128(u64::MAX.into()),
+            Some(Uint1::MAX)
+        );
+
+        // u64::MAX + 1 needs 128 bits
+        let n = u128::from(u64::MAX) + 1;
+        let i = i128::from(u64::MAX) + 1;
+        assert_eq!(<Uint1 as FromPrimitive>::from_u128(n), None);
+        assert_eq!(Uint1::from_i128(i), None);
+        assert_eq!(
+            <Uint2 as FromPrimitive>::from_u128(n),
+            Some(Uint2::ONE << 64)
+        );
+        assert_eq!(Uint2::from_i128(i), Some(Uint2::ONE << 64));
+        assert_eq!(
+            <Uint4 as FromPrimitive>::from_u128(n),
+            Some(Uint4::ONE << 64)
+        );
+
+        // u128::MAX fits 128 bits
+        assert_eq!(
+            <Uint2 as FromPrimitive>::from_u128(u128::MAX),
+            Some(Uint2::MAX)
+        );
+        let a = (Uint4::ONE << 128) - Uint4::ONE;
+        assert_eq!(<Uint4 as FromPrimitive>::from_u128(u128::MAX), Some(a));
+
+        // Round trip through `ToPrimitive`
+        for n in [0, 1, n - 1, n, i128::MAX as u128, u128::MAX] {
+            let a = <Uint4 as FromPrimitive>::from_u128(n).unwrap();
+            assert_eq!(a.to_u128(), Some(n));
+            let a = <Uint2 as FromPrimitive>::from_u128(n).unwrap();
+            assert_eq!(a.to_u128(), Some(n));
+        }
+
+        // Narrower types go through the default impls
+        let a = Uint1::from(u32::MAX);
+        assert_eq!(<Uint1 as FromPrimitive>::from_u32(u32::MAX), Some(a));
+        assert_eq!(Uint1::from_i32(-1), None);
+        assert_eq!(Uint1::from_usize(42), Some(Uint1::from(42_u64)));
+        assert_eq!(Uint1::from_isize(-1), None);
+    }
+
+    #[test]
+    fn from_primitive_floats() {
+        // Zero, including negative zero
+        assert_eq!(Uint4::from_f64(0.0), Some(Uint4::ZERO));
+        assert_eq!(Uint4::from_f64(-0.0), Some(Uint4::ZERO));
+        assert_eq!(Uint4::from_f32(0.0), Some(Uint4::ZERO));
+
+        // Fractions truncate toward zero, like `as` casts
+        assert_eq!(Uint4::from_f64(42.9), Some(Uint4::from(42_u64)));
+        assert_eq!(Uint4::from_f64(0.9), Some(Uint4::ZERO));
+        assert_eq!(Uint4::from_f64(-0.9), Some(Uint4::ZERO));
+        assert_eq!(Uint4::from_f64(f64::MIN_POSITIVE), Some(Uint4::ZERO));
+        assert_eq!(Uint4::from_f32(1.5), Some(Uint4::ONE));
+
+        // Negative values, NaN and infinities do not fit
+        assert_eq!(Uint4::from_f64(-1.0), None);
+        assert_eq!(Uint4::from_f64(f64::MIN), None);
+        assert_eq!(Uint4::from_f64(f64::NAN), None);
+        assert_eq!(Uint4::from_f64(f64::INFINITY), None);
+        assert_eq!(Uint4::from_f64(f64::NEG_INFINITY), None);
+        assert_eq!(Uint4::from_f32(f32::NAN), None);
+
+        // Largest f64 below 2^64 fits 64 bits, 2^64 does not
+        let two_pow = |e| FloatCore::powi(2.0_f64, e);
+        let a = Uint1::from(u64::MAX - ((1 << 11) - 1));
+        assert_eq!(Uint1::from_f64(two_pow(64) - two_pow(11)), Some(a));
+        assert_eq!(Uint1::from_f64(two_pow(64)), None);
+        assert_eq!(Uint2::from_f64(two_pow(64)), Some(Uint2::ONE << 64));
+
+        // MAX fits exactly when the type is wide enough
+        let a = Uint2::from((1_u64 << 24) - 1) << 104;
+        assert_eq!(Uint2::from_f32(f32::MAX), Some(a));
+        assert_eq!(Uint1::from_f32(f32::MAX), None);
+        let a = U1024::from((1_u64 << 53) - 1) << 971;
+        assert_eq!(U1024::from_f64(f64::MAX), Some(a));
+        assert_eq!(U960::from_f64(f64::MAX), None);
+
+        // Exact values and round trip through `ToPrimitive` across all exponents
+        for e in 0..f64::MAX_EXP {
+            let k = e.unsigned_abs();
+            let pow = two_pow(e);
+            let exact = U1280::ONE << k;
+            // Truncated neighbours of 2^k and 2^(k + 1): f64 spacing in [2^k, 2^(k + 1)) is
+            // 2^(k - 52)
+            let (next, prev) = match k.checked_sub(52) {
+                Some(s) => (exact + (U1280::ONE << s), (exact << 1) - (U1280::ONE << s)),
+                None => (exact, (exact << 1) - U1280::ONE),
+            };
+            for (n, expected) in [
+                (pow, exact),
+                (pow * (1.0 + f64::EPSILON), next),
+                (pow * (2.0 - f64::EPSILON), prev),
+            ] {
+                assert_eq!(U1280::from_f64(n), Some(expected), "{n}");
+                assert_eq!(expected.to_f64(), Some(FloatCore::trunc(n)), "{n}");
+                // Narrower types fit iff below 2^BITS
+                assert_eq!(Uint4::from_f64(n).is_some(), e < 256, "{n}");
+            }
+        }
     }
 
     #[test]

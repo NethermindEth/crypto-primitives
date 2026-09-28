@@ -16,7 +16,8 @@ use core::{
 use crypto_bigint::{CheckedSub as CryptoCheckedSub, Integer, Word};
 use num_traits::{
     Bounded, CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedRem, CheckedSub, ConstOne,
-    ConstZero, Num, One, Pow, Signed, ToPrimitive, WrappingAdd, WrappingMul, WrappingSub, Zero,
+    ConstZero, FromPrimitive, Num, One, Pow, Signed, ToPrimitive, WrappingAdd, WrappingMul,
+    WrappingSub, Zero, float::FloatCore,
 };
 use pastey::paste;
 #[cfg(feature = "rand")]
@@ -96,6 +97,11 @@ impl<const LIMBS: usize> Int<LIMBS> {
     fn parse_abs_radix(s: &str, radix: u32, neg: bool) -> Option<Self> {
         use crypto_bigint::Uint;
         let abs = Uint::<LIMBS>::from_str_radix_vartime(s, radix).ok()?;
+        Self::from_abs_sign(abs, neg)
+    }
+
+    /// Applies the sign to the absolute value, if the result fits.
+    fn from_abs_sign(abs: crypto_bigint::Uint<LIMBS>, neg: bool) -> Option<Self> {
         match Self::try_from(abs) {
             Ok(res) if neg => res.checked_neg(),
             Ok(res) => Some(res),
@@ -711,6 +717,35 @@ impl<const LIMBS: usize> ToPrimitive for Int<LIMBS> {
     }
 }
 
+// Inherent `from_i*` shadow the trait methods, so values are built via `I64`/`I128`
+impl<const LIMBS: usize> FromPrimitive for Int<LIMBS> {
+    #[inline]
+    fn from_i64(n: i64) -> Option<Self> {
+        I64::from_i64(n).checked_resize()
+    }
+
+    #[inline]
+    fn from_i128(n: i128) -> Option<Self> {
+        I128::from_i128(n).checked_resize()
+    }
+
+    #[inline]
+    fn from_u64(n: u64) -> Option<Self> {
+        Self::try_from(crypto_bigint::U64::from_u64(n)).ok()
+    }
+
+    #[inline]
+    fn from_u128(n: u128) -> Option<Self> {
+        Self::try_from(crypto_bigint::U128::from_u128(n)).ok()
+    }
+
+    #[inline]
+    fn from_f64(n: f64) -> Option<Self> {
+        let abs = Uint::<LIMBS>::from_f64(FloatCore::abs(n))?;
+        Self::from_abs_sign(abs.0, n.is_sign_negative())
+    }
+}
+
 //
 // Wrapper
 //
@@ -1171,8 +1206,6 @@ mod tests {
 
     #[test]
     fn to_primitive_floats() {
-        use num_traits::float::FloatCore;
-
         // Zero and small values
         assert_eq!(Int4::ZERO.to_f32(), Some(0.0));
         assert_eq!(Int4::ZERO.to_f64(), Some(0.0));
@@ -1242,6 +1275,148 @@ mod tests {
         assert_floats_correctly_rounded::<{ 2 * WORD_FACTOR }>();
         assert_floats_correctly_rounded::<{ 4 * WORD_FACTOR }>();
         assert_floats_correctly_rounded::<{ 20 * WORD_FACTOR }>();
+    }
+
+    #[test]
+    fn from_primitive_ints() {
+        // Inherent `from_i*` shadow the trait methods, hence the qualified calls
+
+        // Zero and small values
+        assert_eq!(<Int4 as FromPrimitive>::from_i64(0), Some(Int4::ZERO));
+        assert_eq!(Int4::from_u64(0), Some(Int4::ZERO));
+        assert_eq!(<Int4 as FromPrimitive>::from_i128(0), Some(Int4::ZERO));
+        assert_eq!(Int4::from_u128(0), Some(Int4::ZERO));
+        let a = Int4::from(42_i64);
+        assert_eq!(<Int4 as FromPrimitive>::from_i64(42), Some(a));
+        assert_eq!(Int4::from_u64(42), Some(a));
+        assert_eq!(<Int4 as FromPrimitive>::from_i128(42), Some(a));
+        assert_eq!(Int4::from_u128(42), Some(a));
+        let a = Int4::from(-42_i64);
+        assert_eq!(<Int4 as FromPrimitive>::from_i64(-42), Some(a));
+        assert_eq!(<Int4 as FromPrimitive>::from_i128(-42), Some(a));
+
+        // i64 range fits 64 bits exactly
+        assert_eq!(<Int1 as FromPrimitive>::from_i64(i64::MIN), Some(Int1::MIN));
+        assert_eq!(<Int1 as FromPrimitive>::from_i64(i64::MAX), Some(Int1::MAX));
+        let n = i128::from(i64::MIN);
+        assert_eq!(<Int1 as FromPrimitive>::from_i128(n), Some(Int1::MIN));
+        assert_eq!(<Int1 as FromPrimitive>::from_i128(n - 1), None);
+        let n = i128::from(i64::MAX);
+        assert_eq!(<Int1 as FromPrimitive>::from_i128(n), Some(Int1::MAX));
+        assert_eq!(<Int1 as FromPrimitive>::from_i128(n + 1), None);
+        assert_eq!(Int1::from_u64(i64::MAX as u64), Some(Int1::MAX));
+        assert_eq!(Int1::from_u64(i64::MAX as u64 + 1), None);
+        assert_eq!(Int1::from_u64(u64::MAX), None);
+
+        // i128 range fits 128 bits exactly
+        assert_eq!(
+            <Int2 as FromPrimitive>::from_i128(i128::MIN),
+            Some(Int2::MIN)
+        );
+        assert_eq!(
+            <Int2 as FromPrimitive>::from_i128(i128::MAX),
+            Some(Int2::MAX)
+        );
+        assert_eq!(Int2::from_u64(u64::MAX), Some(Int2::from(u64::MAX)));
+        assert_eq!(Int2::from_u128(i128::MAX as u128), Some(Int2::MAX));
+        assert_eq!(Int2::from_u128(i128::MAX as u128 + 1), None);
+        assert_eq!(Int2::from_u128(u128::MAX), None);
+
+        // Wider types fit all of i128 and u128
+        let a = -(Int4::ONE << 127);
+        assert_eq!(<Int4 as FromPrimitive>::from_i128(i128::MIN), Some(a));
+        assert_eq!(
+            Int4::from_u128(i128::MAX as u128 + 1),
+            Some(Int4::ONE << 127)
+        );
+        let a = (Int4::ONE << 128) - Int4::ONE;
+        assert_eq!(Int4::from_u128(u128::MAX), Some(a));
+
+        // Round trip through `ToPrimitive`
+        let (min, max) = (i128::from(i64::MIN), i128::from(i64::MAX));
+        for n in [i128::MIN, min - 1, min, -1, 0, 1, max, max + 1, i128::MAX] {
+            let a = <Int4 as FromPrimitive>::from_i128(n).unwrap();
+            assert_eq!(a.to_i128(), Some(n));
+            let a = <Int2 as FromPrimitive>::from_i128(n).unwrap();
+            assert_eq!(a.to_i128(), Some(n));
+        }
+
+        // Narrower types go through the default impls
+        let a = Int1::from(i8::MIN);
+        assert_eq!(<Int1 as FromPrimitive>::from_i8(i8::MIN), Some(a));
+        assert_eq!(Int1::from_u32(u32::MAX), Some(Int1::from(u32::MAX)));
+        assert_eq!(Int1::from_isize(-1), Some(Int1::MINUS_ONE));
+        assert_eq!(Int1::from_usize(42), Some(Int1::from(42_i64)));
+    }
+
+    #[test]
+    fn from_primitive_floats() {
+        // Zero, including negative zero
+        assert_eq!(Int4::from_f64(0.0), Some(Int4::ZERO));
+        assert_eq!(Int4::from_f64(-0.0), Some(Int4::ZERO));
+        assert_eq!(Int4::from_f32(0.0), Some(Int4::ZERO));
+
+        // Fractions truncate toward zero, like `as` casts
+        assert_eq!(Int4::from_f64(42.9), Some(Int4::from(42_i64)));
+        assert_eq!(Int4::from_f64(-42.9), Some(Int4::from(-42_i64)));
+        assert_eq!(Int4::from_f64(0.9), Some(Int4::ZERO));
+        assert_eq!(Int4::from_f64(-0.9), Some(Int4::ZERO));
+        assert_eq!(Int4::from_f64(-f64::MIN_POSITIVE), Some(Int4::ZERO));
+        assert_eq!(Int4::from_f32(-1.5), Some(Int4::MINUS_ONE));
+
+        // NaN and infinities do not fit
+        assert_eq!(Int4::from_f64(f64::NAN), None);
+        assert_eq!(Int4::from_f64(f64::INFINITY), None);
+        assert_eq!(Int4::from_f64(f64::NEG_INFINITY), None);
+        assert_eq!(Int4::from_f32(f32::NAN), None);
+
+        // 64 bits: -2^63 is MIN, 2^63 overflows, largest f64 below 2^63 fits either sign
+        let two_pow = |e| FloatCore::powi(2.0_f64, e);
+        assert_eq!(Int1::from_f64(-two_pow(63)), Some(Int1::MIN));
+        assert_eq!(Int1::from_f64(two_pow(63)), None);
+        assert_eq!(Int1::from_f64(-two_pow(63) - two_pow(11)), None);
+        let a = Int1::from(i64::MAX - ((1 << 10) - 1));
+        assert_eq!(Int1::from_f64(two_pow(63) - two_pow(10)), Some(a));
+        assert_eq!(Int1::from_f64(two_pow(10) - two_pow(63)), Some(-a));
+
+        // MAX and MIN fit exactly when the type is wide enough
+        let a = Int4::from((1_i64 << 24) - 1) << 104;
+        assert_eq!(Int4::from_f32(f32::MAX), Some(a));
+        assert_eq!(Int4::from_f32(f32::MIN), Some(-a));
+        assert_eq!(Int2::from_f32(f32::MAX), None);
+        assert_eq!(Int2::from_f32(f32::MIN), None);
+        let a = I1280::from((1_i64 << 53) - 1) << 971;
+        assert_eq!(I1280::from_f64(f64::MAX), Some(a));
+        assert_eq!(I1280::from_f64(f64::MIN), Some(-a));
+        assert_eq!(I1024::from_f64(f64::MAX), None);
+        assert_eq!(I1024::from_f64(f64::MIN), None);
+
+        // Exact values and round trip through `ToPrimitive` across all exponents, either sign
+        for e in 0..f64::MAX_EXP {
+            let k = e.unsigned_abs();
+            let pow = two_pow(e);
+            let exact = I1280::ONE << k;
+            // Truncated neighbours of 2^k and 2^(k + 1): f64 spacing in [2^k, 2^(k + 1)) is
+            // 2^(k - 52)
+            let (next, prev) = match k.checked_sub(52) {
+                Some(s) => (exact + (I1280::ONE << s), (exact << 1) - (I1280::ONE << s)),
+                None => (exact, (exact << 1) - I1280::ONE),
+            };
+            for (n, expected) in [
+                (pow, exact),
+                (pow * (1.0 + f64::EPSILON), next),
+                (pow * (2.0 - f64::EPSILON), prev),
+            ] {
+                assert_eq!(I1280::from_f64(n), Some(expected), "{n}");
+                assert_eq!(I1280::from_f64(-n), Some(-expected), "{n}");
+                assert_eq!(expected.to_f64(), Some(FloatCore::trunc(n)), "{n}");
+                // Narrower types fit iff within [-2^255, 2^255)
+                assert_eq!(Int4::from_f64(n).is_some(), e < 255, "{n}");
+                let fits = e < 255 || (e == 255 && n == pow);
+                assert_eq!(Int4::from_f64(-n).is_some(), fits, "{n}");
+            }
+        }
+        assert_eq!(Int4::from_f64(-two_pow(255)), Some(Int4::MIN));
     }
 
     #[test]
