@@ -1,5 +1,5 @@
 use crate::{
-    ConstBaseField, IntSemiring, LiftElement, WithAssociatedInteger, Wrapper,
+    ConstBaseField, FixedConfig, IntSemiring, LiftElement, WithAssociatedInteger, Wrapper,
     boolean::Boolean,
     serialization::{
         CanonicalBytes, CanonicalBytesError, FixedCanonicalBytes, FromUniformBytes,
@@ -511,11 +511,11 @@ impl CanonicalBytes for F2 {
     }
 
     fn write_canonical(&self, out: &mut Vec<u8>) {
-        write_base_field(self, out);
+        write_base_field(&FixedConfig::<Self>::const_default(), self, out);
     }
 
     fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
-        read_base_field(bytes)
+        read_base_field(&FixedConfig::<Self>::const_default(), bytes)
     }
 }
 
@@ -533,7 +533,7 @@ impl FromUniformBytes for F2 {
     }
 
     fn from_uniform_bytes(bytes: &[u8]) -> Self {
-        base_field_from_uniform_bytes(bytes)
+        base_field_from_uniform_bytes(&FixedConfig::<Self>::const_default(), bytes)
     }
 }
 

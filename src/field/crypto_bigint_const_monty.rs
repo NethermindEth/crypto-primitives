@@ -769,11 +769,11 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> CanonicalBytes for ConstMontyField<
     }
 
     fn write_canonical(&self, out: &mut Vec<u8>) {
-        write_base_field(self, out);
+        write_base_field(&FixedConfig::<Self>::const_default(), self, out);
     }
 
     fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
-        read_base_field(bytes)
+        read_base_field(&FixedConfig::<Self>::const_default(), bytes)
     }
 }
 
@@ -791,7 +791,7 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> FromUniformBytes for ConstMontyFiel
     }
 
     fn from_uniform_bytes(bytes: &[u8]) -> Self {
-        base_field_from_uniform_bytes(bytes)
+        base_field_from_uniform_bytes(&FixedConfig::<Self>::const_default(), bytes)
     }
 }
 

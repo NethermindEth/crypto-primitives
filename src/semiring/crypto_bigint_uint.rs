@@ -758,26 +758,26 @@ impl<const LIMBS: usize> CanonicalIntBytes for Uint<LIMBS> {
         self.0.bits()
     }
 
-    fn write_le(&self, width: usize, out: &mut Vec<u8>) -> Result<(), CanonicalBytesError> {
-        if canonical_width(self) > width {
-            return Err(CanonicalBytesError::Overflow { width });
-        }
+    fn write_le(&self, width: usize, out: &mut Vec<u8>) {
+        assert!(
+            canonical_width(self) <= width,
+            "value does not fit into {width} bytes"
+        );
         let repr = crypto_bigint::Encoding::to_le_bytes(&self.0);
         let all: &[u8] = repr.as_ref();
         let taken = all.len().min(width);
         out.extend_from_slice(&all[..taken]);
         out.resize(out.len().saturating_add(width.saturating_sub(taken)), 0);
-        Ok(())
     }
 
-    fn read_le_like(bytes: &[u8], _like: &Self) -> Result<Self, CanonicalBytesError> {
-        let taken = bytes.len().min(Self::BYTES);
-        if bytes[taken..].iter().any(|byte| *byte != 0) {
-            return Err(CanonicalBytesError::Overflow { width: Self::BYTES });
-        }
+    fn read_le(bytes: &[u8]) -> Self {
+        assert!(
+            bytes.len() <= Self::BYTES,
+            "input is wider than the integer type"
+        );
         let mut repr = <crypto_bigint::Uint<LIMBS> as crypto_bigint::Encoding>::Repr::default();
-        repr.as_mut()[..taken].copy_from_slice(&bytes[..taken]);
-        Ok(Self(crypto_bigint::Uint::from_le_slice(repr.as_ref())))
+        repr.as_mut()[..bytes.len()].copy_from_slice(bytes);
+        Self(crypto_bigint::Uint::from_le_slice(repr.as_ref()))
     }
 }
 
@@ -788,8 +788,7 @@ impl<const LIMBS: usize> CanonicalBytes for Uint<LIMBS> {
     }
 
     fn write_canonical(&self, out: &mut Vec<u8>) {
-        self.write_le(Self::BYTES, out)
-            .expect("the full width always fits");
+        self.write_le(Self::BYTES, out);
     }
 
     fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
@@ -799,7 +798,7 @@ impl<const LIMBS: usize> CanonicalBytes for Uint<LIMBS> {
                 actual: bytes.len(),
             });
         }
-        Self::read_le_like(bytes, &Self::ZERO)
+        Ok(Self::read_le(bytes))
     }
 }
 

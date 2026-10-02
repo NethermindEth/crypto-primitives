@@ -3,9 +3,7 @@ use crate::{
     Wrapper,
     boolean::Boolean,
     helpers::pow_via_repeated_squaring,
-    serialization::{
-        CanonicalBytes, CanonicalBytesError, CanonicalIntBytes, bits_to_bytes, canonical_width,
-    },
+    serialization::{CanonicalBytes, CanonicalBytesError, CanonicalIntBytes, canonical_width},
 };
 use alloc::{boxed::Box, vec::Vec};
 use core::{
@@ -804,26 +802,19 @@ impl CanonicalIntBytes for BoxedUint {
         self.0.bits()
     }
 
-    fn write_le(&self, width: usize, out: &mut Vec<u8>) -> Result<(), CanonicalBytesError> {
-        if canonical_width(self) > width {
-            return Err(CanonicalBytesError::Overflow { width });
-        }
+    fn write_le(&self, width: usize, out: &mut Vec<u8>) {
+        assert!(
+            canonical_width(self) <= width,
+            "value does not fit into {width} bytes"
+        );
         let all = self.0.to_le_bytes();
         let taken = all.len().min(width);
         out.extend_from_slice(&all[..taken]);
         out.resize(out.len().saturating_add(width.saturating_sub(taken)), 0);
-        Ok(())
     }
 
-    /// `like` supplies the storage precision, so that a value read back into a
-    /// field keeps the precision of that field's modulus.
-    fn read_le_like(bytes: &[u8], like: &Self) -> Result<Self, CanonicalBytesError> {
-        let precision = like.0.bits_precision();
-        crypto_bigint::BoxedUint::from_le_slice(bytes, precision)
-            .map(Self)
-            .map_err(|_| CanonicalBytesError::Overflow {
-                width: bits_to_bytes(precision),
-            })
+    fn read_le(bytes: &[u8]) -> Self {
+        Self(crypto_bigint::BoxedUint::from_le_slice_vartime(bytes))
     }
 }
 
@@ -838,14 +829,14 @@ impl CanonicalBytes for BoxedUint {
         let width = self.payload_width();
         let prefix = u32::try_from(width).expect("a BoxedUint holds at most u32::MAX bits");
         out.extend_from_slice(&prefix.to_le_bytes());
-        self.write_le(width, out)
-            .expect("payload_width is derived from the value");
+        self.write_le(width, out);
     }
 
     /// Returns the minimal precision needed for the value because the encoding
-    /// does not carry the precision. A `crypto-bigint` arithmetic result takes
-    /// the left operand's precision so combining decoded with a wider value
-    /// can panic on overflow. Resize the decoded value first.
+    /// does not carry the precision.
+    /// NOTE: `crypto-bigint` arithmetic result takes the left operand's
+    /// precision so combining decoded with a wider value can panic
+    /// on overflow. Resize the decoded value first.
     fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
         let (prefix, payload) = bytes
             .split_at_checked(BOXED_UINT_LENGTH_PREFIX_BYTES)
@@ -868,8 +859,7 @@ impl CanonicalBytes for BoxedUint {
         if width == 0 {
             return Err(CanonicalBytesError::NonCanonical);
         }
-        // A leading zero byte would likewise give one value two encodings. Zero
-        // itself uses the shortest payload the encoding allows, one byte.
+        // A leading zero byte would likewise give one value two encodings.
         if width > 1 && payload.last() == Some(&0) {
             return Err(CanonicalBytesError::NonCanonical);
         }
@@ -881,7 +871,10 @@ impl CanonicalBytes for BoxedUint {
             .expect("supported targets have at least 32-bit usize");
 
         if width > max_width {
-            return Err(CanonicalBytesError::Overflow { width: max_width });
+            return Err(CanonicalBytesError::InvalidLength {
+                expected: max_width,
+                actual: width,
+            });
         }
 
         Ok(Self(crypto_bigint::BoxedUint::from_le_slice_vartime(

@@ -8,8 +8,8 @@ use crate::{
     helpers::crypto_bigint as helpers,
     serialization::{
         CanonicalBytesError, CanonicalBytesWithConfig, FromUniformBytesWithConfig,
-        base_field_from_uniform_bytes_with_config, canonical_width, read_base_field_with_config,
-        uniform_width, write_base_field_with_config,
+        base_field_from_uniform_bytes, canonical_width, read_base_field, uniform_width,
+        write_base_field,
     },
 };
 use alloc::{borrow::Cow, vec::Vec};
@@ -460,7 +460,7 @@ impl LiftElementWithConfig<<Self as WithAssociatedInteger>::Integer> for BoxedMo
 //
 
 /// Writes the raw Montgomery residue, not the canonical value. The element
-/// carries no modulus, so it cannot remove the Montgomery factor. Both the
+/// carries no modulus so it cannot remove the Montgomery factor. Both the
 /// width and the residue follow the allocated precision, so one value encodes
 /// differently at each precision.
 ///
@@ -491,8 +491,6 @@ impl serde::Serialize for BoxedMontyFieldElement {
     }
 }
 
-// TODO: Do we want to zeroize the modulus?
-
 //
 // Canonical bytes
 //
@@ -506,11 +504,11 @@ impl CanonicalBytesWithConfig for BoxedMontyField {
     }
 
     fn write_canonical(&self, value: &Self::Element, out: &mut Vec<u8>) {
-        write_base_field_with_config(self, value, out);
+        write_base_field(self, value, out);
     }
 
     fn from_canonical_bytes(&self, bytes: &[u8]) -> Result<Self::Element, CanonicalBytesError> {
-        read_base_field_with_config(self, bytes)
+        read_base_field(self, bytes)
     }
 }
 
@@ -521,9 +519,11 @@ impl FromUniformBytesWithConfig for BoxedMontyField {
     }
 
     fn from_uniform_bytes(&self, bytes: &[u8]) -> Self::Element {
-        base_field_from_uniform_bytes_with_config(self, bytes)
+        base_field_from_uniform_bytes(self, bytes)
     }
 }
+
+// TODO: Do we want to zeroize the modulus?
 
 #[allow(
     clippy::arithmetic_side_effects,

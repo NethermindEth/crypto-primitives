@@ -508,8 +508,7 @@ impl zeroize::DefaultIsZeroes for Boolean {}
 // Canonical bytes
 //
 
-/// One byte, `0x00` or `0x01`. Any other byte is rejected, which
-/// [`num_traits::FromBytes`] cannot do.
+/// One byte, `0x00` or `0x01`. Any other byte is rejected.
 impl CanonicalBytes for Boolean {
     #[inline]
     fn canonical_byte_len(&self) -> usize {

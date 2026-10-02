@@ -784,34 +784,30 @@ impl<const N: usize> CanonicalIntBytes for BigInt<N> {
         self.0.num_bits()
     }
 
-    fn write_le(&self, width: usize, out: &mut Vec<u8>) -> Result<(), CanonicalBytesError> {
-        if canonical_width(self) > width {
-            return Err(CanonicalBytesError::Overflow { width });
-        }
+    fn write_le(&self, width: usize, out: &mut Vec<u8>) {
+        assert!(
+            canonical_width(self) <= width,
+            "value does not fit into {width} bytes"
+        );
         let all = self.0.to_bytes_le();
         let taken = all.len().min(width);
         out.extend_from_slice(&all[..taken]);
         out.resize(out.len().saturating_add(width.saturating_sub(taken)), 0);
-        Ok(())
     }
 
-    fn read_le_like(bytes: &[u8], _like: &Self) -> Result<Self, CanonicalBytesError> {
+    fn read_le(bytes: &[u8]) -> Self {
+        assert!(
+            bytes.len() <= Self::BYTES,
+            "input is wider than the integer type"
+        );
         let mut limbs = [0_u64; N];
         // ark limbs are always 64 bits wide, whatever the target.
-        for (index, chunk) in bytes.chunks(8).enumerate() {
-            match limbs.get_mut(index) {
-                Some(limb) => {
-                    let mut buf = [0_u8; 8];
-                    buf[..chunk.len()].copy_from_slice(chunk);
-                    *limb = u64::from_le_bytes(buf);
-                }
-                None if chunk.iter().any(|byte| *byte != 0) => {
-                    return Err(CanonicalBytesError::Overflow { width: Self::BYTES });
-                }
-                None => {}
-            }
+        for (limb, chunk) in limbs.iter_mut().zip(bytes.chunks(8)) {
+            let mut buf = [0_u8; 8];
+            buf[..chunk.len()].copy_from_slice(chunk);
+            *limb = u64::from_le_bytes(buf);
         }
-        Ok(Self(ArkBigInt(limbs)))
+        Self(ArkBigInt(limbs))
     }
 }
 
@@ -822,8 +818,7 @@ impl<const N: usize> CanonicalBytes for BigInt<N> {
     }
 
     fn write_canonical(&self, out: &mut Vec<u8>) {
-        self.write_le(Self::BYTES, out)
-            .expect("the full width always fits");
+        self.write_le(Self::BYTES, out);
     }
 
     fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
@@ -833,7 +828,7 @@ impl<const N: usize> CanonicalBytes for BigInt<N> {
                 actual: bytes.len(),
             });
         }
-        Self::read_le_like(bytes, &Self::ZERO)
+        Ok(Self::read_le(bytes))
     }
 }
 
