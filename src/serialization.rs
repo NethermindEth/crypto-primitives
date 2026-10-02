@@ -1,26 +1,17 @@
-//! Canonical byte serialization, intended for Fiat-Shamir transcripts.
+//! Canonical byte serialization intended for Fiat-Shamir transcripts.
 //!
-//! The encoding is a function of the mathematical value alone. It does not
-//! depend on the backend that holds the value, on the target endianness, or on
-//! the storage precision. Byte order is little-endian throughout.
-//!
-//! Do not use `serde` or `zerocopy` to feed a transcript. `zerocopy` exposes
-//! the memory layout, and `serde` is a storage format that is only guaranteed
-//! to round-trip through the same type.
 //!
 //! - [`CanonicalBytes`] serializes self-sufficient elements.
-//! - [`CanonicalBytesWithConfig`] serializes elements that need a config, such
+//! - [`CanonicalBytesWithConfig`] serializes elements that need a config such
 //!   as a field with a runtime modulus.
 //! - [`FromUniformBytes`] and [`FromUniformBytesWithConfig`] map squeezed
 //!   transcript output to an element. They are a different map, and they are
 //!   not injective. Never use them to read a prover message.
 //!
-//! # Framing
+//! # Security
 //!
-//! The transcript layer owns message framing and domain labels. This module
-//! only guarantees that an encoding is unambiguous: either the width is
-//! constant for the type (see [`FixedCanonicalBytes`]) or for the config, or
-//! the encoding carries its own length.
+//! Encoding and decoding are not constant-time. Use them only on public data,
+//! such as transcript messages. Never use them on secrets.
 
 use crate::{BaseField, BaseFieldConfig, ProjectElementWithConfig, SetConfig};
 use alloc::vec::Vec;
@@ -28,9 +19,10 @@ use thiserror::Error;
 
 /// Bytes drawn beyond the modulus width when sampling an element from
 /// transcript output. Bounds the sampling bias by `2^-128`.
-pub const UNIFORM_BYTES_MARGIN: usize = 16;
+pub(crate) const UNIFORM_BYTES_MARGIN: usize = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[non_exhaustive]
 pub enum CanonicalBytesError {
     #[error("expected {expected} bytes, got {actual}")]
     InvalidLength { expected: usize, actual: usize },
@@ -42,7 +34,7 @@ pub enum CanonicalBytesError {
 
 /// Converts a bit count to the number of bytes that holds it.
 #[inline]
-fn bits_to_bytes(bits: u32) -> usize {
+pub(crate) fn bits_to_bytes(bits: u32) -> usize {
     usize::try_from(bits).unwrap_or(usize::MAX).div_ceil(8)
 }
 
@@ -63,6 +55,9 @@ pub trait CanonicalBytes: Sized {
     /// Read one value from its complete canonical encoding.
     ///
     /// Rejects a wrong length and an encoding that is not canonical.
+    ///
+    /// Not constant-time. See the
+    /// [module docs](self#security).
     fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError>;
 
     fn to_canonical_bytes(&self) -> Vec<u8> {
@@ -86,9 +81,12 @@ pub trait FromUniformBytes: Sized {
     /// Bytes that [`Self::from_uniform_bytes`] needs.
     fn uniform_byte_len() -> usize;
 
-    /// Maps uniform bytes to a near-uniform element. Not injective.
+    /// Maps uniform bytes to a near-uniform element, non-injective.
     ///
-    /// Shorter input is accepted but increases the bias.
+    /// # Panics
+    ///
+    /// If `bytes.len()` is not [`Self::uniform_byte_len`]. A fixed length keeps
+    /// the challenge map the same for the prover and the verifier.
     fn from_uniform_bytes(bytes: &[u8]) -> Self;
 }
 
@@ -98,8 +96,8 @@ pub trait FromUniformBytes: Sized {
 
 /// Canonical byte encoding for elements that need a config.
 ///
-/// The config pins the modulus, so the width is constant for one config
-/// instance, and the encoding is prefix-free for that instance.
+/// The config pins the modulus so the width is constant for one config
+/// instance.
 #[allow(
     clippy::wrong_self_convention,
     reason = "kept symmetric with the element-side trait, as `lift` already is"
@@ -110,6 +108,8 @@ pub trait CanonicalBytesWithConfig: SetConfig {
 
     fn write_canonical(&self, value: &Self::Element, out: &mut Vec<u8>);
 
+    /// Not constant-time. Use only on public data, see the
+    /// [module docs](self#security).
     fn from_canonical_bytes(&self, bytes: &[u8]) -> Result<Self::Element, CanonicalBytesError>;
 
     fn to_canonical_bytes(&self, value: &Self::Element) -> Vec<u8> {
@@ -127,6 +127,9 @@ pub trait CanonicalBytesWithConfig: SetConfig {
 pub trait FromUniformBytesWithConfig: SetConfig {
     fn uniform_byte_len(&self) -> usize;
 
+    /// # Panics
+    ///
+    /// If `bytes.len()` is not [`Self::uniform_byte_len`].
     fn from_uniform_bytes(&self, bytes: &[u8]) -> Self::Element;
 }
 
@@ -135,12 +138,12 @@ pub trait FromUniformBytesWithConfig: SetConfig {
 //
 
 /// Little-endian byte access for the integer types that back our sets.
-///
-/// `bit_len` lives here rather than on [`IntSemiring`](crate::IntSemiring)
-/// because a bit length is ambiguous for a signed type, and only a modulus
-/// ever needs one.
-pub trait CanonicalIntBytes: Sized {
+pub(crate) trait CanonicalIntBytes: Sized {
     /// Number of bits needed to hold this value. Zero for zero.
+    ///
+    /// `bit_len` lives here rather than on [`IntSemiring`](crate::IntSemiring)
+    /// because a bit length is ambiguous for a signed type, and only a modulus
+    /// ever needs one.
     fn bit_len(&self) -> u32;
 
     /// Append exactly `width` little-endian bytes.
@@ -159,7 +162,7 @@ pub trait CanonicalIntBytes: Sized {
 ///
 /// The width follows the modulus, never the limb count or a runtime precision.
 #[inline]
-pub fn canonical_width<I: CanonicalIntBytes>(modulus: &I) -> usize {
+pub(crate) fn canonical_width<I: CanonicalIntBytes>(modulus: &I) -> usize {
     bits_to_bytes(modulus.bit_len())
 }
 
@@ -167,17 +170,22 @@ pub fn canonical_width<I: CanonicalIntBytes>(modulus: &I) -> usize {
 // Shared base field logic
 //
 
-pub fn write_base_field<F>(value: &F, out: &mut Vec<u8>)
+pub(crate) fn write_base_field<F>(value: &F, out: &mut Vec<u8>)
 where
     F: BaseField,
     F::Integer: CanonicalIntBytes,
 {
     let width = canonical_width(&F::modulus());
-    // A lifted element is reduced, so it always fits.
-    let _ = value.lift().write_le(width, out);
+    // A lifted element is reduced, so this cannot fail. If it ever did,
+    // `write_le` returns before appending anything, so the encoding would be
+    // short and every later byte in the transcript would shift.
+    value
+        .lift()
+        .write_le(width, out)
+        .expect("a lifted element always fits the modulus width");
 }
 
-pub fn read_base_field<F>(bytes: &[u8]) -> Result<F, CanonicalBytesError>
+pub(crate) fn read_base_field<F>(bytes: &[u8]) -> Result<F, CanonicalBytesError>
 where
     F: BaseField,
     F::Integer: CanonicalIntBytes,
@@ -197,16 +205,22 @@ where
     Ok(F::from(&value))
 }
 
-pub fn write_base_field_with_config<C>(cfg: &C, value: &C::Element, out: &mut Vec<u8>)
+#[allow(dead_code, reason = "only config-based backends call this")]
+pub(crate) fn write_base_field_with_config<C>(cfg: &C, value: &C::Element, out: &mut Vec<u8>)
 where
     C: BaseFieldConfig,
     C::Integer: CanonicalIntBytes,
 {
     let width = canonical_width(&cfg.modulus());
-    let _ = cfg.lift(value).write_le(width, out);
+    // See `write_base_field` for why this cannot fail, and why it must not be
+    // ignored if it ever does.
+    cfg.lift(value)
+        .write_le(width, out)
+        .expect("a lifted element always fits the modulus width");
 }
 
-pub fn read_base_field_with_config<C>(
+#[allow(dead_code, reason = "only config-based backends call this")]
+pub(crate) fn read_base_field_with_config<C>(
     cfg: &C,
     bytes: &[u8],
 ) -> Result<C::Element, CanonicalBytesError>
@@ -230,47 +244,57 @@ where
 }
 
 //
-// Shared uniform sampling logic
+//  uniform sampling logic
 //
 
-/// Reduces `bytes` into the field with Horner's rule over 64-bit chunks.
+/// Reduces `bytes` into the field with base 2^8 Horner's rule.
 ///
-/// Working inside the field avoids wide integer arithmetic, so this needs
-/// nothing beyond the field operations themselves.
-pub fn base_field_from_uniform_bytes<F>(bytes: &[u8]) -> F
+/// # Panics
+///
+/// Panics if `bytes.len()` is not `uniform_width(&F::modulus())`.
+pub(crate) fn base_field_from_uniform_bytes<F>(bytes: &[u8]) -> F
 where
     F: BaseField,
+    F::Integer: CanonicalIntBytes,
 {
-    let shift = F::from(1_u128 << 64);
+    assert!(
+        bytes.len() == uniform_width(&F::modulus()),
+        "uniform sampling needs exactly the uniform byte length"
+    );
+    let radix = F::from(256_u64);
     let mut acc = F::from(0_u64);
-    // Only the most significant chunk can be short, and it is consumed first.
-    for chunk in bytes.chunks(8).rev() {
-        let mut buf = [0_u8; 8];
-        buf[..chunk.len()].copy_from_slice(chunk);
-        acc = acc * &shift + F::from(u64::from_le_bytes(buf));
+
+    for &byte in bytes.iter().rev() {
+        acc = acc * &radix + F::from(u64::from(byte));
     }
+
     acc
 }
 
 /// Config-side counterpart of [`base_field_from_uniform_bytes`].
-pub fn base_field_from_uniform_bytes_with_config<C>(cfg: &C, bytes: &[u8]) -> C::Element
+#[allow(dead_code, reason = "only config-based backends call this")]
+pub(crate) fn base_field_from_uniform_bytes_with_config<C>(cfg: &C, bytes: &[u8]) -> C::Element
 where
-    C: BaseFieldConfig + ProjectElementWithConfig<u64> + ProjectElementWithConfig<u128>,
+    C: BaseFieldConfig + ProjectElementWithConfig<u64>,
+    C::Integer: CanonicalIntBytes,
 {
-    let shift = cfg.project(&(1_u128 << 64));
+    assert!(
+        bytes.len() == uniform_width(&cfg.modulus()),
+        "uniform sampling needs exactly the uniform byte length"
+    );
+    let radix = cfg.project(&(256_u64));
     let mut acc = cfg.project(&0_u64);
-    for chunk in bytes.chunks(8).rev() {
-        let mut buf = [0_u8; 8];
-        buf[..chunk.len()].copy_from_slice(chunk);
-        let limb = cfg.project(&u64::from_le_bytes(buf));
-        acc = cfg.add(&cfg.mul(&acc, &shift), &limb);
+
+    for &byte in bytes.iter().rev() {
+        acc = cfg.add(&cfg.mul(&acc, &radix), &cfg.project(&u64::from(byte)));
     }
+
     acc
 }
 
 /// Bytes needed to sample a base field element with bias at most `2^-128`.
 #[inline]
-pub fn uniform_width<I: CanonicalIntBytes>(modulus: &I) -> usize {
+pub(crate) fn uniform_width<I: CanonicalIntBytes>(modulus: &I) -> usize {
     canonical_width(modulus).saturating_add(UNIFORM_BYTES_MARGIN)
 }
 
@@ -292,6 +316,19 @@ where
 
     fn from_canonical_bytes(&self, bytes: &[u8]) -> Result<Self::Element, CanonicalBytesError> {
         F::from_canonical_bytes(bytes)
+    }
+}
+
+impl<F> FromUniformBytesWithConfig for crate::FixedConfig<F>
+where
+    F: crate::SetElement + FromUniformBytes,
+{
+    fn uniform_byte_len(&self) -> usize {
+        F::uniform_byte_len()
+    }
+
+    fn from_uniform_bytes(&self, bytes: &[u8]) -> Self::Element {
+        F::from_uniform_bytes(bytes)
     }
 }
 
@@ -379,15 +416,18 @@ mod backend_tests {
     use crate::{
         BaseFieldConfig, ConstBaseField, LiftElement, LiftElementWithConfig,
         crypto_bigint_boxed_monty::BoxedMontyField, crypto_bigint_boxed_uint::BoxedUint,
-        crypto_bigint_const_monty::ConstMontyField, crypto_bigint_monty::MontyField,
-        crypto_bigint_uint::Uint,
+        crypto_bigint_const_monty::ConstMontyField, crypto_bigint_int::Int,
+        crypto_bigint_monty::MontyField, crypto_bigint_uint::Uint,
     };
     use alloc::vec;
     use crypto_bigint::{Resize, U256, const_monty_params};
+    use proptest::prelude::*;
 
     /// secp256k1 field prime, 2^256 - 2^32 - 977. 256 bits, so 32 bytes.
     const MODULUS_HEX: &str = "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f";
     const WIDTH: usize = 32;
+    /// `2^256 - p`, the count of 32-byte values at or above the modulus.
+    const ABOVE_MODULUS: u64 = 4_294_968_273;
 
     const_monty_params!(ModP, U256, MODULUS_HEX);
     type ConstF = ConstMontyField<ModP, { U256::LIMBS }>;
@@ -404,8 +444,16 @@ mod backend_tests {
         BoxedMontyField::new(&modulus).expect("valid modulus")
     }
 
+    /// A decode followed by an encode of the decoded value.
+    type Reencoded = Result<vec::Vec<u8>, CanonicalBytesError>;
+
+    /// Decodes `bytes` as `T` and encodes the result again.
+    fn reencode<T: CanonicalBytes>(bytes: &[u8]) -> Reencoded {
+        T::from_canonical_bytes(bytes).map(|value| value.to_canonical_bytes())
+    }
+
     /// The bytes of `value` under each backend that can hold this modulus.
-    fn all_encodings(value: u64) -> vec::Vec<vec::Vec<u8>> {
+    fn all_encodings(value: i128) -> vec::Vec<vec::Vec<u8>> {
         let const_bytes = ConstF::from(value).to_canonical_bytes();
 
         let m = monty();
@@ -422,15 +470,45 @@ mod backend_tests {
         all
     }
 
+    /// [`reencode`] under each backend that can hold this modulus.
+    fn all_decodings(bytes: &[u8]) -> vec::Vec<Reencoded> {
+        let m = monty();
+        let b256 = boxed(256);
+        let b320 = boxed(320);
+        let mut all = vec![
+            reencode::<ConstF>(bytes),
+            m.from_canonical_bytes(bytes)
+                .map(|value| m.to_canonical_bytes(&value)),
+            b256.from_canonical_bytes(bytes)
+                .map(|value| b256.to_canonical_bytes(&value)),
+            b320.from_canonical_bytes(bytes)
+                .map(|value| b320.to_canonical_bytes(&value)),
+        ];
+        all.extend(ark_decodings(bytes));
+        all
+    }
+
+    /// `p + offset` as `WIDTH` little-endian bytes.
+    fn modulus_plus(offset: u64) -> vec::Vec<u8> {
+        let value = U256::from_be_hex(MODULUS_HEX).wrapping_add(&U256::from(offset));
+        crypto_bigint::Encoding::to_le_bytes(&value)
+            .as_ref()
+            .to_vec()
+    }
+
     #[cfg(not(feature = "ark_ff"))]
-    fn ark_encodings(_value: u64) -> vec::Vec<vec::Vec<u8>> {
+    fn ark_encodings(_value: i128) -> vec::Vec<vec::Vec<u8>> {
+        vec::Vec::new()
+    }
+
+    #[cfg(not(feature = "ark_ff"))]
+    fn ark_decodings(_bytes: &[u8]) -> vec::Vec<Reencoded> {
         vec::Vec::new()
     }
 
     /// The same modulus through the two arkworks backends.
     #[cfg(feature = "ark_ff")]
-    fn ark_encodings(value: u64) -> vec::Vec<vec::Vec<u8>> {
-        use crate::{ark_ff_field::ArkField, ark_ff_fp::Fp};
+    mod ark {
         use ark_ff::{Fp256, MontBackend, MontConfig};
 
         #[derive(MontConfig)]
@@ -438,13 +516,74 @@ mod backend_tests {
         #[generator = "3"]
         pub struct TestConfig;
 
-        type ArkF = ArkField<Fp256<MontBackend<TestConfig, 4>>>;
-        type FpF = Fp<MontBackend<TestConfig, 4>, 4>;
+        pub type ArkF = crate::ark_ff_field::ArkField<Fp256<MontBackend<TestConfig, 4>>>;
+        pub type FpF = crate::ark_ff_fp::Fp<MontBackend<TestConfig, 4>, 4>;
+    }
 
+    #[cfg(feature = "ark_ff")]
+    fn ark_encodings(value: i128) -> vec::Vec<vec::Vec<u8>> {
         vec![
-            ArkF::from(value).to_canonical_bytes(),
-            FpF::from(value).to_canonical_bytes(),
+            ark::ArkF::from(value).to_canonical_bytes(),
+            ark::FpF::from(value).to_canonical_bytes(),
         ]
+    }
+
+    #[cfg(feature = "ark_ff")]
+    fn ark_decodings(bytes: &[u8]) -> vec::Vec<Reencoded> {
+        vec![reencode::<ark::ArkF>(bytes), reencode::<ark::FpF>(bytes)]
+    }
+
+    #[test]
+    fn boxed_uint_rejects_a_zero_width_payload() {
+        // Regression: `[0, 0, 0, 0]` used to decode to zero, giving zero a
+        // second encoding alongside its canonical one.
+        assert_eq!(
+            BoxedUint::from_canonical_bytes(&[0, 0, 0, 0]),
+            Err(CanonicalBytesError::NonCanonical)
+        );
+    }
+
+    #[test]
+    fn boxed_uint_zero_has_exactly_one_encoding() {
+        let zero = BoxedUint::new(crypto_bigint::BoxedUint::zero());
+        let bytes = zero.to_canonical_bytes();
+        assert_eq!(bytes, vec![1, 0, 0, 0, 0]);
+        assert_eq!(BoxedUint::from_canonical_bytes(&bytes), Ok(zero));
+    }
+
+    #[test]
+    fn boxed_uint_decodes_at_minimal_precision() {
+        // Documented behaviour: the encoding carries no precision.
+        let wide = BoxedUint::new(crypto_bigint::BoxedUint::from(5_u64).resize_unchecked(512));
+        let back = BoxedUint::from_canonical_bytes(&wide.to_canonical_bytes()).expect("decodes");
+        assert_eq!(back, wide);
+        assert!(back.0.bits_precision() < wide.0.bits_precision());
+    }
+
+    #[test]
+    #[should_panic(expected = "uniform sampling needs exactly the uniform byte length")]
+    fn uniform_sampling_rejects_short_input() {
+        let _ = ConstF::from_uniform_bytes(&[]);
+    }
+
+    #[test]
+    #[should_panic(expected = "uniform sampling needs exactly the uniform byte length")]
+    fn uniform_sampling_rejects_short_input_with_config() {
+        let m = monty();
+        let _ = m.from_uniform_bytes(&[0; WIDTH]);
+    }
+
+    #[test]
+    #[should_panic(expected = "uniform sampling needs exactly the uniform byte length")]
+    fn uniform_sampling_rejects_long_input() {
+        let _ = ConstF::from_uniform_bytes(&[0; WIDTH + UNIFORM_BYTES_MARGIN + 1]);
+    }
+
+    #[test]
+    #[should_panic(expected = "uniform sampling needs exactly the uniform byte length")]
+    fn uniform_sampling_rejects_long_input_with_config() {
+        let m = monty();
+        let _ = m.from_uniform_bytes(&[0; WIDTH + UNIFORM_BYTES_MARGIN + 1]);
     }
 
     #[test]
@@ -453,7 +592,7 @@ mod backend_tests {
         let expected_backends = if cfg!(feature = "ark_ff") { 6 } else { 4 };
         assert_eq!(all_encodings(1).len(), expected_backends);
 
-        for value in [0_u64, 1, 2, 3, 255, 256, u64::MAX] {
+        for value in [0, 1, 2, 3, 255, 256, i128::from(u64::MAX)] {
             let encodings = all_encodings(value);
             for bytes in &encodings {
                 assert_eq!(bytes.len(), WIDTH, "width must follow the modulus");
@@ -483,11 +622,71 @@ mod backend_tests {
         let zero = all_encodings(0);
         assert_eq!(zero[0].as_slice(), &[0_u8; WIDTH]);
 
-        // p - 1 ends in 0x2e, little-endian, and the top bytes are 0xff.
-        let minus_one = ConstF::from(0_u64) - ConstF::from(1_u64);
-        let bytes = minus_one.to_canonical_bytes();
-        assert_eq!(bytes[0], 0x2e);
-        assert_eq!(bytes[WIDTH - 1], 0xff);
+        // p - 1 = 2^256 - 2^32 - 978 sets every limb, so it pins the limb
+        // order of every backend.
+        let mut minus_one = [0xff_u8; WIDTH];
+        minus_one[..5].copy_from_slice(&[0x2e, 0xfc, 0xff, 0xff, 0xfe]);
+        for bytes in all_encodings(-1) {
+            assert_eq!(bytes, minus_one);
+        }
+    }
+
+    #[test]
+    fn fixed_width_ints_are_little_endian() {
+        let low = [1_u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let mut expected = [0_u8; WIDTH];
+        expected[..16].copy_from_slice(&low);
+        assert_eq!(
+            Uint::<{ U256::LIMBS }>::from(u128::from_le_bytes(low)).to_canonical_bytes(),
+            expected
+        );
+        // Two's complement sign extension.
+        assert_eq!(
+            Int::<{ U256::LIMBS }>::from(-1_i64).to_canonical_bytes(),
+            [0xff_u8; WIDTH]
+        );
+        #[cfg(feature = "ark_ff")]
+        {
+            let mut expected = [0_u8; WIDTH];
+            expected[..8].copy_from_slice(&low[..8]);
+            let value = u64::from_le_bytes([1, 2, 3, 4, 5, 6, 7, 8]);
+            assert_eq!(
+                crate::ark_ff_bigint::BigInt::<4>::from(value).to_canonical_bytes(),
+                expected
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn backends_round_trip_any_element(
+            seed in proptest::collection::vec(any::<u8>(), WIDTH + UNIFORM_BYTES_MARGIN)
+        ) {
+            let bytes = ConstF::from_uniform_bytes(&seed).to_canonical_bytes();
+            for decoded in all_decodings(&bytes) {
+                prop_assert_eq!(decoded, Ok(bytes.clone()));
+            }
+        }
+
+        #[test]
+        fn backends_reject_every_value_from_the_modulus_up(offset in 0..ABOVE_MODULUS) {
+            let bytes = modulus_plus(offset);
+            for decoded in all_decodings(&bytes) {
+                prop_assert_eq!(decoded, Err(CanonicalBytesError::NonCanonical));
+            }
+        }
+
+        #[test]
+        fn fixed_width_ints_accept_every_bit_pattern(bytes in any::<[u8; WIDTH]>()) {
+            #[allow(unused_mut, reason = "only the ark_ff build pushes")]
+            let mut decoders: vec::Vec<fn(&[u8]) -> Reencoded> =
+                vec![reencode::<Uint<{ U256::LIMBS }>>, reencode::<Int<{ U256::LIMBS }>>];
+            #[cfg(feature = "ark_ff")]
+            decoders.push(reencode::<crate::ark_ff_bigint::BigInt<4>>);
+            for decode in decoders {
+                prop_assert_eq!(decode(&bytes), Ok(bytes.to_vec()));
+            }
+        }
     }
 
     #[test]
@@ -580,39 +779,61 @@ mod backend_tests {
 
     #[test]
     fn uniform_sampling_reduces_the_input() {
-        // A short input is below the modulus, so it must map to itself.
+        let full = ConstF::uniform_byte_len();
+
+        // A small value inside a full-width buffer must map to itself.
         for value in [0_u8, 1, 5, 200] {
+            let mut bytes = vec::Vec::from_iter(core::iter::repeat_n(0_u8, full));
+            bytes[0] = value;
             assert_eq!(
-                ConstF::from_uniform_bytes(&[value]),
+                ConstF::from_uniform_bytes(&bytes),
                 ConstF::from(u64::from(value))
             );
         }
-        // 2^64 little-endian, which is not below the modulus but is exact.
-        let mut bytes = [0_u8; 9];
+
+        // 2^64 little-endian, above a u64 but far below the modulus, so exact.
+        let mut bytes = vec::Vec::from_iter(core::iter::repeat_n(0_u8, full));
         bytes[8] = 1;
         let expected = ConstF::from(1_u64 << 32) * ConstF::from(1_u64 << 32);
         assert_eq!(ConstF::from_uniform_bytes(&bytes), expected);
     }
 
-    #[cfg(feature = "serde")]
+    /// `MontyFieldElement` and `BoxedMontyFieldElement` keep a `serde` impl for
+    /// storage, but it writes the Montgomery residue. Pin that difference so it
+    /// cannot be mistaken for the canonical encoding.
     #[test]
-    fn serde_round_trips_and_matches_canonical_bytes() {
-        let element = ConstF::from(12345_u64);
-        let json = serde_json::to_string(&element).expect("serializes");
-        let back: ConstF = serde_json::from_str(&json).expect("deserializes");
-        assert_eq!(back, element);
+    fn element_serde_payload_is_not_the_canonical_encoding() {
+        use crate::crypto_bigint_monty::MontyFieldElement;
 
-        // The `serde` payload is the canonical encoding, not the Montgomery one.
-        let payload: vec::Vec<u8> = serde_json::from_str(&json).expect("byte sequence");
-        assert_eq!(payload, element.to_canonical_bytes());
+        let m = monty();
+        let element: MontyFieldElement<{ U256::LIMBS }> = m.project(&3_u64);
+
+        // `element.0` is what `serde` writes: the raw Montgomery residue.
+        let stored = element.0.to_canonical_bytes();
+        let canonical = m.to_canonical_bytes(&element);
+
+        assert_eq!(stored.len(), canonical.len());
+        assert_ne!(
+            stored, canonical,
+            "serde must not be mistaken for canonical"
+        );
+
+        let mut expected = [0_u8; WIDTH];
+        expected[0] = 3;
+        assert_eq!(canonical.as_slice(), &expected);
     }
 
     #[cfg(feature = "serde")]
     #[test]
-    fn serde_rejects_a_non_canonical_payload() {
-        let bytes = [0xff_u8; WIDTH];
-        let json = serde_json::to_string(&bytes.to_vec()).expect("serializes");
-        assert!(serde_json::from_str::<ConstF>(&json).is_err());
+    fn element_serde_still_round_trips_for_storage() {
+        use crate::crypto_bigint_monty::MontyFieldElement;
+
+        let m = monty();
+        let element: MontyFieldElement<{ U256::LIMBS }> = m.project(&3_u64);
+        let json = serde_json::to_string(&element).expect("serializes");
+        let back: MontyFieldElement<{ U256::LIMBS }> =
+            serde_json::from_str(&json).expect("deserializes");
+        assert_eq!(back, element);
     }
 
     #[test]
@@ -629,6 +850,41 @@ mod backend_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Bytes 0 and 1 round-trip. Every other byte is rejected.
+    fn assert_only_zero_and_one<T: CanonicalBytes>() {
+        for byte in 0..=u8::MAX {
+            match T::from_canonical_bytes(&[byte]) {
+                Ok(value) => {
+                    assert!(byte <= 1, "accepted {byte}");
+                    assert_eq!(value.to_canonical_bytes(), [byte]);
+                }
+                Err(err) => {
+                    assert!(byte > 1, "rejected {byte}");
+                    assert_eq!(err, CanonicalBytesError::NonCanonical);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn single_byte_types_accept_only_zero_and_one() {
+        assert_only_zero_and_one::<crate::f2::F2>();
+        assert_only_zero_and_one::<crate::boolean::Boolean>();
+    }
+
+    #[test]
+    fn boolean_rejects_wrong_length() {
+        for bytes in [&[][..], &[0, 0]] {
+            assert_eq!(
+                crate::boolean::Boolean::from_canonical_bytes(bytes),
+                Err(CanonicalBytesError::InvalidLength {
+                    expected: 1,
+                    actual: bytes.len()
+                })
+            );
+        }
+    }
 
     #[test]
     fn primitive_round_trip() {

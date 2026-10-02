@@ -822,8 +822,8 @@ impl<const N: usize> CanonicalBytes for BigInt<N> {
     }
 
     fn write_canonical(&self, out: &mut Vec<u8>) {
-        // The full width always fits.
-        let _ = self.write_le(Self::BYTES, out);
+        self.write_le(Self::BYTES, out)
+            .expect("the full width always fits");
     }
 
     fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {

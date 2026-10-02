@@ -501,14 +501,9 @@ impl serde::Serialize for F2 {
 impl zeroize::DefaultIsZeroes for F2 {}
 
 //
-// Tests
-//
-
-//
 // Canonical bytes
 //
 
-/// One byte, `0x00` or `0x01`, matching the width the modulus 2 implies.
 impl CanonicalBytes for F2 {
     #[inline]
     fn canonical_byte_len(&self) -> usize {
@@ -541,6 +536,10 @@ impl FromUniformBytes for F2 {
         base_field_from_uniform_bytes(bytes)
     }
 }
+
+//
+// Tests
+//
 
 #[allow(
     clippy::arithmetic_side_effects,

@@ -673,33 +673,41 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> crypto_bigint::Random for ConstMont
 // Serialization and Deserialization
 //
 
-// Serializes the canonical value, not the Montgomery residue, so that the
-// bytes agree with `CanonicalBytes` and with every other backend.
+/// Writes the raw Montgomery residue like `crypto-bigint` does, and not the
+/// canonical value. The width here follows `LIMBS` and not the modulus.
+///
+/// This is a storage format. It round-trips only through this exact type.
+/// Never feed it to a Fiat-Shamir transcript. Use
+/// [`CanonicalBytes::to_canonical_bytes`]
+/// instead.
 #[cfg(feature = "serde")]
 impl<'de, Mod, const LIMBS: usize> serde::Deserialize<'de> for ConstMontyField<Mod, LIMBS>
 where
     Mod: Params<LIMBS>,
+    crypto_bigint::Uint<LIMBS>: crypto_bigint::Encoding,
 {
+    #[inline(always)]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        use serde::de::Error;
-        let bytes = alloc::vec::Vec::<u8>::deserialize(deserializer)?;
-        Self::from_canonical_bytes(&bytes).map_err(D::Error::custom)
+        ConstMontyForm::<Mod, LIMBS>::deserialize(deserializer).map(Self)
     }
 }
 
+/// See the `Deserialize` impl for why these bytes are not canonical.
 #[cfg(feature = "serde")]
 impl<Mod, const LIMBS: usize> serde::Serialize for ConstMontyField<Mod, LIMBS>
 where
     Mod: Params<LIMBS>,
+    crypto_bigint::Uint<LIMBS>: crypto_bigint::Encoding,
 {
+    #[inline(always)]
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        serializer.serialize_bytes(&self.to_canonical_bytes())
+        self.0.serialize(serializer)
     }
 }
 
@@ -747,6 +755,43 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Retrieve for ConstMontyField<Mod, L
 
     fn retrieve(&self) -> Self::Output {
         self.retrieve()
+    }
+}
+
+//
+// Canonical bytes
+//
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> CanonicalBytes for ConstMontyField<Mod, LIMBS> {
+    #[inline]
+    fn canonical_byte_len(&self) -> usize {
+        Self::fixed_canonical_byte_len()
+    }
+
+    fn write_canonical(&self, out: &mut Vec<u8>) {
+        write_base_field(self, out);
+    }
+
+    fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
+        read_base_field(bytes)
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> FixedCanonicalBytes for ConstMontyField<Mod, LIMBS> {
+    #[inline]
+    fn fixed_canonical_byte_len() -> usize {
+        canonical_width(&Self::MODULUS)
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> FromUniformBytes for ConstMontyField<Mod, LIMBS> {
+    #[inline]
+    fn uniform_byte_len() -> usize {
+        uniform_width(&Self::MODULUS)
+    }
+
+    fn from_uniform_bytes(bytes: &[u8]) -> Self {
+        base_field_from_uniform_bytes(bytes)
     }
 }
 
@@ -1461,43 +1506,6 @@ mod tests {
     #[cfg(feature = "zerocopy")]
     fn zerocopy() {
         ensure_type_implements_trait!(F, zerocopy::KnownLayout);
-    }
-}
-
-//
-// Canonical bytes
-//
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> CanonicalBytes for ConstMontyField<Mod, LIMBS> {
-    #[inline]
-    fn canonical_byte_len(&self) -> usize {
-        Self::fixed_canonical_byte_len()
-    }
-
-    fn write_canonical(&self, out: &mut Vec<u8>) {
-        write_base_field(self, out);
-    }
-
-    fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
-        read_base_field(bytes)
-    }
-}
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> FixedCanonicalBytes for ConstMontyField<Mod, LIMBS> {
-    #[inline]
-    fn fixed_canonical_byte_len() -> usize {
-        canonical_width(&Self::MODULUS)
-    }
-}
-
-impl<Mod: Params<LIMBS>, const LIMBS: usize> FromUniformBytes for ConstMontyField<Mod, LIMBS> {
-    #[inline]
-    fn uniform_byte_len() -> usize {
-        uniform_width(&Self::MODULUS)
-    }
-
-    fn from_uniform_bytes(bytes: &[u8]) -> Self {
-        base_field_from_uniform_bytes(bytes)
     }
 }
 

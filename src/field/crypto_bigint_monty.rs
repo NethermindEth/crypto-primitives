@@ -403,10 +403,36 @@ impl<const LIMBS: usize> LiftElementWithConfig<<Self as WithAssociatedInteger>::
 // Serialization and Deserialization
 //
 
-// `serde` is deliberately not implemented for `MontyFieldElement`: the element
-// carries no modulus, so it cannot strip the Montgomery factor, and the bytes
-// would differ from every other backend holding the same value. Use
-// `MontyField::to_canonical_bytes` instead.
+/// Writes the raw Montgomery residue, not the canonical value. The element
+/// carries no modulus, so it cannot remove the Montgomery factor. The width
+/// follows `LIMBS` and not the modulus.
+///
+/// This is a storage format. It round-trips only through a field with the same
+/// modulus. Never feed it to a Fiat-Shamir transcript. Use
+/// [`CanonicalBytesWithConfig::to_canonical_bytes`]
+/// on [`MontyField`] instead.
+#[cfg(feature = "serde")]
+impl<'de, const LIMBS: usize> serde::Deserialize<'de> for MontyFieldElement<LIMBS> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Uint::<LIMBS>::deserialize(deserializer).map(Self)
+    }
+}
+
+/// See [the `Deserialize`
+/// impl][MontyFieldElement#impl-Deserialize<'de>-for-MontyFieldElement<LIMBS>]
+/// for why these bytes are not canonical.
+#[cfg(feature = "serde")]
+impl<const LIMBS: usize> serde::Serialize for MontyFieldElement<LIMBS> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
 
 // TODO: Do we want to zeroize the modulus?
 
@@ -447,9 +473,8 @@ pub type F32768 = MontyField<{ 512 * WORD_FACTOR }>;
 //
 
 /// The element carries no modulus, so only the config can produce a canonical
-/// encoding. `serde` is deliberately not implemented on
-/// [`MontyFieldElement`] for the same reason: it would leak the Montgomery
-/// residue.
+/// encoding. `MontyFieldElement`'s own `serde` impl writes the Montgomery
+/// residue and must not be used for a transcript.
 impl<const LIMBS: usize> CanonicalBytesWithConfig for MontyField<LIMBS> {
     #[inline]
     fn canonical_byte_len(&self) -> usize {

@@ -749,41 +749,6 @@ impl<const LIMBS: usize> crypto_bigint::Constants for Uint<LIMBS> {
 }
 
 //
-// Predefined uints of various sizes for convenience
-//
-
-use crate::helpers::crypto_bigint::WORD_FACTOR;
-pub type U64 = Uint<{ WORD_FACTOR }>;
-pub type U128 = Uint<{ 2 * WORD_FACTOR }>;
-pub type U192 = Uint<{ 3 * WORD_FACTOR }>;
-pub type U256 = Uint<{ 4 * WORD_FACTOR }>;
-pub type U320 = Uint<{ 5 * WORD_FACTOR }>;
-pub type U384 = Uint<{ 6 * WORD_FACTOR }>;
-pub type U448 = Uint<{ 7 * WORD_FACTOR }>;
-pub type U512 = Uint<{ 8 * WORD_FACTOR }>;
-pub type U576 = Uint<{ 9 * WORD_FACTOR }>;
-pub type U640 = Uint<{ 10 * WORD_FACTOR }>;
-pub type U704 = Uint<{ 11 * WORD_FACTOR }>;
-pub type U768 = Uint<{ 12 * WORD_FACTOR }>;
-pub type U832 = Uint<{ 13 * WORD_FACTOR }>;
-pub type U896 = Uint<{ 14 * WORD_FACTOR }>;
-pub type U960 = Uint<{ 15 * WORD_FACTOR }>;
-pub type U1024 = Uint<{ 16 * WORD_FACTOR }>;
-pub type U1280 = Uint<{ 20 * WORD_FACTOR }>;
-pub type U1536 = Uint<{ 24 * WORD_FACTOR }>;
-pub type U1792 = Uint<{ 28 * WORD_FACTOR }>;
-pub type U2048 = Uint<{ 32 * WORD_FACTOR }>;
-pub type U3072 = Uint<{ 48 * WORD_FACTOR }>;
-pub type U3584 = Uint<{ 56 * WORD_FACTOR }>;
-pub type U4096 = Uint<{ 64 * WORD_FACTOR }>;
-pub type U4224 = Uint<{ 66 * WORD_FACTOR }>;
-pub type U4352 = Uint<{ 68 * WORD_FACTOR }>;
-pub type U6144 = Uint<{ 96 * WORD_FACTOR }>;
-pub type U8192 = Uint<{ 128 * WORD_FACTOR }>;
-pub type U16384 = Uint<{ 256 * WORD_FACTOR }>;
-pub type U32768 = Uint<{ 512 * WORD_FACTOR }>;
-
-//
 // Canonical bytes
 //
 
@@ -823,8 +788,8 @@ impl<const LIMBS: usize> CanonicalBytes for Uint<LIMBS> {
     }
 
     fn write_canonical(&self, out: &mut Vec<u8>) {
-        // The full width always fits.
-        let _ = self.write_le(Self::BYTES, out);
+        self.write_le(Self::BYTES, out)
+            .expect("the full width always fits");
     }
 
     fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
@@ -844,6 +809,41 @@ impl<const LIMBS: usize> FixedCanonicalBytes for Uint<LIMBS> {
         Self::BYTES
     }
 }
+
+//
+// Predefined uints of various sizes for convenience
+//
+
+use crate::helpers::crypto_bigint::WORD_FACTOR;
+pub type U64 = Uint<{ WORD_FACTOR }>;
+pub type U128 = Uint<{ 2 * WORD_FACTOR }>;
+pub type U192 = Uint<{ 3 * WORD_FACTOR }>;
+pub type U256 = Uint<{ 4 * WORD_FACTOR }>;
+pub type U320 = Uint<{ 5 * WORD_FACTOR }>;
+pub type U384 = Uint<{ 6 * WORD_FACTOR }>;
+pub type U448 = Uint<{ 7 * WORD_FACTOR }>;
+pub type U512 = Uint<{ 8 * WORD_FACTOR }>;
+pub type U576 = Uint<{ 9 * WORD_FACTOR }>;
+pub type U640 = Uint<{ 10 * WORD_FACTOR }>;
+pub type U704 = Uint<{ 11 * WORD_FACTOR }>;
+pub type U768 = Uint<{ 12 * WORD_FACTOR }>;
+pub type U832 = Uint<{ 13 * WORD_FACTOR }>;
+pub type U896 = Uint<{ 14 * WORD_FACTOR }>;
+pub type U960 = Uint<{ 15 * WORD_FACTOR }>;
+pub type U1024 = Uint<{ 16 * WORD_FACTOR }>;
+pub type U1280 = Uint<{ 20 * WORD_FACTOR }>;
+pub type U1536 = Uint<{ 24 * WORD_FACTOR }>;
+pub type U1792 = Uint<{ 28 * WORD_FACTOR }>;
+pub type U2048 = Uint<{ 32 * WORD_FACTOR }>;
+pub type U3072 = Uint<{ 48 * WORD_FACTOR }>;
+pub type U3584 = Uint<{ 56 * WORD_FACTOR }>;
+pub type U4096 = Uint<{ 64 * WORD_FACTOR }>;
+pub type U4224 = Uint<{ 66 * WORD_FACTOR }>;
+pub type U4352 = Uint<{ 68 * WORD_FACTOR }>;
+pub type U6144 = Uint<{ 96 * WORD_FACTOR }>;
+pub type U8192 = Uint<{ 128 * WORD_FACTOR }>;
+pub type U16384 = Uint<{ 256 * WORD_FACTOR }>;
+pub type U32768 = Uint<{ 512 * WORD_FACTOR }>;
 
 #[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
 #[cfg(test)]

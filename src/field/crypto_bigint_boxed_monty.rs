@@ -459,10 +459,37 @@ impl LiftElementWithConfig<<Self as WithAssociatedInteger>::Integer> for BoxedMo
 // Serialization and Deserialization
 //
 
-// `serde` is deliberately not implemented for `BoxedMontyFieldElement`: the
-// element carries no modulus, so it cannot strip the Montgomery factor, and its
-// width would follow the allocated precision rather than the modulus. Use
-// `BoxedMontyField::to_canonical_bytes` instead.
+/// Writes the raw Montgomery residue, not the canonical value. The element
+/// carries no modulus, so it cannot remove the Montgomery factor. Both the
+/// width and the residue follow the allocated precision, so one value encodes
+/// differently at each precision.
+///
+/// This is a storage format. It round-trips only through a field with the same
+/// modulus and precision. Never feed it to a Fiat-Shamir transcript. Use
+/// [`CanonicalBytesWithConfig::to_canonical_bytes`]
+/// on [`BoxedMontyField`] instead.
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for BoxedMontyFieldElement {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        BoxedUint::deserialize(deserializer).map(Self)
+    }
+}
+
+/// See [the `Deserialize` impl]
+/// [BoxedMontyFieldElement#impl-Deserialize<'de>-for-BoxedMontyFieldElement]
+/// for why these bytes are not canonical.
+#[cfg(feature = "serde")]
+impl serde::Serialize for BoxedMontyFieldElement {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
 
 // TODO: Do we want to zeroize the modulus?
 
@@ -470,11 +497,8 @@ impl LiftElementWithConfig<<Self as WithAssociatedInteger>::Integer> for BoxedMo
 // Canonical bytes
 //
 
-/// The width follows the modulus, never the [`BoxedUint`] precision, so the
-/// same element encodes alike whatever precision holds it.
-///
-/// The element carries no modulus, so `serde` is deliberately not implemented
-/// on [`BoxedMontyFieldElement`].
+/// The width here follows the modulus and not the [`BoxedUint`] precision, so
+/// the same element encodes uniformly regardless of the precision.
 impl CanonicalBytesWithConfig for BoxedMontyField {
     #[inline]
     fn canonical_byte_len(&self) -> usize {
