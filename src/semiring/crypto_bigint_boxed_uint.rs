@@ -1,6 +1,11 @@
 use super::*;
-use crate::{Wrapper, boolean::Boolean, helpers::pow_via_repeated_squaring};
-use alloc::boxed::Box;
+use crate::{
+    Wrapper,
+    boolean::Boolean,
+    helpers::pow_via_repeated_squaring,
+    serialization::{CanonicalBytes, CanonicalBytesError, CanonicalIntBytes, canonical_width},
+};
+use alloc::{boxed::Box, vec::Vec};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, LowerHex, Result as FmtResult, UpperHex},
@@ -780,6 +785,108 @@ impl crypto_bigint::CtLt for BoxedUint {
 impl crypto_bigint::CtSelect for BoxedUint {
     fn ct_select(&self, other: &Self, choice: crypto_bigint::Choice) -> Self {
         crypto_bigint::CtSelect::ct_select(&self.0, &other.0, choice).into()
+    }
+}
+
+//
+// Canonical bytes
+//
+
+/// Bytes of the length prefix that makes the [`BoxedUint`] encoding
+/// self-delimiting.
+const BOXED_UINT_LENGTH_PREFIX_BYTES: usize = 4;
+
+impl CanonicalIntBytes for BoxedUint {
+    #[inline]
+    fn bit_len(&self) -> u32 {
+        self.0.bits()
+    }
+
+    fn write_le(&self, width: usize, out: &mut Vec<u8>) {
+        assert!(
+            canonical_width(self) <= width,
+            "value does not fit into {width} bytes"
+        );
+        let all = self.0.to_le_bytes();
+        let taken = all.len().min(width);
+        out.extend_from_slice(&all[..taken]);
+        out.resize(out.len().saturating_add(width.saturating_sub(taken)), 0);
+    }
+
+    fn read_le(bytes: &[u8]) -> Self {
+        Self(crypto_bigint::BoxedUint::from_le_slice_vartime(bytes))
+    }
+}
+
+impl CanonicalBytes for BoxedUint {
+    fn canonical_byte_len(&self) -> usize {
+        BOXED_UINT_LENGTH_PREFIX_BYTES.saturating_add(self.payload_width())
+    }
+
+    /// Writes little-endian `u32` byte count followed by the bytes of the
+    /// value. Equal values encode alike at any precision.
+    fn write_canonical(&self, out: &mut Vec<u8>) {
+        let width = self.payload_width();
+        let prefix = u32::try_from(width).expect("a BoxedUint holds at most u32::MAX bits");
+        out.extend_from_slice(&prefix.to_le_bytes());
+        self.write_le(width, out);
+    }
+
+    /// Returns the minimal precision needed for the value because the encoding
+    /// does not carry the precision.
+    /// NOTE: `crypto-bigint` arithmetic result takes the left operand's
+    /// precision so combining decoded with a wider value can panic
+    /// on overflow. Resize the decoded value first.
+    fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
+        let (prefix, payload) = bytes
+            .split_at_checked(BOXED_UINT_LENGTH_PREFIX_BYTES)
+            .ok_or(CanonicalBytesError::InvalidLength {
+                expected: BOXED_UINT_LENGTH_PREFIX_BYTES,
+                actual: bytes.len(),
+            })?;
+        let mut buf = [0_u8; BOXED_UINT_LENGTH_PREFIX_BYTES];
+        buf.copy_from_slice(prefix);
+        let width = usize::try_from(u32::from_le_bytes(buf))
+            .expect("prefix width is derived from a 32-bit length");
+        if payload.len() != width {
+            return Err(CanonicalBytesError::InvalidLength {
+                expected: width,
+                actual: payload.len(),
+            });
+        }
+        // The writer never emits a zero-width payload, so accepting one would
+        // give zero a second encoding alongside its canonical `[1, 0, 0, 0, 0]`.
+        if width == 0 {
+            return Err(CanonicalBytesError::NonCanonical);
+        }
+        // A leading zero byte would likewise give one value two encodings.
+        if width > 1 && payload.last() == Some(&0) {
+            return Err(CanonicalBytesError::NonCanonical);
+        }
+
+        let max_payload_bytes =
+            (u32::MAX / crypto_bigint::Limb::BITS) * (crypto_bigint::Limb::BITS / 8);
+
+        let max_width = usize::try_from(max_payload_bytes)
+            .expect("supported targets have at least 32-bit usize");
+
+        if width > max_width {
+            return Err(CanonicalBytesError::InvalidLength {
+                expected: max_width,
+                actual: width,
+            });
+        }
+
+        Ok(Self(crypto_bigint::BoxedUint::from_le_slice_vartime(
+            payload,
+        )))
+    }
+}
+
+impl BoxedUint {
+    /// Bytes the value itself needs, at least one so that zero stays encodable.
+    fn payload_width(&self) -> usize {
+        canonical_width(self).max(1)
     }
 }
 

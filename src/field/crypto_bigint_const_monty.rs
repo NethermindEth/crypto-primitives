@@ -1,8 +1,17 @@
 use super::*;
 use crate::{
-    IntSemiring, LiftElement, Wrapper, boolean::Boolean, crypto_bigint_int::Int,
-    crypto_bigint_uint::Uint, helpers::crypto_bigint as helpers,
+    IntSemiring, LiftElement, Wrapper,
+    boolean::Boolean,
+    crypto_bigint_int::Int,
+    crypto_bigint_uint::Uint,
+    helpers::crypto_bigint as helpers,
+    serialization::{
+        CanonicalBytes, CanonicalBytesError, FixedCanonicalBytes, FromUniformBytes,
+        base_field_from_uniform_bytes, canonical_width, read_base_field, uniform_width,
+        write_base_field,
+    },
 };
+use alloc::vec::Vec;
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, Result as FmtResult},
@@ -664,6 +673,13 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> crypto_bigint::Random for ConstMont
 // Serialization and Deserialization
 //
 
+/// Writes the raw Montgomery residue like `crypto-bigint` does, and not the
+/// canonical value. The width here follows `LIMBS` and not the modulus.
+///
+/// This is a storage format. It round-trips only through this exact type.
+/// Never feed it to a Fiat-Shamir transcript. Use
+/// [`CanonicalBytes::to_canonical_bytes`]
+/// instead.
 #[cfg(feature = "serde")]
 impl<'de, Mod, const LIMBS: usize> serde::Deserialize<'de> for ConstMontyField<Mod, LIMBS>
 where
@@ -679,6 +695,7 @@ where
     }
 }
 
+/// See the `Deserialize` impl for why these bytes are not canonical.
 #[cfg(feature = "serde")]
 impl<Mod, const LIMBS: usize> serde::Serialize for ConstMontyField<Mod, LIMBS>
 where
@@ -738,6 +755,43 @@ impl<Mod: Params<LIMBS>, const LIMBS: usize> Retrieve for ConstMontyField<Mod, L
 
     fn retrieve(&self) -> Self::Output {
         self.retrieve()
+    }
+}
+
+//
+// Canonical bytes
+//
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> CanonicalBytes for ConstMontyField<Mod, LIMBS> {
+    #[inline]
+    fn canonical_byte_len(&self) -> usize {
+        Self::fixed_canonical_byte_len()
+    }
+
+    fn write_canonical(&self, out: &mut Vec<u8>) {
+        write_base_field(&FixedConfig::<Self>::const_default(), self, out);
+    }
+
+    fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
+        read_base_field(&FixedConfig::<Self>::const_default(), bytes)
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> FixedCanonicalBytes for ConstMontyField<Mod, LIMBS> {
+    #[inline]
+    fn fixed_canonical_byte_len() -> usize {
+        canonical_width(&Self::MODULUS)
+    }
+}
+
+impl<Mod: Params<LIMBS>, const LIMBS: usize> FromUniformBytes for ConstMontyField<Mod, LIMBS> {
+    #[inline]
+    fn uniform_byte_len() -> usize {
+        uniform_width(&Self::MODULUS)
+    }
+
+    fn from_uniform_bytes(bytes: &[u8]) -> Self {
+        base_field_from_uniform_bytes(&FixedConfig::<Self>::const_default(), bytes)
     }
 }
 

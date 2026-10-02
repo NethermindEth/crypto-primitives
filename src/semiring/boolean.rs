@@ -1,4 +1,9 @@
-use crate::{IntSemiring, Wrapper, f2::F2};
+use crate::{
+    IntSemiring, Wrapper,
+    f2::F2,
+    serialization::{CanonicalBytes, CanonicalBytesError, FixedCanonicalBytes},
+};
+use alloc::vec::Vec;
 use core::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     hash::Hash,
@@ -498,6 +503,41 @@ impl zeroize::DefaultIsZeroes for Boolean {}
 //
 // Tests
 //
+
+//
+// Canonical bytes
+//
+
+/// One byte, `0x00` or `0x01`. Any other byte is rejected.
+impl CanonicalBytes for Boolean {
+    #[inline]
+    fn canonical_byte_len(&self) -> usize {
+        1
+    }
+
+    fn write_canonical(&self, out: &mut Vec<u8>) {
+        out.push(self.to_u8());
+    }
+
+    fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
+        match bytes {
+            [0] => Ok(Self::FALSE),
+            [1] => Ok(Self::TRUE),
+            [_] => Err(CanonicalBytesError::NonCanonical),
+            _ => Err(CanonicalBytesError::InvalidLength {
+                expected: 1,
+                actual: bytes.len(),
+            }),
+        }
+    }
+}
+
+impl FixedCanonicalBytes for Boolean {
+    #[inline]
+    fn fixed_canonical_byte_len() -> usize {
+        1
+    }
+}
 
 #[allow(
     clippy::arithmetic_side_effects,

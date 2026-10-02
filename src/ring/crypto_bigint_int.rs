@@ -1,7 +1,11 @@
 use crate::{
-    IntSemiring, Wrapper, boolean::Boolean, crypto_bigint_uint::Uint,
+    IntSemiring, Wrapper,
+    boolean::Boolean,
+    crypto_bigint_uint::Uint,
     helpers::pow_via_repeated_squaring,
+    serialization::{CanonicalBytes, CanonicalBytesError, FixedCanonicalBytes},
 };
+use alloc::vec::Vec;
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, LowerHex, Result as FmtResult, UpperHex},
@@ -899,6 +903,45 @@ pub type I6144 = Int<{ 96 * WORD_FACTOR }>;
 pub type I8192 = Int<{ 128 * WORD_FACTOR }>;
 pub type I16384 = Int<{ 256 * WORD_FACTOR }>;
 pub type I32768 = Int<{ 512 * WORD_FACTOR }>;
+
+//
+// Canonical bytes
+//
+
+/// Two's complement, little-endian, fixed width. Every bit pattern is valid, so
+/// there is no non-canonical case.
+impl<const LIMBS: usize> CanonicalBytes for Int<LIMBS> {
+    #[inline]
+    fn canonical_byte_len(&self) -> usize {
+        Self::BYTES
+    }
+
+    fn write_canonical(&self, out: &mut Vec<u8>) {
+        let repr = crypto_bigint::Encoding::to_le_bytes(&self.0);
+        out.extend_from_slice(repr.as_ref());
+    }
+
+    fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
+        if bytes.len() != Self::BYTES {
+            return Err(CanonicalBytesError::InvalidLength {
+                expected: Self::BYTES,
+                actual: bytes.len(),
+            });
+        }
+        let mut repr = <crypto_bigint::Int<LIMBS> as crypto_bigint::Encoding>::Repr::default();
+        repr.as_mut().copy_from_slice(bytes);
+        Ok(Self(
+            <crypto_bigint::Int<LIMBS> as crypto_bigint::Encoding>::from_le_bytes(repr),
+        ))
+    }
+}
+
+impl<const LIMBS: usize> FixedCanonicalBytes for Int<LIMBS> {
+    #[inline]
+    fn fixed_canonical_byte_len() -> usize {
+        Self::BYTES
+    }
+}
 
 #[allow(clippy::arithmetic_side_effects, clippy::cast_lossless)]
 #[cfg(test)]

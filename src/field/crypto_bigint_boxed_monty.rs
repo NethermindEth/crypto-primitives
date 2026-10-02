@@ -1,10 +1,18 @@
 use super::*;
 use crate::{
     IntSemiring, IntSemiringConfig, LiftElementWithConfig, SemiringConfig, Wrapper,
-    boolean::Boolean, crypto_bigint_boxed_uint::BoxedUint, crypto_bigint_int::Int,
-    crypto_bigint_uint::Uint, helpers::crypto_bigint as helpers,
+    boolean::Boolean,
+    crypto_bigint_boxed_uint::BoxedUint,
+    crypto_bigint_int::Int,
+    crypto_bigint_uint::Uint,
+    helpers::crypto_bigint as helpers,
+    serialization::{
+        CanonicalBytesError, CanonicalBytesWithConfig, FromUniformBytesWithConfig,
+        base_field_from_uniform_bytes, canonical_width, read_base_field, uniform_width,
+        write_base_field,
+    },
 };
-use alloc::borrow::Cow;
+use alloc::{borrow::Cow, vec::Vec};
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, Result as FmtResult},
@@ -451,6 +459,15 @@ impl LiftElementWithConfig<<Self as WithAssociatedInteger>::Integer> for BoxedMo
 // Serialization and Deserialization
 //
 
+/// Writes the raw Montgomery residue, not the canonical value. The element
+/// carries no modulus so it cannot remove the Montgomery factor. Both the
+/// width and the residue follow the allocated precision, so one value encodes
+/// differently at each precision.
+///
+/// This is a storage format. It round-trips only through a field with the same
+/// modulus and precision. Never feed it to a Fiat-Shamir transcript. Use
+/// [`CanonicalBytesWithConfig::to_canonical_bytes`]
+/// on [`BoxedMontyField`] instead.
 #[cfg(feature = "serde")]
 impl<'de> serde::Deserialize<'de> for BoxedMontyFieldElement {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -461,6 +478,9 @@ impl<'de> serde::Deserialize<'de> for BoxedMontyFieldElement {
     }
 }
 
+/// See [the `Deserialize` impl]
+/// [BoxedMontyFieldElement#impl-Deserialize<'de>-for-BoxedMontyFieldElement]
+/// for why these bytes are not canonical.
 #[cfg(feature = "serde")]
 impl serde::Serialize for BoxedMontyFieldElement {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -468,6 +488,38 @@ impl serde::Serialize for BoxedMontyFieldElement {
         S: serde::Serializer,
     {
         self.0.serialize(serializer)
+    }
+}
+
+//
+// Canonical bytes
+//
+
+/// The width here follows the modulus and not the [`BoxedUint`] precision, so
+/// the same element encodes uniformly regardless of the precision.
+impl CanonicalBytesWithConfig for BoxedMontyField {
+    #[inline]
+    fn canonical_byte_len(&self) -> usize {
+        canonical_width(&self.modulus())
+    }
+
+    fn write_canonical(&self, value: &Self::Element, out: &mut Vec<u8>) {
+        write_base_field(self, value, out);
+    }
+
+    fn from_canonical_bytes(&self, bytes: &[u8]) -> Result<Self::Element, CanonicalBytesError> {
+        read_base_field(self, bytes)
+    }
+}
+
+impl FromUniformBytesWithConfig for BoxedMontyField {
+    #[inline]
+    fn uniform_byte_len(&self) -> usize {
+        uniform_width(&self.modulus())
+    }
+
+    fn from_uniform_bytes(&self, bytes: &[u8]) -> Self::Element {
+        base_field_from_uniform_bytes(self, bytes)
     }
 }
 

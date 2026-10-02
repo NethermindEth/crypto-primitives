@@ -1,7 +1,15 @@
 use super::*;
 use crate::{
-    Wrapper, boolean::Boolean, crypto_bigint_int::Int, helpers::pow_via_repeated_squaring,
+    Wrapper,
+    boolean::Boolean,
+    crypto_bigint_int::Int,
+    helpers::pow_via_repeated_squaring,
+    serialization::{
+        CanonicalBytes, CanonicalBytesError, CanonicalIntBytes, FixedCanonicalBytes,
+        canonical_width,
+    },
 };
+use alloc::vec::Vec;
 use core::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter, LowerHex, Result as FmtResult, UpperHex},
@@ -738,6 +746,67 @@ impl<const LIMBS: usize> crypto_bigint::Bounded for Uint<LIMBS> {
 
 impl<const LIMBS: usize> crypto_bigint::Constants for Uint<LIMBS> {
     const MAX: Self = Self::MAX;
+}
+
+//
+// Canonical bytes
+//
+
+impl<const LIMBS: usize> CanonicalIntBytes for Uint<LIMBS> {
+    #[inline]
+    fn bit_len(&self) -> u32 {
+        self.0.bits()
+    }
+
+    fn write_le(&self, width: usize, out: &mut Vec<u8>) {
+        assert!(
+            canonical_width(self) <= width,
+            "value does not fit into {width} bytes"
+        );
+        let repr = crypto_bigint::Encoding::to_le_bytes(&self.0);
+        let all: &[u8] = repr.as_ref();
+        let taken = all.len().min(width);
+        out.extend_from_slice(&all[..taken]);
+        out.resize(out.len().saturating_add(width.saturating_sub(taken)), 0);
+    }
+
+    fn read_le(bytes: &[u8]) -> Self {
+        assert!(
+            bytes.len() <= Self::BYTES,
+            "input is wider than the integer type"
+        );
+        let mut repr = <crypto_bigint::Uint<LIMBS> as crypto_bigint::Encoding>::Repr::default();
+        repr.as_mut()[..bytes.len()].copy_from_slice(bytes);
+        Self(crypto_bigint::Uint::from_le_slice(repr.as_ref()))
+    }
+}
+
+impl<const LIMBS: usize> CanonicalBytes for Uint<LIMBS> {
+    #[inline]
+    fn canonical_byte_len(&self) -> usize {
+        Self::BYTES
+    }
+
+    fn write_canonical(&self, out: &mut Vec<u8>) {
+        self.write_le(Self::BYTES, out);
+    }
+
+    fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
+        if bytes.len() != Self::BYTES {
+            return Err(CanonicalBytesError::InvalidLength {
+                expected: Self::BYTES,
+                actual: bytes.len(),
+            });
+        }
+        Ok(Self::read_le(bytes))
+    }
+}
+
+impl<const LIMBS: usize> FixedCanonicalBytes for Uint<LIMBS> {
+    #[inline]
+    fn fixed_canonical_byte_len() -> usize {
+        Self::BYTES
+    }
 }
 
 //

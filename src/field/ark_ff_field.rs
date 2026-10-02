@@ -1,5 +1,15 @@
 use super::*;
-use crate::{IntSemiring, LiftElement, Wrapper, boolean::Boolean, semiring::ark_ff_bigint::BigInt};
+use crate::{
+    IntSemiring, LiftElement, Wrapper,
+    boolean::Boolean,
+    semiring::ark_ff_bigint::BigInt,
+    serialization::{
+        CanonicalBytes, CanonicalBytesError, FixedCanonicalBytes, FromUniformBytes,
+        base_field_from_uniform_bytes, canonical_width, read_base_field, uniform_width,
+        write_base_field,
+    },
+};
+use alloc::vec::Vec;
 use ark_ff::{
     AdditiveGroup, BigInteger, FftField, LegendreSymbol, SqrtPrecomputation,
     fields::{Field as ArkWrappedField, PrimeField as ArkWrappedPrimeField},
@@ -749,6 +759,52 @@ where
 
     fn mul_by_base_prime_field(&self, elem: &Self::BasePrimeField) -> Self {
         Self(self.0.mul_by_base_prime_field(&elem.0))
+    }
+}
+
+//
+// Canonical bytes
+//
+
+impl<F, const N: usize> CanonicalBytes for ArkField<F>
+where
+    F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
+{
+    #[inline]
+    fn canonical_byte_len(&self) -> usize {
+        Self::fixed_canonical_byte_len()
+    }
+
+    fn write_canonical(&self, out: &mut Vec<u8>) {
+        write_base_field(&FixedConfig::<Self>::const_default(), self, out);
+    }
+
+    fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, CanonicalBytesError> {
+        read_base_field(&FixedConfig::<Self>::const_default(), bytes)
+    }
+}
+
+impl<F, const N: usize> FixedCanonicalBytes for ArkField<F>
+where
+    F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
+{
+    #[inline]
+    fn fixed_canonical_byte_len() -> usize {
+        canonical_width(&<Self as BaseField>::modulus())
+    }
+}
+
+impl<F, const N: usize> FromUniformBytes for ArkField<F>
+where
+    F: ArkWrappedPrimeField<BigInt = ark_ff::BigInt<N>>,
+{
+    #[inline]
+    fn uniform_byte_len() -> usize {
+        uniform_width(&<Self as BaseField>::modulus())
+    }
+
+    fn from_uniform_bytes(bytes: &[u8]) -> Self {
+        base_field_from_uniform_bytes(&FixedConfig::<Self>::const_default(), bytes)
     }
 }
 

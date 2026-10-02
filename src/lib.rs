@@ -22,11 +22,13 @@ pub(crate) mod helpers;
 pub mod matrix;
 pub mod ring;
 pub mod semiring;
+pub mod serialization;
 
 pub use field::*;
 pub use matrix::*;
 pub use ring::*;
 pub use semiring::*;
+pub use serialization::*;
 
 use crate::helpers::define_blanket_trait;
 use core::{fmt::Debug, marker::PhantomData};

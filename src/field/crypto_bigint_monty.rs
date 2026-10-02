@@ -1,9 +1,17 @@
 use super::*;
 use crate::{
     IntSemiring, IntSemiringConfig, LiftElementWithConfig, SemiringConfig, Wrapper,
-    boolean::Boolean, crypto_bigint_int::Int, crypto_bigint_uint::Uint,
+    boolean::Boolean,
+    crypto_bigint_int::Int,
+    crypto_bigint_uint::Uint,
     helpers::crypto_bigint as helpers,
+    serialization::{
+        CanonicalBytesError, CanonicalBytesWithConfig, FromUniformBytesWithConfig,
+        base_field_from_uniform_bytes, canonical_width, read_base_field, uniform_width,
+        write_base_field,
+    },
 };
+use alloc::vec::Vec;
 use core::{
     cmp::Ordering,
     fmt::{Display, Formatter, Result as FmtResult},
@@ -395,11 +403,16 @@ impl<const LIMBS: usize> LiftElementWithConfig<<Self as WithAssociatedInteger>::
 // Serialization and Deserialization
 //
 
+/// Writes the raw Montgomery residue, not the canonical value. The element
+/// carries no modulus, so it cannot remove the Montgomery factor. The width
+/// follows `LIMBS` and not the modulus.
+///
+/// This is a storage format. It round-trips only through a field with the same
+/// modulus. Never feed it to a Fiat-Shamir transcript. Use
+/// [`CanonicalBytesWithConfig::to_canonical_bytes`]
+/// on [`MontyField`] instead.
 #[cfg(feature = "serde")]
-impl<'de, const LIMBS: usize> serde::Deserialize<'de> for MontyFieldElement<LIMBS>
-where
-    crypto_bigint::Uint<LIMBS>: crypto_bigint::Encoding,
-{
+impl<'de, const LIMBS: usize> serde::Deserialize<'de> for MontyFieldElement<LIMBS> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -408,16 +421,46 @@ where
     }
 }
 
+/// See [the `Deserialize`
+/// impl][MontyFieldElement#impl-Deserialize<'de>-for-MontyFieldElement<LIMBS>]
+/// for why these bytes are not canonical.
 #[cfg(feature = "serde")]
-impl<const LIMBS: usize> serde::Serialize for MontyFieldElement<LIMBS>
-where
-    crypto_bigint::Uint<LIMBS>: crypto_bigint::Encoding,
-{
+impl<const LIMBS: usize> serde::Serialize for MontyFieldElement<LIMBS> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         self.0.serialize(serializer)
+    }
+}
+
+//
+// Canonical bytes
+//
+
+impl<const LIMBS: usize> CanonicalBytesWithConfig for MontyField<LIMBS> {
+    #[inline]
+    fn canonical_byte_len(&self) -> usize {
+        canonical_width(&self.modulus())
+    }
+
+    fn write_canonical(&self, value: &Self::Element, out: &mut Vec<u8>) {
+        write_base_field(self, value, out);
+    }
+
+    fn from_canonical_bytes(&self, bytes: &[u8]) -> Result<Self::Element, CanonicalBytesError> {
+        read_base_field(self, bytes)
+    }
+}
+
+impl<const LIMBS: usize> FromUniformBytesWithConfig for MontyField<LIMBS> {
+    #[inline]
+    fn uniform_byte_len(&self) -> usize {
+        uniform_width(&self.modulus())
+    }
+
+    fn from_uniform_bytes(&self, bytes: &[u8]) -> Self::Element {
+        base_field_from_uniform_bytes(self, bytes)
     }
 }
 
